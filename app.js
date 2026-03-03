@@ -1315,7 +1315,11 @@ class PlanetRenderer {
         return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
     }
 
-    load(planet) { this.planet = planet; this._tex = this._buildTex(planet); }
+    load(planet) {
+        this.planet = planet;
+        this._tex = this._buildTex(planet);
+        if (this.isMobile) this._frame();
+    }
 
     _frame() {
         const cv = this.cv, ctx = this.ctx;
@@ -1534,7 +1538,15 @@ class PlanetRenderer {
     }
 
     animate() {
-        const loop = () => { this.angle += 0.22; this._frame(); this.raf = requestAnimationFrame(loop); };
+        const loop = () => {
+            this.angle += 0.22;
+            this._frame();
+            if (this.isMobile) {
+                this.raf = null; // No loop on mobile
+                return;
+            }
+            this.raf = requestAnimationFrame(loop);
+        };
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = requestAnimationFrame(loop);
     }
@@ -1573,7 +1585,14 @@ class Starfield {
         ctx.globalAlpha = 1;
     }
     animate() {
-        const loop = t => { this.draw(t / 1000); this.raf = requestAnimationFrame(loop); };
+        const loop = t => {
+            this.draw(t / 1000);
+            if (this.isMobile) {
+                this.raf = null; // No loop on mobile
+                return;
+            }
+            this.raf = requestAnimationFrame(loop);
+        };
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = requestAnimationFrame(loop);
     }
@@ -1741,7 +1760,15 @@ class AudioReactiveEcosystem {
     }
 
     animate() {
-        const loop = () => { this._draw(this.main); this._draw(this.mini); this.raf = requestAnimationFrame(loop); };
+        const loop = () => {
+            this._draw(this.main);
+            this._draw(this.mini);
+            if (this.isMobile) {
+                this.raf = null; // No loop on mobile
+                return;
+            }
+            this.raf = requestAnimationFrame(loop);
+        };
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = requestAnimationFrame(loop);
     }
@@ -1766,6 +1793,10 @@ class WarpRenderer {
     trigger(color) {
         this.glowColor = color || '#5b9dff';
         this.t0 = performance.now();
+        if (this.isMobile) {
+            // No warp animation on mobile, just clear or simple flash
+            return;
+        }
         this.cv.classList.add('active');
         if (this.raf) cancelAnimationFrame(this.raf);
         this._loop();
@@ -1830,18 +1861,24 @@ class App {
         this.audio = new AudioEngine(); this.planet = null;
         this.address = ''; this.history = [];
         this.planetR = null; this.waveViz = null; this.starfield = null; this.warpR = null;
+        this.isMobile = window.innerWidth <= 950 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     }
 
     init() {
         // Canvases
         this.starfield = new Starfield(document.getElementById('bg-canvas'));
+        this.starfield.isMobile = this.isMobile;
         this.starfield.animate();
+
         this.planetR = new PlanetRenderer(document.getElementById('planet-canvas'));
+        this.planetR.isMobile = this.isMobile;
         this.planetR.animate();
+
         this.waveViz = new AudioReactiveEcosystem(
             document.getElementById('waveform-canvas'),
             document.getElementById('viz-mini')
         );
+        this.waveViz.isMobile = this.isMobile;
         this.waveViz.animate();
 
         // Glyph keyboard
@@ -1953,6 +1990,7 @@ class App {
         });
 
         this.warpR = new WarpRenderer(document.getElementById('warp-canvas'));
+        this.warpR.isMobile = this.isMobile;
 
         // Parse URL hash for sharable planet address
         const hash = window.location.hash.slice(1);
