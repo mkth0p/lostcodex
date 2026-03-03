@@ -171,6 +171,7 @@ class AudioEngine {
         this._vol = 0.7; this._reverb = 0.6; this._drift = 0.4; this._density = 0.5;
         this._granularEnabled = true;
         this._percussionEnabled = true;
+        this._percVol = 0.8;
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
         this._arpEnabled = false;
@@ -800,7 +801,7 @@ class AudioEngine {
         const percBus = ctx.createGain();
         percBus.gain.setValueAtTime(0, ctx.currentTime);
         percBus.gain.linearRampToValueAtTime(
-            this._percussionEnabled ? 1 : 0,
+            this._percussionEnabled ? this._percVol : 0,
             ctx.currentTime + 0.5
         );
         percBus.connect(dest);
@@ -1913,8 +1914,20 @@ class App {
                 const now = this.audio.ctx.currentTime;
                 g.cancelScheduledValues(now);
                 g.setValueAtTime(g.value, now);
-                g.linearRampToValueAtTime(e.target.checked ? 1 : 0, now + 0.2);
+                g.linearRampToValueAtTime(e.target.checked ? this.audio._percVol : 0, now + 0.2);
             }
+        });
+
+        sl('ctrl-perc-vol').addEventListener('input', e => {
+            this.audio._percVol = +e.target.value;
+            if (this.audio._percussionEnabled && this.audio._percBus && this.audio.ctx) {
+                const g = this.audio._percBus.gain;
+                const now = this.audio.ctx.currentTime;
+                g.cancelScheduledValues(now);
+                g.setValueAtTime(g.value, now);
+                g.linearRampToValueAtTime(this.audio._percVol, now + 0.1);
+            }
+            this._fillSlider(e.target);
         });
 
         // ── Melody feature toggles ──────────────────────────────────────────
