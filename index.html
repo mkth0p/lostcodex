@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HARMONIC CODEX — Sonic Cartography of the Infinite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Orbitron:wght@400;700;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+    <canvas id="bg-canvas"></canvas>
+
+    <div class="travel-overlay" id="travel-overlay"></div>
+    <canvas id="warp-canvas"></canvas>
+
+    <main class="main">
+        <!-- Header -->
+        <header class="header panel">
+            <div>
+                <div class="header-title">✦ HARMONIC CODEX ✦</div>
+                <div class="header-subtitle">Sonic Cartography of the Infinite</div>
+            </div>
+            <div class="header-center" id="current-address-display">
+                <span class="address-label">CURRENT LOCATION</span>
+                <span class="address-short" id="addr-short"></span>
+            </div>
+            <div class="header-status">
+                <div class="status-dot" id="status-dot"></div>
+                <span class="status-text" id="status-text">STANDBY</span>
+            </div>
+        </header>
+
+        <!-- Left: Input Panel -->
+        <aside class="input-panel panel">
+            <div class="panel-label">✦ GLYPH ADDRESS</div>
+            <div class="address-display" id="address-display">
+                <span id="address-text"></span><span class="address-cursor"></span>
+            </div>
+            <div class="btn-group" style="margin-top:2px">
+                <button class="btn btn-danger" id="btn-clear" title="Clear address">⌫ CLEAR</button>
+                <button class="btn" id="btn-random" title="Random planet">⚄ RANDOM</button>
+            </div>
+
+            <div class="panel-label" style="margin-top:6px">✦ GLYPH KEYBOARD</div>
+            <div class="glyph-keyboard" id="glyph-keyboard"></div>
+
+            <div class="panel-label" style="margin-top:6px">✦ VISITED</div>
+            <div class="history-chips" id="history-chips">
+                <span class="no-history">No planets visited yet.</span>
+            </div>
+
+            <div class="panel-label" style="margin-top:6px">✦ BOOKMARKS</div>
+            <div class="history-chips" id="bookmark-chips">
+                <span class="no-history">No bookmarks yet.</span>
+            </div>
+
+            <div class="btn-group" style="margin-top:auto">
+                <button class="btn btn-primary navigate-btn" id="btn-navigate">➤ NAVIGATE</button>
+                <button class="btn bookmark-btn" id="btn-bookmark" title="Bookmark this planet">☆ SAVE</button>
+            </div>
+        </aside>
+
+        <!-- Center: Planet View -->
+        <section class="planet-view panel">
+            <canvas id="planet-canvas"></canvas>
+            <div class="planet-overlay-name" id="planet-overlay-name"></div>
+        </section>
+
+        <!-- Right: Info Panel -->
+        <aside class="info-panel panel">
+            <div class="panel-label">✦ PLANETARY DATA</div>
+            <div class="planet-name-display" id="planet-name">—</div>
+            <div class="planet-designation" id="planet-designation">—</div>
+            <div class="info-divider"></div>
+            <div class="info-row">
+                <span class="info-key">BIOME CLASS</span>
+                <span class="info-value" id="info-biome">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">SONIC PROFILE</span>
+                <span class="sonic-tag" id="info-sonic">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">ROOT FREQ</span>
+                <span class="info-value" id="info-freq">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">MODAL SCALE</span>
+                <span class="info-value" id="info-scale">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">ATMOSPHERE</span>
+                <span class="info-value" id="info-atmo">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">REVERB DEPTH</span>
+                <span class="info-value" id="info-reverb">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">MOONS</span>
+                <span class="info-value" id="info-moons">—</span>
+            </div>
+            <div class="info-divider"></div>
+            <div class="info-row">
+                <span class="info-key">COORDINATES</span>
+                <span class="info-value coord-display" id="info-coords">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">RARITY CLASS</span>
+                <span class="rarity-tag" id="info-rarity">—</span>
+            </div>
+            <div class="info-divider"></div>
+            <div class="panel-label">✦ FIELD NOTES</div>
+            <div class="planet-desc" id="planet-desc">
+                Awaiting navigation signal. Enter a glyph address to locate a world.
+            </div>
+            <div class="info-divider"></div>
+            <canvas id="viz-mini" width="260" height="50"></canvas>
+        </aside>
+
+        <!-- Bottom: Controls -->
+        <footer class="controls-panel panel">
+            <button class="play-btn" id="play-btn" title="Play / Stop">▶</button>
+            <div class="control-group">
+                <span class="control-label">VOL</span>
+                <input type="range" id="ctrl-vol" min="0" max="1" step="0.01" value="0.7">
+            </div>
+            <div class="control-group">
+                <span class="control-label">REVERB</span>
+                <input type="range" id="ctrl-reverb" min="0" max="1" step="0.01" value="0.6">
+            </div>
+            <div class="control-group">
+                <span class="control-label">DRIFT</span>
+                <input type="range" id="ctrl-drift" min="0" max="1" step="0.01" value="0.4">
+            </div>
+            <div class="control-group">
+                <span class="control-label">DENSITY</span>
+                <input type="range" id="ctrl-density" min="0" max="1" step="0.01" value="0.5">
+            </div>
+            <div class="control-group">
+                <span class="control-label">LOW</span>
+                <input type="range" id="ctrl-eq-low" min="-12" max="12" step="0.1" value="0">
+            </div>
+            <div class="control-group">
+                <span class="control-label">MID</span>
+                <input type="range" id="ctrl-eq-mid" min="-12" max="12" step="0.1" value="0">
+            </div>
+            <div class="control-group">
+                <span class="control-label">HIGH</span>
+                <input type="range" id="ctrl-eq-high" min="-12" max="12" step="0.1" value="0">
+            </div>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-granular" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">GRANULAR</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-perc" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">RHYTHM</span>
+            </label>
+            <div class="tension-group">
+                <span class="control-label">TENSION</span>
+                <div class="tension-bar">
+                    <div class="tension-fill" id="tension-fill"></div>
+                </div>
+                <span class="tension-icon tension-low" id="tension-icon">♥</span>
+            </div>
+            <canvas id="waveform-canvas" width="400" height="44"></canvas>
+            <div class="footer-hint">Type glyphs or click keys ↑ — each address is a unique world</div>
+        </footer>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
