@@ -607,6 +607,14 @@
         import { GLYPHS, BIOMES, SCALES, ROOT_NOTES, TUNING_NAMES } from './src/data.js';
         import { RNG } from './src/rng.js';
 
+        // URL encoding: convert glyph indices to base-36 (0-9a-t)
+        function encodeAddress(address) {
+            return [...address].map(g => {
+                const idx = GLYPHS.indexOf(g);
+                return idx >= 0 ? idx.toString(36) : '0';
+            }).join('');
+        }
+
         // ── Populate dropdowns from live data ────────────────────────
         const biomeSelect = document.getElementById('f-biome');
         BIOMES.forEach(b => {
@@ -646,35 +654,41 @@
         function buildFilters() {
             const filters = [];
 
-            const biome = $('f-biome').value;
+            const valueOf = id => $(id)?.value ?? '';
+            const checkedOf = id => !!$(id)?.checked;
+
+            const biome = valueOf('f-biome');
             if (biome) filters.push(p => p.biome.id === biome);
 
-            const scale = $('f-scale').value;
+            const scale = valueOf('f-scale');
             if (scale) filters.push(p => p.scaleName === scale);
 
-            const tuning = $('f-tuning').value;
+            const tuning = valueOf('f-tuning');
             if (tuning) filters.push(p => p.tuningSystem === tuning);
 
-            const rarityF = $('f-rarity').value;
+            const rarityF = valueOf('f-rarity');
             if (rarityF) filters.push(p => rarity(p.address || p.pname) === rarityF);
 
-            const moons = $('f-moons').value;
-            if (moons !== '') filters.push(p => p.numMoons >= parseInt(moons));
+            const moons = valueOf('f-moons');
+            if (moons !== '') {
+                const moonThreshold = parseInt(moons, 10);
+                filters.push(p => moonThreshold === 0 ? p.numMoons === 0 : p.numMoons >= moonThreshold);
+            }
 
-            const freqMin = parseFloat($('f-freq-min').value);
-            const freqMax = parseFloat($('f-freq-max').value);
+            const freqMin = parseFloat(valueOf('f-freq-min'));
+            const freqMax = parseFloat(valueOf('f-freq-max'));
             if (!isNaN(freqMin)) filters.push(p => p.rootFreq >= freqMin);
             if (!isNaN(freqMax)) filters.push(p => p.rootFreq <= freqMax);
 
-            const lenMin = parseInt($('f-len-min').value);
-            const lenMax = parseInt($('f-len-max').value);
+            const lenMin = parseInt(valueOf('f-len-min'), 10);
+            const lenMax = parseInt(valueOf('f-len-max'), 10);
             if (!isNaN(lenMin)) filters.push(p => [...p.address].length >= lenMin);
             if (!isNaN(lenMax)) filters.push(p => [...p.address].length <= lenMax);
 
-            if ($('f-microtone').checked) filters.push(p => (p.quarterToneProb || 0) > 0);
-            if ($('f-stretch').checked) filters.push(p => (p.octaveStretch || 2) > 1.001);
-            if ($('f-percussion').checked) filters.push(p => (p.ac?.percVoices?.length || 0) > 0);
-            if ($('f-chords').checked) filters.push(p => (p.ac?.chordProb || 0) > 0.3);
+            if (checkedOf('f-microtone')) filters.push(p => (p.quarterToneProb || 0) > 0);
+            if (checkedOf('f-stretch')) filters.push(p => (p.octaveStretch || 2) > 1.001);
+            if (checkedOf('f-percussion')) filters.push(p => (p.ac?.percVoices?.length || 0) > 0);
+            if (checkedOf('f-chords')) filters.push(p => (p.ac?.chordProb || 0) > 0.3);
 
             return filters;
         }
@@ -683,20 +697,28 @@
         let searching = false;
 
         function runSearch() {
-            const limit = parseInt(limitSlider.value);
+            const limit = parseInt(limitSlider.value, 10);
             const panel = $('results-panel');
             const statsEl = $('search-stats');
             const btn = $('btn-search');
+            const filters = buildFilters();
 
             panel.innerHTML = '';
             statsEl.classList.add('visible');
+            searching = true;
+            btn.disabled = true;
             statsEl.textContent = `↳ Generating ${limit} matching coordinates...`;
 
             const scaleKeys = Object.keys(SCALES);
             const seedBase = Date.now();
+            const seen = new Set();
+            const matches = [];
+            const maxAttempts = Math.max(limit * 1200, 4000);
+            let attempts = 0;
 
-            for (let i = 0; i < limit; i++) {
-                const rng = new RNG(seedBase + i);
+            while (matches.length < limit && attempts < maxAttempts) {
+                const rng = new RNG(seedBase + attempts);
+                attempts++;
 
                 // 1. Biome Glyph
                 let bIdx = $('f-biome').value ? BIOMES.findIndex(b => b.id === $('f-biome').value) : rng.int(0, BIOMES.length);
@@ -734,17 +756,40 @@
 
                 // 5. Tail (Random Entropy)
                 let addr = g0 + g1 + g2 + g3;
-                const minLen = parseInt($('f-len-min').value) || 4;
-                const maxLen = parseInt($('f-len-max').value) || 12;
-                const targetLen = rng.int(Math.max(4, minLen), Math.max(5, maxLen + 1));
+                const rawMinLen = parseInt($('f-len-min').value, 10);
+                const rawMaxLen = parseInt($('f-len-max').value, 10);
+                const minLen = Number.isFinite(rawMinLen) ? rawMinLen : 4;
+                const maxLen = Number.isFinite(rawMaxLen) ? rawMaxLen : 12;
+                const lenLo = Math.max(4, Math.min(minLen, maxLen));
+                const lenHi = Math.max(lenLo, maxLen);
+                const targetLen = rng.int(lenLo, lenHi + 1);
 
                 while ([...addr].length < targetLen) {
                     addr += rng.pick(GLYPHS);
                 }
 
+                if (seen.has(addr)) continue;
                 const planet = generatePlanet(addr);
+                if (!filters.every(fn => fn(planet))) continue;
+                seen.add(addr);
+                matches.push({ addr, planet });
                 renderResult(addr, planet, panel);
             }
+
+            queueMicrotask(() => {
+                if (!matches.length) {
+                    panel.innerHTML = '<div class="no-results">◈ &nbsp; No planets matched these filters. Try relaxing the search.</div>';
+                }
+
+                const found = matches.length;
+                const plural = found === 1 ? '' : 's';
+                statsEl.textContent = found === limit
+                    ? `Found ${found} planet${plural} after ${attempts} attempts.`
+                    : `Found ${found} planet${plural} after ${attempts} attempts. Try relaxing the filters for more results.`;
+            });
+            searching = false;
+            btn.disabled = false;
+            return;
 
             statsEl.textContent = `↳ Instantly generated ${limit} planets matching your criteria.`;
         }
@@ -779,16 +824,19 @@
             <div class="rc-cell"><span class="k">SCALE</span><span class="v">${p.scaleName}</span></div>
             <div class="rc-cell"><span class="k">TUNING</span><span class="v">${tuningLabel}</span></div>
             <div class="rc-cell"><span class="k">ROOT FREQ</span><span class="v">${p.rootFreq.toFixed(1)} Hz</span></div>
-            <div class="rc-cell"><span class="k">MOONS</span><span class="v">${moonsLabel}</span></div>
+            <div class="rc-cell"><span class="k">DRONE</span><span class="v">${p.ac?.droneWave?.replace('_', ' ') || '?'}</span></div>
+            <div class="rc-cell"><span class="k">PAD</span><span class="v">${p.ac?.padWave?.replace('_', ' ') || '?'}</span></div>
+            <div class="rc-cell"><span class="k">VOICES</span><span class="v" style="font-size:0.65rem">${p.ac?.melodyWaves?.join(', ').replace(/_/g, ' ') || '?'}</span></div>
+            <div class="rc-cell"><span class="k">CHORDS</span><span class="v">${p.progression.join(' - ')}</span></div>
+            <div class="rc-cell"><span class="k">CHORD LIFT</span><span class="v">${Math.round((p.ac?.chordAudibility || 0) * 100)}%</span></div>
             <div class="rc-cell"><span class="k">PERCUSSION</span><span class="v">${hasPerc ? 'YES' : 'NONE'}</span></div>
             <div class="rc-cell"><span class="k">GLYPHS</span><span class="v">${addrLen}</span></div>
-            <div class="rc-cell"><span class="k">CHORDS</span><span class="v">${p.progression.join(' - ')}</span></div>
             <div class="rc-cell"><span class="k">SONIC</span><span class="v" style="color:${p.biome.glowColor};font-size:0.7rem">${p.biome.soundProfile}</span></div>
         </div>
         <div class="rc-actions">
             <button class="rc-btn copy-btn" data-addr="${addr}">⎘ COPY ADDRESS</button>
-            <a class="rc-btn primary" href="synth.html#${encodeURIComponent(addr)}" target="_blank">▶ OPEN IN SYNTH</a>
-            <a class="rc-btn" href="index.html#${encodeURIComponent(addr)}" target="_blank">◈ OPEN IN EXPLORER</a>
+            <a class="rc-btn primary" href="synth.html#${encodeAddress(addr)}" target="_blank">▶ OPEN IN SYNTH</a>
+            <a class="rc-btn" href="index.html#${encodeAddress(addr)}" target="_blank">◈ OPEN IN EXPLORER</a>
         </div>
     `;
 

@@ -65,11 +65,48 @@
                 <button class="btn btn-primary navigate-btn" id="btn-navigate">➤ NAVIGATE</button>
                 <button class="btn bookmark-btn" id="btn-bookmark" title="Bookmark this planet">☆ SAVE</button>
             </div>
+            <button class="btn btn-share" id="btn-share" title="Copy shareable link" style="margin-top:6px">
+                <span id="share-icon">🔗</span> <span id="share-text">COPY LINK</span>
+            </button>
         </aside>
 
         <!-- Center: Planet View -->
         <section class="planet-view panel">
+            <canvas id="planet-viz-canvas"></canvas>
             <canvas id="planet-canvas"></canvas>
+            <div class="melody-display" id="melody-display">
+                <div class="melody-display-label">MELODY LOGIC</div>
+                <div class="melody-mode-tag" id="mel-mode">STANDBY</div>
+                <div class="melody-metrics">
+                    <div class="melody-metric">
+                        <span class="melody-label">PHRASE</span>
+                        <span class="melody-value" id="mel-len">0</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">REST</span>
+                        <span class="melody-value" id="mel-rest">5%</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">MOTIF</span>
+                        <span class="melody-value" id="mel-bank">--</span>
+                    </div>
+                </div>
+                <div class="melody-divider"></div>
+                <div class="melody-metrics melody-metrics-secondary">
+                    <div class="melody-metric">
+                        <span class="melody-label">NODES</span>
+                        <span class="melody-value" id="dbg-nodes">0</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">LOAD</span>
+                        <span class="melody-value" id="dbg-load">0%</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">STEP</span>
+                        <span class="melody-value" id="dbg-step">--</span>
+                    </div>
+                </div>
+            </div>
             <div class="chord-display" id="chord-display"></div>
             <div class="planet-overlay-name" id="planet-overlay-name"></div>
         </section>
@@ -99,6 +136,22 @@
             <div class="info-row">
                 <span class="info-key">TUNING</span>
                 <span class="info-value" id="info-tuning">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">DRONE WAVE</span>
+                <span class="info-value" id="info-drone">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">PAD WAVE</span>
+                <span class="info-value" id="info-pad">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">MELODY VOICES</span>
+                <span class="info-value" id="info-voices" style="font-size:0.6rem">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">CHORD LIFT</span>
+                <span class="info-value" id="info-chord-aud">—</span>
             </div>
             <div class="info-row">
                 <span class="info-key">ATMOSPHERE</span>
@@ -182,7 +235,7 @@
                 <span class="control-label">CHORDS</span>
             </label>
             <label class="control-toggle">
-                <input type="checkbox" id="ctrl-arp">
+                <input type="checkbox" id="ctrl-arp" checked>
                 <span class="toggle-track"></span>
                 <span class="control-label">ARP</span>
             </label>
@@ -214,7 +267,7 @@
                 </div>
                 <span class="tension-icon tension-low" id="tension-icon">♥</span>
             </div>
-            <canvas id="waveform-canvas" width="400" height="44"></canvas>
+            <canvas id="waveform-canvas" width="400" height="36"></canvas>
             <div class="footer-hint">Type glyphs or click keys ↑ — each address is a unique world</div>
         </footer>
     </main>

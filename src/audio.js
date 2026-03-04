@@ -1,12 +1,1016 @@
 import { RNG } from './rng.js';
 import { buildVoice, ADDITIVE_VOICE_NAMES } from './voices.js';
-import { CHORD_TEMPLATES, PROGRESSIONS } from './data.js';
+import { CHORD_TEMPLATES } from './data.js';
+
+const NATIVE_OSC_TYPES = new Set(['sine', 'square', 'sawtooth', 'triangle']);
+const OSC_TYPE_FALLBACKS = {
+    bell: 'sine',
+    brass: 'sawtooth',
+    choir: 'triangle',
+    electric_piano: 'triangle',
+    glass: 'sine',
+    organ: 'triangle',
+    pluck: 'triangle',
+    pulse: 'square',
+    reed: 'triangle',
+    saw_sync: 'sawtooth',
+    wood: 'triangle',
+};
+
+const MELODY_VOICE_COSTS = {
+    choir: 0.55,
+    crystal_chimes: 0.45,
+    drone_morph: 0.7,
+    gong: 0.95,
+    granular_cloud: 1.0,
+    metallic: 0.4,
+    strings: 0.5,
+    subpad: 0.6,
+    vowel_morph: 0.65,
+};
+
+const MELODY_VOICE_COOLDOWNS = {
+    choir: 0.8,
+    crystal_chimes: 0.65,
+    drone_morph: 1.1,
+    gong: 1.8,
+    granular_cloud: 1.25,
+    metallic: 0.45,
+    strings: 0.7,
+    subpad: 1.0,
+    vowel_morph: 0.9,
+};
+
+const DEFAULT_TENSION_PROFILE = {
+    riseRate: 0.028,
+    riseVariance: 0.008,
+    drainRate: 0.055,
+    floor: 0.08,
+    reset: 0.42,
+    climaxThreshold: 0.87,
+    pulseDepth: 0.05,
+    pulseRate: 0.85,
+    pulseLift: 0.012,
+    surgeChance: 0.08,
+    surgeAmount: 0.04,
+    surgeDecay: 0.58,
+    filterMul: 2.5,
+    fmMul: 5.0,
+    ghostBias: 1.0,
+    fillBias: 1.0,
+    chaosBias: 1.0,
+    accentBias: 1.0,
+    kickBias: 1.0,
+    snareBias: 1.0,
+    hatBias: 1.0,
+    openHatBias: 1.0,
+    extraBias: 1.0,
+    fillEvery: 4,
+    fillStart: 0.72,
+    fillVoices: ['tom', 'shaker'],
+    polyVoices: ['clave', 'cowbell', 'conga'],
+    phaseOffset: 0,
+    lowPoint: 0.22,
+    buildPoint: 0.48,
+    surgePoint: 0.74,
+    climaxRatios: [1, 5 / 4, 3 / 2, 2, 5 / 2],
+    climaxSpacing: 0.08,
+    climaxGain: 0.085,
+    climaxHold: 10,
+    climaxRelease: 16,
+    climaxMasterBoost: 1.35,
+};
+
+const BIOME_TENSION_PROFILES = {
+    abyssal: {
+        riseRate: 0.02,
+        riseVariance: 0.004,
+        drainRate: 0.035,
+        pulseDepth: 0.035,
+        pulseRate: 0.45,
+        pulseLift: 0.006,
+        surgeChance: 0.03,
+        surgeAmount: 0.025,
+        filterMul: 1.4,
+        fmMul: 2.4,
+        fillBias: 0.35,
+        accentBias: 0.55,
+        kickBias: 0.65,
+        snareBias: 0.55,
+        hatBias: 0.18,
+        openHatBias: 0.35,
+        extraBias: 0.4,
+        fillEvery: 6,
+        fillStart: 0.84,
+        fillVoices: ['tom', 'taiko'],
+        polyVoices: ['taiko', 'tom'],
+        surgePoint: 0.8,
+        climaxRatios: [1, 4 / 3, 3 / 2, 2, 8 / 3],
+        climaxSpacing: 0.14,
+        climaxGain: 0.07,
+        climaxHold: 12,
+        climaxRelease: 18,
+        climaxMasterBoost: 1.22,
+    },
+    arctic: {
+        riseRate: 0.017,
+        riseVariance: 0.003,
+        drainRate: 0.03,
+        pulseDepth: 0.06,
+        pulseRate: 0.5,
+        pulseLift: 0.01,
+        surgeChance: 0.02,
+        surgeAmount: 0.018,
+        filterMul: 1.2,
+        fmMul: 2.1,
+        ghostBias: 0.45,
+        fillBias: 0.08,
+        chaosBias: 0.05,
+        accentBias: 0.35,
+        kickBias: 0.25,
+        snareBias: 0.2,
+        hatBias: 0.15,
+        openHatBias: 0.2,
+        extraBias: 0.15,
+        fillEvery: 8,
+        fillStart: 0.88,
+        fillVoices: ['woodblock'],
+        polyVoices: ['woodblock'],
+        surgePoint: 0.82,
+        climaxRatios: [1, 9 / 8, 3 / 2, 2, 9 / 4],
+        climaxSpacing: 0.16,
+        climaxGain: 0.06,
+        climaxHold: 13,
+        climaxRelease: 19,
+        climaxMasterBoost: 1.16,
+    },
+    barren: {
+        riseRate: 0.016,
+        riseVariance: 0.002,
+        drainRate: 0.028,
+        pulseDepth: 0.04,
+        pulseRate: 0.42,
+        pulseLift: 0.007,
+        surgeChance: 0.015,
+        surgeAmount: 0.012,
+        filterMul: 1.1,
+        fmMul: 1.8,
+        ghostBias: 0.4,
+        fillBias: 0.05,
+        chaosBias: 0.04,
+        accentBias: 0.28,
+        kickBias: 0.22,
+        snareBias: 0.18,
+        hatBias: 0.12,
+        openHatBias: 0.16,
+        extraBias: 0.12,
+        fillEvery: 8,
+        fillStart: 0.9,
+        fillVoices: [],
+        polyVoices: [],
+        surgePoint: 0.82,
+        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
+        climaxSpacing: 0.18,
+        climaxGain: 0.055,
+        climaxHold: 12,
+        climaxRelease: 19,
+        climaxMasterBoost: 1.14,
+    },
+    corrupted: {
+        riseRate: 0.038,
+        riseVariance: 0.018,
+        drainRate: 0.07,
+        pulseDepth: 0.03,
+        pulseRate: 1.45,
+        pulseLift: 0.02,
+        surgeChance: 0.24,
+        surgeAmount: 0.085,
+        surgeDecay: 0.72,
+        filterMul: 4.8,
+        fmMul: 8.5,
+        ghostBias: 0.65,
+        fillBias: 1.45,
+        chaosBias: 1.55,
+        accentBias: 1.35,
+        kickBias: 1.45,
+        snareBias: 1.25,
+        hatBias: 1.55,
+        openHatBias: 1.35,
+        extraBias: 1.35,
+        fillEvery: 2,
+        fillStart: 0.58,
+        fillVoices: ['tom', 'shaker', 'cowbell'],
+        polyVoices: ['cowbell', 'clave', 'shaker'],
+        lowPoint: 0.18,
+        buildPoint: 0.38,
+        surgePoint: 0.62,
+        climaxThreshold: 0.82,
+        climaxRatios: [1, 16 / 15, 45 / 32, 2, 64 / 45],
+        climaxSpacing: 0.05,
+        climaxGain: 0.09,
+        climaxHold: 8,
+        climaxRelease: 13,
+        climaxMasterBoost: 1.38,
+    },
+    crystalline: {
+        riseRate: 0.022,
+        riseVariance: 0.004,
+        drainRate: 0.04,
+        pulseDepth: 0.02,
+        pulseRate: 0.62,
+        pulseLift: 0.008,
+        surgeChance: 0.03,
+        surgeAmount: 0.02,
+        filterMul: 1.8,
+        fmMul: 3.1,
+        ghostBias: 0.55,
+        fillBias: 0.5,
+        chaosBias: 0.18,
+        accentBias: 0.95,
+        kickBias: 0.5,
+        snareBias: 0.65,
+        hatBias: 0.6,
+        openHatBias: 0.75,
+        extraBias: 0.75,
+        fillEvery: 5,
+        fillStart: 0.78,
+        fillVoices: ['cowbell', 'shaker'],
+        polyVoices: ['cowbell', 'clave'],
+        climaxRatios: [1, 9 / 8, 3 / 2, 2, 9 / 4],
+        climaxSpacing: 0.1,
+        climaxGain: 0.075,
+        climaxHold: 10,
+        climaxRelease: 15,
+    },
+    crystalloid: {
+        riseRate: 0.024,
+        riseVariance: 0.005,
+        drainRate: 0.042,
+        pulseDepth: 0.024,
+        pulseRate: 0.78,
+        pulseLift: 0.01,
+        surgeChance: 0.05,
+        surgeAmount: 0.028,
+        filterMul: 2.0,
+        fmMul: 3.6,
+        ghostBias: 0.65,
+        fillBias: 0.62,
+        chaosBias: 0.25,
+        accentBias: 1.05,
+        kickBias: 0.72,
+        snareBias: 0.82,
+        hatBias: 0.72,
+        openHatBias: 0.82,
+        extraBias: 0.88,
+        fillEvery: 4,
+        fillStart: 0.76,
+        fillVoices: ['cowbell', 'clave'],
+        polyVoices: ['cowbell', 'clave'],
+        climaxRatios: [1, 10 / 9, 3 / 2, 2, 5 / 2],
+        climaxSpacing: 0.09,
+        climaxGain: 0.078,
+        climaxHold: 9,
+        climaxRelease: 14,
+    },
+    desert: {
+        riseRate: 0.021,
+        riseVariance: 0.006,
+        drainRate: 0.04,
+        pulseDepth: 0.07,
+        pulseRate: 0.78,
+        pulseLift: 0.012,
+        surgeChance: 0.05,
+        surgeAmount: 0.03,
+        filterMul: 1.8,
+        fmMul: 3.2,
+        ghostBias: 1.1,
+        fillBias: 0.72,
+        chaosBias: 0.22,
+        accentBias: 0.9,
+        kickBias: 0.8,
+        snareBias: 0.72,
+        hatBias: 0.55,
+        openHatBias: 0.55,
+        extraBias: 0.85,
+        fillEvery: 5,
+        fillStart: 0.8,
+        fillVoices: ['shaker', 'clave'],
+        polyVoices: ['clave', 'shaker'],
+        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
+        climaxSpacing: 0.12,
+        climaxGain: 0.072,
+        climaxHold: 10,
+        climaxRelease: 15,
+    },
+    ethereal: {
+        riseRate: 0.019,
+        riseVariance: 0.004,
+        drainRate: 0.032,
+        pulseDepth: 0.09,
+        pulseRate: 0.52,
+        pulseLift: 0.014,
+        surgeChance: 0.02,
+        surgeAmount: 0.016,
+        filterMul: 1.55,
+        fmMul: 2.2,
+        ghostBias: 0.6,
+        fillBias: 0.12,
+        chaosBias: 0.05,
+        accentBias: 0.42,
+        kickBias: 0.25,
+        snareBias: 0.22,
+        hatBias: 0.18,
+        openHatBias: 0.25,
+        extraBias: 0.18,
+        fillEvery: 8,
+        fillStart: 0.88,
+        fillVoices: ['shaker'],
+        polyVoices: ['shaker'],
+        surgePoint: 0.8,
+        climaxRatios: [1, 5 / 4, 3 / 2, 2, 3],
+        climaxSpacing: 0.14,
+        climaxGain: 0.068,
+        climaxHold: 12,
+        climaxRelease: 18,
+        climaxMasterBoost: 1.18,
+    },
+    fungal: {
+        riseRate: 0.027,
+        riseVariance: 0.01,
+        drainRate: 0.05,
+        pulseDepth: 0.08,
+        pulseRate: 1.18,
+        pulseLift: 0.014,
+        surgeChance: 0.08,
+        surgeAmount: 0.045,
+        filterMul: 2.4,
+        fmMul: 4.2,
+        ghostBias: 1.55,
+        fillBias: 0.74,
+        chaosBias: 0.28,
+        accentBias: 1.05,
+        kickBias: 0.88,
+        snareBias: 0.92,
+        hatBias: 1.15,
+        openHatBias: 0.72,
+        extraBias: 1.08,
+        fillEvery: 3,
+        fillStart: 0.68,
+        fillVoices: ['woodblock', 'clave', 'bongo', 'rimshot', 'shaker'],
+        polyVoices: ['clave', 'bongo', 'woodblock'],
+        lowPoint: 0.2,
+        buildPoint: 0.42,
+        surgePoint: 0.68,
+        climaxRatios: [1, 7 / 6, 3 / 2, 2, 7 / 3],
+        climaxSpacing: 0.09,
+        climaxGain: 0.08,
+        climaxHold: 9,
+        climaxRelease: 15,
+    },
+    glacial: {
+        riseRate: 0.016,
+        riseVariance: 0.003,
+        drainRate: 0.03,
+        pulseDepth: 0.085,
+        pulseRate: 0.38,
+        pulseLift: 0.012,
+        surgeChance: 0.015,
+        surgeAmount: 0.014,
+        filterMul: 1.05,
+        fmMul: 1.8,
+        ghostBias: 0.25,
+        fillBias: 0.04,
+        chaosBias: 0.03,
+        accentBias: 0.25,
+        kickBias: 0.18,
+        snareBias: 0.15,
+        hatBias: 0.08,
+        openHatBias: 0.12,
+        extraBias: 0.08,
+        fillEvery: 8,
+        fillStart: 0.92,
+        fillVoices: [],
+        polyVoices: [],
+        surgePoint: 0.84,
+        climaxRatios: [1, 9 / 8, 3 / 2, 2, 27 / 16],
+        climaxSpacing: 0.18,
+        climaxGain: 0.052,
+        climaxHold: 14,
+        climaxRelease: 22,
+        climaxMasterBoost: 1.12,
+    },
+    nebula: {
+        riseRate: 0.018,
+        riseVariance: 0.004,
+        drainRate: 0.032,
+        pulseDepth: 0.1,
+        pulseRate: 0.48,
+        pulseLift: 0.014,
+        surgeChance: 0.03,
+        surgeAmount: 0.02,
+        filterMul: 1.45,
+        fmMul: 2.0,
+        ghostBias: 0.55,
+        fillBias: 0.1,
+        chaosBias: 0.07,
+        accentBias: 0.36,
+        kickBias: 0.2,
+        snareBias: 0.18,
+        hatBias: 0.12,
+        openHatBias: 0.18,
+        extraBias: 0.14,
+        fillEvery: 8,
+        fillStart: 0.88,
+        fillVoices: [],
+        polyVoices: [],
+        surgePoint: 0.8,
+        climaxRatios: [1, 5 / 4, 3 / 2, 2, 15 / 4],
+        climaxSpacing: 0.15,
+        climaxGain: 0.064,
+        climaxHold: 12,
+        climaxRelease: 19,
+        climaxMasterBoost: 1.17,
+    },
+    oceanic: {
+        riseRate: 0.022,
+        riseVariance: 0.005,
+        drainRate: 0.038,
+        pulseDepth: 0.1,
+        pulseRate: 0.6,
+        pulseLift: 0.016,
+        surgeChance: 0.04,
+        surgeAmount: 0.022,
+        filterMul: 1.7,
+        fmMul: 2.6,
+        ghostBias: 1.15,
+        fillBias: 0.42,
+        chaosBias: 0.12,
+        accentBias: 0.62,
+        kickBias: 0.5,
+        snareBias: 0.4,
+        hatBias: 0.35,
+        openHatBias: 0.5,
+        extraBias: 0.55,
+        fillEvery: 6,
+        fillStart: 0.82,
+        fillVoices: ['conga', 'tom'],
+        polyVoices: ['conga', 'shaker'],
+        climaxRatios: [1, 4 / 3, 3 / 2, 2, 3],
+        climaxSpacing: 0.13,
+        climaxGain: 0.072,
+        climaxHold: 11,
+        climaxRelease: 17,
+        climaxMasterBoost: 1.2,
+    },
+    organic: {
+        riseRate: 0.026,
+        riseVariance: 0.009,
+        drainRate: 0.048,
+        pulseDepth: 0.075,
+        pulseRate: 1.05,
+        pulseLift: 0.014,
+        surgeChance: 0.07,
+        surgeAmount: 0.038,
+        filterMul: 2.1,
+        fmMul: 3.8,
+        ghostBias: 1.25,
+        fillBias: 0.92,
+        chaosBias: 0.35,
+        accentBias: 1.05,
+        kickBias: 0.95,
+        snareBias: 0.9,
+        hatBias: 0.78,
+        openHatBias: 0.72,
+        extraBias: 1.15,
+        fillEvery: 3,
+        fillStart: 0.7,
+        fillVoices: ['conga', 'clave', 'woodblock'],
+        polyVoices: ['conga', 'clave', 'bongo'],
+        lowPoint: 0.2,
+        buildPoint: 0.43,
+        surgePoint: 0.7,
+        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
+        climaxSpacing: 0.1,
+        climaxGain: 0.078,
+        climaxHold: 9,
+        climaxRelease: 15,
+    },
+    psychedelic: {
+        riseRate: 0.03,
+        riseVariance: 0.012,
+        drainRate: 0.055,
+        pulseDepth: 0.075,
+        pulseRate: 1.38,
+        pulseLift: 0.018,
+        surgeChance: 0.12,
+        surgeAmount: 0.05,
+        surgeDecay: 0.65,
+        filterMul: 3.2,
+        fmMul: 6.0,
+        ghostBias: 0.9,
+        fillBias: 1.1,
+        chaosBias: 0.7,
+        accentBias: 1.2,
+        kickBias: 1.0,
+        snareBias: 0.95,
+        hatBias: 1.1,
+        openHatBias: 1.25,
+        extraBias: 1.05,
+        fillEvery: 3,
+        fillStart: 0.66,
+        fillVoices: ['cowbell', 'shaker', 'conga'],
+        polyVoices: ['cowbell', 'conga', 'clave'],
+        lowPoint: 0.18,
+        buildPoint: 0.4,
+        surgePoint: 0.66,
+        climaxRatios: [1, 7 / 6, 3 / 2, 2, 21 / 8],
+        climaxSpacing: 0.07,
+        climaxGain: 0.086,
+        climaxHold: 8,
+        climaxRelease: 14,
+        climaxMasterBoost: 1.32,
+    },
+    quantum: {
+        riseRate: 0.04,
+        riseVariance: 0.02,
+        drainRate: 0.075,
+        pulseDepth: 0.035,
+        pulseRate: 1.7,
+        pulseLift: 0.022,
+        surgeChance: 0.26,
+        surgeAmount: 0.095,
+        surgeDecay: 0.74,
+        filterMul: 5.2,
+        fmMul: 9.5,
+        ghostBias: 0.75,
+        fillBias: 1.5,
+        chaosBias: 1.65,
+        accentBias: 1.45,
+        kickBias: 1.5,
+        snareBias: 1.35,
+        hatBias: 1.65,
+        openHatBias: 1.5,
+        extraBias: 1.45,
+        fillEvery: 2,
+        fillStart: 0.55,
+        fillVoices: ['cowbell', 'clave', 'shaker'],
+        polyVoices: ['cowbell', 'clave', 'conga'],
+        lowPoint: 0.16,
+        buildPoint: 0.34,
+        surgePoint: 0.58,
+        climaxThreshold: 0.8,
+        climaxRatios: [1, 17 / 16, 45 / 32, 2, 51 / 32],
+        climaxSpacing: 0.045,
+        climaxGain: 0.094,
+        climaxHold: 7,
+        climaxRelease: 12,
+        climaxMasterBoost: 1.4,
+    },
+    storm: {
+        riseRate: 0.036,
+        riseVariance: 0.016,
+        drainRate: 0.068,
+        pulseDepth: 0.028,
+        pulseRate: 1.25,
+        pulseLift: 0.018,
+        surgeChance: 0.21,
+        surgeAmount: 0.08,
+        surgeDecay: 0.7,
+        filterMul: 4.5,
+        fmMul: 7.8,
+        ghostBias: 0.7,
+        fillBias: 1.38,
+        chaosBias: 1.35,
+        accentBias: 1.3,
+        kickBias: 1.35,
+        snareBias: 1.2,
+        hatBias: 1.55,
+        openHatBias: 1.28,
+        extraBias: 1.3,
+        fillEvery: 2,
+        fillStart: 0.6,
+        fillVoices: ['tom', 'conga', 'shaker'],
+        polyVoices: ['cowbell', 'conga', 'clave'],
+        lowPoint: 0.18,
+        buildPoint: 0.38,
+        surgePoint: 0.62,
+        climaxThreshold: 0.82,
+        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
+        climaxSpacing: 0.055,
+        climaxGain: 0.09,
+        climaxHold: 8,
+        climaxRelease: 13,
+        climaxMasterBoost: 1.36,
+    },
+    volcanic: {
+        riseRate: 0.034,
+        riseVariance: 0.012,
+        drainRate: 0.058,
+        pulseDepth: 0.045,
+        pulseRate: 0.95,
+        pulseLift: 0.016,
+        surgeChance: 0.14,
+        surgeAmount: 0.06,
+        surgeDecay: 0.66,
+        filterMul: 3.6,
+        fmMul: 6.5,
+        ghostBias: 0.6,
+        fillBias: 1.05,
+        chaosBias: 0.9,
+        accentBias: 1.2,
+        kickBias: 1.3,
+        snareBias: 0.92,
+        hatBias: 0.9,
+        openHatBias: 0.72,
+        extraBias: 1.0,
+        fillEvery: 3,
+        fillStart: 0.66,
+        fillVoices: ['tom', 'taiko', 'shaker'],
+        polyVoices: ['taiko', 'tom', 'cowbell'],
+        lowPoint: 0.2,
+        buildPoint: 0.4,
+        surgePoint: 0.68,
+        climaxRatios: [1, 6 / 5, 3 / 2, 2, 9 / 4],
+        climaxSpacing: 0.075,
+        climaxGain: 0.088,
+        climaxHold: 9,
+        climaxRelease: 14,
+        climaxMasterBoost: 1.34,
+    },
+};
+
+const DEFAULT_DRUM_TONE = {
+    kickPitch: 1.0,
+    kickDecay: 1.0,
+    kickPunch: 1.0,
+    kickClick: 1.0,
+    snarePitch: 1.0,
+    snareDecay: 1.0,
+    snareNoise: 1.0,
+    snareBody: 1.0,
+    hatPitch: 1.0,
+    hatDecay: 1.0,
+    hatBright: 1.0,
+    subWeight: 1.0,
+    extraTone: 1.0,
+    bodyShelf: 0,
+    airShelf: 0,
+    presenceFreq: 2000,
+    presenceGain: 0,
+};
+
+const BIOME_DRUM_TONES = {
+    abyssal: {
+        kickPitch: 0.72,
+        kickDecay: 1.35,
+        kickPunch: 1.15,
+        kickClick: 0.7,
+        snarePitch: 0.82,
+        snareNoise: 0.68,
+        hatBright: 0.6,
+        subWeight: 1.45,
+        extraTone: 0.78,
+        bodyShelf: 5.5,
+        airShelf: -4.5,
+        presenceFreq: 850,
+        presenceGain: 1.5,
+    },
+    arctic: {
+        kickPitch: 0.95,
+        kickDecay: 0.8,
+        snarePitch: 1.08,
+        snareNoise: 0.82,
+        hatBright: 1.25,
+        extraTone: 1.18,
+        bodyShelf: -1.5,
+        airShelf: 3.5,
+        presenceFreq: 4200,
+        presenceGain: 2.5,
+    },
+    barren: {
+        kickPitch: 0.9,
+        kickDecay: 0.85,
+        kickClick: 0.8,
+        snareNoise: 0.75,
+        hatBright: 0.9,
+        subWeight: 0.85,
+        extraTone: 0.88,
+        bodyShelf: -2.5,
+        airShelf: -2.5,
+        presenceFreq: 1500,
+        presenceGain: -1,
+    },
+    corrupted: {
+        kickPitch: 1.08,
+        kickDecay: 0.82,
+        kickPunch: 1.24,
+        kickClick: 1.25,
+        snarePitch: 1.12,
+        snareNoise: 1.45,
+        snareBody: 0.85,
+        hatPitch: 1.1,
+        hatDecay: 0.85,
+        hatBright: 1.45,
+        subWeight: 0.78,
+        extraTone: 1.18,
+        bodyShelf: 1.5,
+        airShelf: 5.5,
+        presenceFreq: 3600,
+        presenceGain: 4.5,
+    },
+    crystalline: {
+        kickPitch: 0.94,
+        kickDecay: 0.82,
+        snarePitch: 1.08,
+        snareNoise: 0.92,
+        hatPitch: 1.1,
+        hatBright: 1.25,
+        extraTone: 1.16,
+        bodyShelf: -1.2,
+        airShelf: 3.2,
+        presenceFreq: 3200,
+        presenceGain: 2.2,
+    },
+    crystalloid: {
+        kickPitch: 0.98,
+        kickDecay: 0.88,
+        snarePitch: 1.05,
+        snareNoise: 0.96,
+        hatPitch: 1.05,
+        hatBright: 1.18,
+        extraTone: 1.1,
+        bodyShelf: -0.5,
+        airShelf: 2.8,
+        presenceFreq: 3000,
+        presenceGain: 2.6,
+    },
+    desert: {
+        kickPitch: 0.92,
+        kickDecay: 0.94,
+        kickClick: 0.9,
+        snareNoise: 0.78,
+        snareBody: 1.08,
+        hatBright: 0.88,
+        subWeight: 0.92,
+        extraTone: 0.96,
+        bodyShelf: 1,
+        airShelf: -1.5,
+        presenceFreq: 1800,
+        presenceGain: 1.2,
+    },
+    ethereal: {
+        kickPitch: 0.98,
+        kickDecay: 0.88,
+        kickClick: 0.72,
+        snareNoise: 0.7,
+        snareBody: 0.8,
+        hatPitch: 1.05,
+        hatDecay: 1.2,
+        hatBright: 1.08,
+        subWeight: 0.85,
+        extraTone: 1.05,
+        bodyShelf: -2.2,
+        airShelf: 2,
+        presenceFreq: 2600,
+        presenceGain: 1.2,
+    },
+    fungal: {
+        kickPitch: 0.96,
+        kickDecay: 0.9,
+        kickPunch: 0.86,
+        kickClick: 0.66,
+        snarePitch: 1.02,
+        snareNoise: 0.92,
+        snareBody: 0.58,
+        hatPitch: 1.08,
+        hatDecay: 1.2,
+        hatBright: 1.02,
+        subWeight: 0.68,
+        extraTone: 1.08,
+        bodyShelf: -0.8,
+        airShelf: 2.4,
+        presenceFreq: 2800,
+        presenceGain: 1.6,
+    },
+    glacial: {
+        kickPitch: 0.95,
+        kickDecay: 0.78,
+        kickClick: 0.76,
+        snarePitch: 1.12,
+        snareNoise: 0.7,
+        hatPitch: 1.12,
+        hatBright: 1.35,
+        extraTone: 1.2,
+        bodyShelf: -2,
+        airShelf: 4.2,
+        presenceFreq: 4500,
+        presenceGain: 3.2,
+    },
+    nebula: {
+        kickPitch: 1.0,
+        kickDecay: 0.86,
+        kickClick: 0.74,
+        snarePitch: 1.05,
+        snareNoise: 0.72,
+        hatBright: 1.15,
+        extraTone: 1.12,
+        bodyShelf: -1.8,
+        airShelf: 3.8,
+        presenceFreq: 3800,
+        presenceGain: 2,
+    },
+    oceanic: {
+        kickPitch: 0.9,
+        kickDecay: 1.15,
+        kickClick: 0.72,
+        snareNoise: 0.68,
+        snareBody: 0.92,
+        hatPitch: 0.95,
+        hatDecay: 1.08,
+        hatBright: 0.76,
+        subWeight: 1.12,
+        extraTone: 0.9,
+        bodyShelf: 3.8,
+        airShelf: -2.5,
+        presenceFreq: 1400,
+        presenceGain: 1.8,
+    },
+    organic: {
+        kickPitch: 0.94,
+        kickDecay: 0.92,
+        kickClick: 0.88,
+        snareNoise: 0.82,
+        snareBody: 1.1,
+        hatPitch: 0.95,
+        hatDecay: 1.02,
+        hatBright: 0.84,
+        subWeight: 1.0,
+        extraTone: 0.92,
+        bodyShelf: 2.2,
+        airShelf: -1.2,
+        presenceFreq: 1700,
+        presenceGain: 1.6,
+    },
+    psychedelic: {
+        kickPitch: 1.02,
+        kickDecay: 0.94,
+        kickClick: 1.08,
+        snarePitch: 1.04,
+        snareNoise: 1.15,
+        hatPitch: 1.06,
+        hatDecay: 1.05,
+        hatBright: 1.18,
+        extraTone: 1.08,
+        bodyShelf: 0.5,
+        airShelf: 3.5,
+        presenceFreq: 2800,
+        presenceGain: 3.4,
+    },
+    quantum: {
+        kickPitch: 1.12,
+        kickDecay: 0.84,
+        kickPunch: 1.28,
+        kickClick: 1.28,
+        snarePitch: 1.18,
+        snareNoise: 1.52,
+        snareBody: 0.82,
+        hatPitch: 1.18,
+        hatDecay: 0.82,
+        hatBright: 1.5,
+        subWeight: 0.72,
+        extraTone: 1.24,
+        bodyShelf: 1.8,
+        airShelf: 6,
+        presenceFreq: 4200,
+        presenceGain: 5.4,
+    },
+    storm: {
+        kickPitch: 1.02,
+        kickDecay: 0.9,
+        kickPunch: 1.22,
+        kickClick: 1.16,
+        snarePitch: 1.08,
+        snareNoise: 1.34,
+        hatPitch: 1.05,
+        hatDecay: 0.92,
+        hatBright: 1.32,
+        subWeight: 0.88,
+        extraTone: 1.06,
+        bodyShelf: 1.2,
+        airShelf: 4.8,
+        presenceFreq: 3400,
+        presenceGain: 4.2,
+    },
+    volcanic: {
+        kickPitch: 0.9,
+        kickDecay: 1.18,
+        kickPunch: 1.26,
+        kickClick: 0.95,
+        snarePitch: 0.96,
+        snareNoise: 1.02,
+        hatPitch: 0.9,
+        hatDecay: 0.95,
+        hatBright: 0.9,
+        subWeight: 1.24,
+        extraTone: 0.92,
+        bodyShelf: 4.5,
+        airShelf: -1.5,
+        presenceFreq: 1100,
+        presenceGain: 2.6,
+    },
+};
+
+class NodeRegistry {
+    constructor() {
+        this._nodes = new Set();
+        this._groups = new Set();
+    }
+
+    _registerGroup(nodes) {
+        const groupNodes = [...new Set(nodes.filter(Boolean))];
+        if (!groupNodes.length) return null;
+
+        const group = { nodes: groupNodes, released: false, pendingStops: 0 };
+        this._groups.add(group);
+
+        groupNodes.forEach((node) => {
+            this._nodes.add(node);
+
+            if (typeof node.stop === 'function' && (typeof node.addEventListener === 'function' || 'onended' in node)) {
+                group.pendingStops++;
+                const handleEnded = () => {
+                    if (group.released) return;
+                    group.pendingStops = Math.max(0, group.pendingStops - 1);
+                    if (group.pendingStops === 0) this.releaseGroup(group);
+                };
+
+                if (typeof node.addEventListener === 'function') {
+                    node.addEventListener('ended', handleEnded, { once: true });
+                } else {
+                    const prevOnEnded = node.onended;
+                    node.onended = (...args) => {
+                        try {
+                            if (typeof prevOnEnded === 'function') prevOnEnded.apply(node, args);
+                        } finally {
+                            handleEnded();
+                        }
+                    };
+                }
+            }
+        });
+
+        return group;
+    }
+
+    push(...nodes) {
+        this._registerGroup(nodes);
+        return this._nodes.size;
+    }
+
+    pushTransient(durationSeconds, ...nodes) {
+        const group = this._registerGroup(nodes);
+        if (!group) return this._nodes.size;
+        const ttlMs = Math.max(100, (durationSeconds || 0) * 1000);
+        group.timeoutId = setTimeout(() => this.releaseGroup(group), ttlMs);
+        return this._nodes.size;
+    }
+
+    releaseGroup(group) {
+        if (!group || group.released) return;
+        group.released = true;
+        this._groups.delete(group);
+        if (group.timeoutId) clearTimeout(group.timeoutId);
+        group.nodes.forEach((node) => {
+            this._nodes.delete(node);
+            try { node.disconnect(); } catch (e) { }
+        });
+    }
+
+    forEach(cb) {
+        Array.from(this._nodes).forEach(cb);
+    }
+
+    clear() {
+        this._groups.forEach((group) => {
+            if (group.timeoutId) clearTimeout(group.timeoutId);
+        });
+        this._groups.clear();
+        this._nodes.clear();
+    }
+
+    get size() {
+        return this._nodes.size;
+    }
+}
 
 export class AudioEngine {
     constructor() {
         this.ctx = null; this.masterGain = null;
         this.reverbGain = null; this.dryGain = null;
-        this.analyser = null; this.nodes = []; this.intervals = [];
+        this.melodyBus = null; this.melodyFilter = null;
+        this.transport = null;
+        this.recordDest = null;
+        this.analyser = null; this.nodes = new NodeRegistry(); this.intervals = [];
         this.playing = false; this.planet = null; this.lastStep = undefined;
         this._vol = 0.7; this._reverb = 0.6; this._drift = 0.4; this._density = 0.5;
         this._granularEnabled = true;
@@ -15,13 +1019,21 @@ export class AudioEngine {
         this._noiseBuffer = null; // Cached noise buffer for percussion
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
-        this._arpEnabled = false;
+        this._arpEnabled = true;
         this._pitchBendEnabled = true;
         this._motifEnabled = true;
         // Rhythm feature flags
         this._ghostEnabled = true;
         this._fillsEnabled = true;
         this.tension = 0;
+        this._tensionBaseValue = 0;
+        this._tensionTick = 0;
+        this._tensionSurge = 0;
+        this._tensionProfile = null;
+        this._tensionState = { phase: 'DORMANT', energy: 0, cyclePos: 0, pocket: 0.5 };
+        this._lastTensionPhase = 'DORMANT';
+        this._lastPhaseEventTime = 0;
+        this._macroEventCooldownUntil = 0;
 
         // Harmony & Progression state
         this._progression = [];
@@ -34,12 +1046,21 @@ export class AudioEngine {
         this._restProb = 0.05;
         this._melodyHistory = [];
         this._melodyMode = 'GENERATIVE';
+        this._lastMelodyStep = null;
+        this._activeMotifIdx = 0;
+        this._motifSwapCounter = 0;
+        this._voiceCooldowns = Object.create(null);
+        this._moonBus = null;
+        this._moonProfile = [];
+        this._moonProcCount = 0;
+        this._moonLastBurst = 0;
+        this._lastMoonProcAt = Number.NEGATIVE_INFINITY;
 
         this._resetSteps();
     }
 
     _resetSteps() {
-        this.stepNote = 0; this.stepGrain = 0; this.stepPerc = 0; this.stepFX = 0;
+        this.stepNote = 0; this.stepGrain = 0; this.stepPerc = 0; this.stepFX = 0; this.stepChord = 0;
     }
 
     _boot() {
@@ -61,17 +1082,26 @@ export class AudioEngine {
 
             // Master limiter/compressor to prevent clipping during climax events
             this.compressor = this.ctx.createDynamicsCompressor();
-            this.compressor.threshold.value = -6;
-            this.compressor.knee.value = 10;
-            this.compressor.ratio.value = 4;
-            this.compressor.attack.value = 0.003;
-            this.compressor.release.value = 0.25;
+            this.compressor.threshold.value = -0.5; // Strict limit just below 0dB
+            this.compressor.knee.value = 0;       // Hard knee for limiting
+            this.compressor.ratio.value = 20;     // Infinite-ratio limiting
+            this.compressor.attack.value = 0.001; // Instant snap
+            this.compressor.release.value = 0.1;  // Fast recovery
+
+            // 20Hz DC-Offset Filter — prevents pops and subsonic build-up
+            this.dcFilter = this.ctx.createBiquadFilter();
+            this.dcFilter.type = 'highpass'; this.dcFilter.frequency.value = 20;
 
             this.eqLow.connect(this.eqMid);
             this.eqMid.connect(this.eqHigh);
             this.eqHigh.connect(this.masterGain);
             this.masterGain.connect(this.compressor);
-            this.compressor.connect(this.analyser);
+            this.compressor.connect(this.dcFilter);
+            this.dcFilter.connect(this.analyser);
+            if (this.ctx.createMediaStreamDestination) {
+                this.recordDest = this.ctx.createMediaStreamDestination();
+                this.dcFilter.connect(this.recordDest);
+            }
             this.analyser.connect(this.ctx.destination);
 
             // Pre-build shared noise buffer for percussion (snare/shaker)
@@ -126,10 +1156,1055 @@ export class AudioEngine {
         return conv;
     }
 
+    _resolveOscType(type, fallback = 'sine') {
+        if (NATIVE_OSC_TYPES.has(type)) return type;
+        return OSC_TYPE_FALLBACKS[type] || fallback;
+    }
+
+    _getOctaveMultiplier(multiplier, planet) {
+        const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+        const stretch = planet?.octaveStretch || 1;
+        if (stretch === 1) return safeMultiplier;
+        return safeMultiplier * Math.pow(stretch, Math.max(0, Math.log2(safeMultiplier)));
+    }
+
+    _getStepFrequency(planet, step, octaveMultiplier = 1) {
+        const norm = ((step % 12) + 12) % 12;
+        const octaveShift = Math.floor(step / 12);
+        const octaveBase = 2 * (planet?.octaveStretch || 1);
+        const baseMultiplier = this._getOctaveMultiplier(octaveMultiplier, planet);
+        const stepRatio = (planet.useJI && planet.jiRatios)
+            ? planet.jiRatios[norm]
+            : Math.pow(2, norm / 12);
+        return planet.rootFreq * baseMultiplier * stepRatio * Math.pow(octaveBase, octaveShift);
+    }
+
+    _clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    _getTensionProfile(planet) {
+        const biomeId = planet?.biome?.id || 'default';
+        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
+        const merged = {
+            ...DEFAULT_TENSION_PROFILE,
+            ...(BIOME_TENSION_PROFILES[biomeId] || {})
+        };
+        const densityLift = (density - 0.08) * 0.05;
+        return {
+            ...merged,
+            riseRate: this._clamp(merged.riseRate + densityLift, 0.012, 0.05),
+            surgeChance: this._clamp(merged.surgeChance + densityLift * 1.8, 0, 0.35),
+            climaxThreshold: this._clamp(merged.climaxThreshold, 0.74, 0.92),
+            fillVoices: [...(merged.fillVoices || [])],
+            polyVoices: [...(merged.polyVoices || [])],
+            climaxRatios: [...(merged.climaxRatios || DEFAULT_TENSION_PROFILE.climaxRatios)],
+        };
+    }
+
+    _getDrumToneProfile(planet) {
+        const biomeId = planet?.biome?.id || 'default';
+        return {
+            ...DEFAULT_DRUM_TONE,
+            ...(BIOME_DRUM_TONES[biomeId] || {})
+        };
+    }
+
+    _getPhasePatternProfile(biomeId) {
+        const profile = {
+            DORMANT: { drop: 0.34, add: 0.01, open: 0.01, rotate: 0 },
+            STIR: { drop: 0.18, add: 0.03, open: 0.03, rotate: 0 },
+            BUILD: { drop: 0.07, add: 0.09, open: 0.08, rotate: 0 },
+            SURGE: { drop: 0.02, add: 0.16, open: 0.14, rotate: 0 },
+            CLIMAX: { drop: 0.0, add: 0.22, open: 0.22, rotate: 0 },
+            FALLOUT: { drop: 0.24, add: 0.02, open: 0.04, rotate: 0 },
+        };
+
+        switch (biomeId) {
+            case 'barren':
+            case 'glacial':
+            case 'arctic':
+            case 'nebula':
+            case 'ethereal':
+                profile.DORMANT = { drop: 0.5, add: 0.0, open: 0.0, rotate: 0 };
+                profile.STIR = { drop: 0.34, add: 0.01, open: 0.01, rotate: 0 };
+                profile.BUILD = { drop: 0.16, add: 0.04, open: 0.04, rotate: 0 };
+                profile.SURGE = { drop: 0.08, add: 0.08, open: 0.08, rotate: 0 };
+                profile.CLIMAX = { drop: 0.04, add: 0.1, open: 0.1, rotate: 0 };
+                profile.FALLOUT = { drop: 0.3, add: 0.01, open: 0.02, rotate: 0 };
+                break;
+            case 'oceanic':
+                profile.DORMANT = { drop: 0.28, add: 0.01, open: 0.02, rotate: 0 };
+                profile.STIR = { drop: 0.14, add: 0.03, open: 0.04, rotate: 0 };
+                profile.BUILD = { drop: 0.05, add: 0.07, open: 0.08, rotate: 0 };
+                profile.SURGE = { drop: 0.01, add: 0.13, open: 0.14, rotate: 0 };
+                profile.CLIMAX = { drop: 0.0, add: 0.16, open: 0.18, rotate: 1 };
+                profile.FALLOUT = { drop: 0.2, add: 0.02, open: 0.05, rotate: 0 };
+                break;
+            case 'fungal':
+                profile.DORMANT = { drop: 0.18, add: 0.02, open: 0.03, rotate: 0 };
+                profile.STIR = { drop: 0.07, add: 0.04, open: 0.05, rotate: 0 };
+                profile.BUILD = { drop: 0.02, add: 0.08, open: 0.08, rotate: 0 };
+                profile.SURGE = { drop: 0.0, add: 0.13, open: 0.1, rotate: 0 };
+                profile.CLIMAX = { drop: 0.0, add: 0.16, open: 0.12, rotate: 1 };
+                profile.FALLOUT = { drop: 0.14, add: 0.02, open: 0.04, rotate: 0 };
+                break;
+            case 'organic':
+            case 'desert':
+                profile.DORMANT = { drop: 0.2, add: 0.02, open: 0.02, rotate: 0 };
+                profile.STIR = { drop: 0.08, add: 0.05, open: 0.04, rotate: 0 };
+                profile.BUILD = { drop: 0.03, add: 0.11, open: 0.08, rotate: 0 };
+                profile.SURGE = { drop: 0.0, add: 0.19, open: 0.12, rotate: 1 };
+                profile.CLIMAX = { drop: 0.0, add: 0.23, open: 0.16, rotate: 1 };
+                profile.FALLOUT = { drop: 0.18, add: 0.03, open: 0.04, rotate: 0 };
+                break;
+            case 'crystalline':
+            case 'crystalloid':
+                profile.DORMANT = { drop: 0.26, add: 0.01, open: 0.03, rotate: 0 };
+                profile.STIR = { drop: 0.12, add: 0.04, open: 0.06, rotate: 0 };
+                profile.BUILD = { drop: 0.04, add: 0.08, open: 0.12, rotate: 0 };
+                profile.SURGE = { drop: 0.0, add: 0.12, open: 0.18, rotate: 1 };
+                profile.CLIMAX = { drop: 0.0, add: 0.16, open: 0.24, rotate: 1 };
+                profile.FALLOUT = { drop: 0.22, add: 0.02, open: 0.05, rotate: 0 };
+                break;
+            case 'quantum':
+            case 'corrupted':
+            case 'storm':
+            case 'psychedelic':
+                profile.DORMANT = { drop: 0.14, add: 0.04, open: 0.04, rotate: 0 };
+                profile.STIR = { drop: 0.04, add: 0.09, open: 0.08, rotate: 0 };
+                profile.BUILD = { drop: 0.0, add: 0.17, open: 0.12, rotate: 1 };
+                profile.SURGE = { drop: 0.0, add: 0.26, open: 0.18, rotate: 1 };
+                profile.CLIMAX = { drop: 0.0, add: 0.32, open: 0.24, rotate: 2 };
+                profile.FALLOUT = { drop: 0.1, add: 0.05, open: 0.08, rotate: 0 };
+                break;
+            case 'volcanic':
+            case 'abyssal':
+                profile.DORMANT = { drop: 0.22, add: 0.01, open: 0.01, rotate: 0 };
+                profile.STIR = { drop: 0.1, add: 0.03, open: 0.03, rotate: 0 };
+                profile.BUILD = { drop: 0.03, add: 0.08, open: 0.05, rotate: 0 };
+                profile.SURGE = { drop: 0.0, add: 0.14, open: 0.07, rotate: 0 };
+                profile.CLIMAX = { drop: 0.0, add: 0.18, open: 0.1, rotate: 1 };
+                profile.FALLOUT = { drop: 0.2, add: 0.02, open: 0.03, rotate: 0 };
+                break;
+            default:
+                break;
+        }
+
+        return profile;
+    }
+
+    _transformPhasePattern(pattern, voice, phaseCfg, rng) {
+        const source = Array.isArray(pattern) ? pattern.slice() : [];
+        const len = source.length;
+        if (!len) return source;
+
+        const voiceAddBias = voice === 'k' ? 0.58 : voice === 's' ? 0.42 : voice === 'h' ? 0.88 : 0.32;
+        const voiceDropBias = voice === 'h' ? 0.75 : voice === 'b' ? 0.95 : 0.7;
+
+        for (let i = 0; i < len; i++) {
+            const strong = i % 4 === 0;
+            const backbeat = (i + 2) % 4 === 0;
+            const offbeat = i % 2 === 1;
+            const turnaround = i >= len - 2;
+            const prevHit = source[(i - 1 + len) % len] > 0;
+            const nextHit = source[(i + 1) % len] > 0;
+            const nearHit = prevHit || nextHit;
+            const slotWeight = voice === 'k'
+                ? (strong ? 1 : turnaround ? 0.72 : offbeat ? 0.2 : 0.42)
+                : voice === 's'
+                    ? (backbeat ? 1 : offbeat ? 0.26 : 0.14)
+                    : voice === 'h'
+                        ? (offbeat ? 1 : strong ? 0.28 : 0.6)
+                        : (strong ? 0.72 : turnaround ? 0.28 : 0.1);
+
+            if (source[i]) {
+                const protect = strong || backbeat
+                    ? (voice === 'k' || voice === 's' ? 0.08 : 0.16)
+                    : turnaround
+                        ? 0.45
+                        : 1;
+                if (rng.range(0, 1) < phaseCfg.drop * protect * voiceDropBias) {
+                    source[i] = 0;
+                    continue;
+                }
+                if (voice === 'h' && source[i] === 1 && rng.range(0, 1) < phaseCfg.open * slotWeight * 0.85) {
+                    source[i] = 2;
+                }
+                continue;
+            }
+
+            let addChance = phaseCfg.add * slotWeight * voiceAddBias;
+            if (nearHit) addChance *= voice === 'h' ? 0.55 : 0.2;
+            if (voice === 'k' && offbeat && !turnaround) addChance *= 0.35;
+            if (voice === 's' && !backbeat && !offbeat) addChance *= 0.2;
+            if (voice === 'b' && !strong) addChance *= 0.25;
+
+            if (rng.range(0, 1) < addChance) {
+                source[i] = voice === 'h' && rng.range(0, 1) < phaseCfg.open * (offbeat ? 1 : 0.35) ? 2 : 1;
+            }
+        }
+
+        const rotateBase = voice === 'h' ? Math.min(1, phaseCfg.rotate || 0) : 0;
+        const rotate = ((rotateBase % len) + len) % len;
+        if (!rotate) return source;
+        return source.slice(len - rotate).concat(source.slice(0, len - rotate));
+    }
+
+    _buildPhasePatternBanks(patterns, cycleSteps, seed, biomeId) {
+        const profile = this._getPhasePatternProfile(biomeId);
+        const phases = ['DORMANT', 'STIR', 'BUILD', 'SURGE', 'CLIMAX', 'FALLOUT'];
+        const voices = ['k', 's', 'h', 'b'];
+        const banks = {};
+
+        phases.forEach((phase, phaseIdx) => {
+            banks[phase] = {};
+            voices.forEach((voice, voiceIdx) => {
+                const phaseSeed = (seed + 97000 + phaseIdx * 173 + voiceIdx * 29 + cycleSteps * 7) >>> 0;
+                banks[phase][voice] = this._transformPhasePattern(
+                    patterns[voice],
+                    voice,
+                    profile[phase],
+                    new RNG(phaseSeed)
+                );
+            });
+        });
+
+        return banks;
+    }
+
+    _getMacroEventChance(biomeId, state) {
+        const phaseMul = {
+            DORMANT: 0,
+            STIR: 0.22,
+            BUILD: 0.58,
+            SURGE: 1.0,
+            CLIMAX: 0.82,
+            FALLOUT: 0.34,
+        }[state?.phase || 'STIR'] || 0.25;
+
+        let base = 0.045;
+        if (['storm', 'quantum', 'corrupted'].includes(biomeId)) base = 0.14;
+        else if (['volcanic', 'psychedelic', 'organic'].includes(biomeId)) base = 0.1;
+        else if (biomeId === 'fungal') base = 0.082;
+        else if (['oceanic', 'abyssal', 'crystalline', 'crystalloid', 'desert'].includes(biomeId)) base = 0.075;
+
+        return this._clamp(base * phaseMul * (0.62 + (state?.energy || 0) * 0.78), 0, 0.24);
+    }
+
+    _getMacroEventCooldown(biomeId, phase, rng) {
+        let min = 8, max = 15;
+        if (['storm', 'quantum', 'corrupted'].includes(biomeId)) { min = 6; max = 11; }
+        else if (['volcanic', 'organic', 'psychedelic'].includes(biomeId)) { min = 7; max = 13; }
+        else if (biomeId === 'fungal') { min = 9; max = 15; }
+        else if (['barren', 'glacial', 'arctic', 'nebula', 'ethereal'].includes(biomeId)) { min = 12; max = 20; }
+        if (phase === 'SURGE' || phase === 'CLIMAX') min *= 0.8;
+        return rng.range(min, max);
+    }
+
+    _spawnFxNoise(dest, opts = {}) {
+        if (!this.ctx || !this._noiseBuffer || !dest) return;
+        const ctx = this.ctx;
+        const t = ctx.currentTime + (opts.delay || 0);
+        const dur = Math.max(0.06, opts.dur || 0.4);
+        const src = ctx.createBufferSource();
+        const filt = ctx.createBiquadFilter();
+        const env = ctx.createGain();
+        const pan = ctx.createStereoPanner();
+
+        src.buffer = this._noiseBuffer;
+        src.playbackRate.value = opts.playbackRate || 1;
+        filt.type = opts.filterType || 'bandpass';
+        filt.Q.value = opts.q || 0.9;
+
+        const startFreq = Math.max(40, opts.startFreq || 1600);
+        const endFreq = Math.max(40, opts.endFreq || startFreq);
+        filt.frequency.setValueAtTime(startFreq, t);
+        if (opts.curve === 'linear' || endFreq >= startFreq) {
+            filt.frequency.linearRampToValueAtTime(endFreq, t + dur);
+        } else {
+            filt.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+        }
+
+        pan.pan.value = opts.pan || 0;
+        env.gain.setValueAtTime(0, t);
+        env.gain.linearRampToValueAtTime(opts.gain || 0.05, t + Math.min(0.05, dur * 0.25));
+        env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+        src.connect(filt);
+        filt.connect(env);
+        env.connect(pan);
+        pan.connect(dest);
+        src.start(t);
+        src.stop(t + dur + 0.05);
+        this.nodes.push(src, filt, env, pan);
+    }
+
+    _spawnFxTone(dest, opts = {}) {
+        if (!this.ctx || !dest) return;
+        const ctx = this.ctx;
+        const t = ctx.currentTime + (opts.delay || 0);
+        const dur = Math.max(0.05, opts.dur || 0.35);
+        const osc = ctx.createOscillator();
+        const env = ctx.createGain();
+        const pan = ctx.createStereoPanner();
+        const filter = opts.filterType ? ctx.createBiquadFilter() : null;
+
+        osc.type = this._resolveOscType(opts.wave || 'sine');
+        const startFreq = Math.max(20, opts.startFreq || opts.freq || 440);
+        const endFreq = Math.max(20, opts.endFreq || startFreq);
+        osc.frequency.setValueAtTime(startFreq, t);
+        if (opts.curve === 'linear' || endFreq >= startFreq) {
+            osc.frequency.linearRampToValueAtTime(endFreq, t + dur);
+        } else {
+            osc.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+        }
+
+        pan.pan.value = opts.pan || 0;
+        env.gain.setValueAtTime(0, t);
+        env.gain.linearRampToValueAtTime(opts.gain || 0.04, t + Math.min(0.04, dur * 0.22));
+        env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+        if (filter) {
+            filter.type = opts.filterType;
+            filter.frequency.value = opts.filterFreq || Math.max(startFreq * 2.5, 300);
+            filter.Q.value = opts.filterQ || 0.8;
+            osc.connect(filter);
+            filter.connect(env);
+        } else {
+            osc.connect(env);
+        }
+        env.connect(pan);
+        pan.connect(dest);
+
+        osc.start(t);
+        osc.stop(t + dur + 0.05);
+        if (filter) this.nodes.push(osc, filter, env, pan);
+        else this.nodes.push(osc, env, pan);
+    }
+
+    _spawnFxCluster(dest, opts = {}) {
+        const baseFreq = opts.baseFreq || 220;
+        const ratios = opts.ratios || [1, 5 / 4, 3 / 2];
+        ratios.forEach((ratio, i) => {
+            this._spawnFxTone(dest, {
+                wave: opts.wave || 'sine',
+                startFreq: baseFreq * ratio,
+                endFreq: (opts.endMul || 0.96) * baseFreq * ratio,
+                dur: opts.dur || 0.35,
+                gain: (opts.gain || 0.028) * (1 - i * 0.08),
+                pan: ratios.length > 1 ? ((i / (ratios.length - 1)) * 0.8) - 0.4 : 0,
+                delay: (opts.delay || 0) + i * (opts.spacing || 0.03),
+                curve: opts.curve || 'exp',
+                filterType: opts.filterType,
+                filterFreq: opts.filterFreq,
+                filterQ: opts.filterQ,
+            });
+        });
+    }
+
+    _firePhaseTransitionEvent(p, dest, fromPhase, toPhase) {
+        if (!this.playing || !this.ctx) return;
+        const biomeId = p?.biome?.id;
+        const root = p?.rootFreq || 220;
+        const upward = ['BUILD', 'SURGE', 'CLIMAX'].includes(toPhase) && toPhase !== fromPhase;
+        const rng = new RNG((p.seed || 0) + 130000 + this.stepFX++);
+        const pan = rng.range(-0.55, 0.55);
+
+        switch (biomeId) {
+            case 'storm':
+                this._spawnFxNoise(dest, { dur: upward ? 0.34 : 0.7, gain: 0.065, startFreq: upward ? 9000 : 1800, endFreq: upward ? 1400 : 220, q: 0.8, pan });
+                if (upward) this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 3.2, endFreq: root * 1.4, dur: 0.45, gain: 0.04, pan: -pan });
+                break;
+            case 'quantum':
+            case 'corrupted':
+                for (let i = 0; i < 3; i++) {
+                    this._spawnFxTone(dest, {
+                        wave: biomeId === 'quantum' ? 'square' : 'sawtooth',
+                        startFreq: root * rng.range(6, 11),
+                        endFreq: root * rng.range(2, 4),
+                        dur: 0.08 + i * 0.02,
+                        gain: 0.024,
+                        pan: (i % 2 === 0 ? -0.45 : 0.45),
+                        delay: i * 0.035,
+                    });
+                }
+                break;
+            case 'fungal':
+                this._spawnFxNoise(dest, { dur: 0.24, gain: 0.018, startFreq: 2600, endFreq: 720, filterType: 'bandpass', q: 1.3, pan });
+                for (let i = 0; i < 3; i++) {
+                    this._spawnFxTone(dest, {
+                        wave: i === 1 ? 'triangle' : 'sine',
+                        startFreq: root * (3.3 + i * 0.42),
+                        endFreq: root * (2.15 + i * 0.25),
+                        dur: 0.11 + i * 0.03,
+                        gain: 0.014,
+                        pan: pan * (i === 1 ? -0.35 : 0.45),
+                        delay: i * 0.045,
+                    });
+                }
+                break;
+            case 'organic':
+            case 'desert':
+                this._spawnFxNoise(dest, { dur: 0.42, gain: 0.03, startFreq: 1800, endFreq: 500, filterType: 'bandpass', q: 1.1, pan });
+                this._spawnFxCluster(dest, {
+                    baseFreq: root * (biomeId === 'desert' ? 3.2 : 2.4),
+                    ratios: [1, 6 / 5, 3 / 2],
+                    wave: biomeId === 'desert' ? 'triangle' : 'sine',
+                    gain: 0.026,
+                    dur: 0.22,
+                    spacing: 0.04,
+                    endMul: 0.92,
+                });
+                break;
+            case 'oceanic':
+                this._spawnFxNoise(dest, { dur: 1.0, gain: 0.038, startFreq: 1200, endFreq: 180, filterType: 'lowpass', q: 0.6, pan });
+                this._spawnFxCluster(dest, { baseFreq: root * 4.5, ratios: [1, 4 / 3], wave: 'sine', gain: 0.018, dur: 0.18, spacing: 0.09, endMul: 1.04 });
+                break;
+            case 'crystalline':
+            case 'crystalloid':
+            case 'glacial':
+            case 'arctic':
+                this._spawnFxCluster(dest, {
+                    baseFreq: root * 6,
+                    ratios: biomeId === 'crystalloid' ? [1, 9 / 8, 3 / 2, 2] : [1, 5 / 4, 3 / 2],
+                    wave: 'sine',
+                    gain: 0.022,
+                    dur: 0.3,
+                    spacing: 0.035,
+                    endMul: 0.98,
+                });
+                break;
+            case 'volcanic':
+            case 'abyssal':
+                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 1.5, endFreq: root * 0.8, dur: 0.6, gain: 0.05, pan, filterType: 'lowpass', filterFreq: root * 7 });
+                this._spawnFxNoise(dest, { dur: 0.45, gain: 0.03, startFreq: 800, endFreq: 120, filterType: 'lowpass', q: 0.7, pan: -pan });
+                break;
+            default:
+                this._spawnFxNoise(dest, { dur: upward ? 0.35 : 0.55, gain: 0.026, startFreq: upward ? 2600 : 1400, endFreq: upward ? 700 : 220, q: 0.8, pan });
+                this._spawnFxTone(dest, { wave: 'sine', startFreq: root * 4, endFreq: root * 2.8, dur: 0.25, gain: 0.018, pan: -pan });
+                break;
+        }
+    }
+
+    _fireSignatureMacroEvent(p, dest, state) {
+        if (!this.playing || !this.ctx) return;
+        const biomeId = p?.biome?.id;
+        const root = p?.rootFreq || 220;
+        const rng = new RNG((p.seed || 0) + 140000 + this.stepFX++);
+        const energy = state?.energy || 0;
+
+        switch (biomeId) {
+            case 'storm':
+                for (let i = 0; i < 3 + Math.round(energy * 2); i++) {
+                    this._spawnFxNoise(dest, {
+                        dur: 0.12 + rng.range(0, 0.08),
+                        gain: 0.04 + energy * 0.025,
+                        startFreq: rng.range(6500, 11000),
+                        endFreq: rng.range(800, 1800),
+                        q: 0.9,
+                        pan: rng.range(-0.8, 0.8),
+                        delay: i * 0.07
+                    });
+                }
+                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 2.2, endFreq: root * 0.65, dur: 1.1, gain: 0.055, pan: 0, filterType: 'lowpass', filterFreq: root * 8 });
+                break;
+            case 'quantum':
+                for (let i = 0; i < 4 + Math.round(energy * 3); i++) {
+                    this._spawnFxTone(dest, {
+                        wave: i % 2 === 0 ? 'square' : 'triangle',
+                        startFreq: root * rng.range(7, 13),
+                        endFreq: root * rng.range(1.5, 4),
+                        dur: 0.05 + rng.range(0, 0.05),
+                        gain: 0.02 + energy * 0.01,
+                        pan: i % 2 === 0 ? -0.75 : 0.75,
+                        delay: i * 0.045
+                    });
+                }
+                break;
+            case 'corrupted':
+                for (let i = 0; i < 3; i++) {
+                    this._spawnFxNoise(dest, { dur: 0.18, gain: 0.032, startFreq: rng.range(2400, 6000), endFreq: rng.range(400, 1200), q: 1.2, pan: rng.range(-0.7, 0.7), delay: i * 0.06 });
+                }
+                this._spawnFxCluster(dest, { baseFreq: root * 5.5, ratios: [1, 16 / 15, 45 / 32], wave: 'sawtooth', gain: 0.02, dur: 0.16, spacing: 0.03 });
+                break;
+            case 'fungal':
+                for (let i = 0; i < 4 + Math.round(energy * 2); i++) {
+                    this._spawnFxTone(dest, {
+                        wave: i % 3 === 0 ? 'triangle' : 'sine',
+                        startFreq: root * (3.1 + rng.range(0, 2.4)),
+                        endFreq: root * (2.0 + rng.range(0, 1.2)),
+                        dur: 0.08 + rng.range(0, 0.05),
+                        gain: 0.012 + energy * 0.006,
+                        pan: rng.range(-0.7, 0.7),
+                        delay: i * 0.055,
+                    });
+                }
+                this._spawnFxNoise(dest, { dur: 0.36, gain: 0.018, startFreq: 1800, endFreq: 520, filterType: 'bandpass', q: 1.1 });
+                this._spawnFxCluster(dest, { baseFreq: root * 3.0, ratios: [1, 9 / 8, 4 / 3, 3 / 2], wave: 'triangle', gain: 0.016, dur: 0.12, spacing: 0.045, endMul: 0.97 });
+                break;
+            case 'organic':
+                this._spawnFxNoise(dest, { dur: 0.9, gain: 0.03, startFreq: 1800, endFreq: 300, filterType: 'bandpass', q: 0.8 });
+                this._spawnFxCluster(dest, { baseFreq: root * 2.8, ratios: [1, 6 / 5, 3 / 2], wave: 'triangle', gain: 0.022, dur: 0.2, spacing: 0.07, endMul: 0.88 });
+                break;
+            case 'oceanic':
+                this._spawnFxNoise(dest, { dur: 1.8, gain: 0.038, startFreq: 900, endFreq: 140, filterType: 'lowpass', q: 0.55 });
+                this._spawnFxCluster(dest, { baseFreq: root * 4.2, ratios: [1, 4 / 3, 2], wave: 'sine', gain: 0.016, dur: 0.22, spacing: 0.12, endMul: 1.06 });
+                break;
+            case 'abyssal':
+                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 1.15, endFreq: root * 0.42, dur: 1.8, gain: 0.07, filterType: 'lowpass', filterFreq: root * 6 });
+                this._spawnFxNoise(dest, { dur: 0.9, gain: 0.025, startFreq: 500, endFreq: 80, filterType: 'lowpass', q: 0.7 });
+                break;
+            case 'volcanic':
+                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 2.4, endFreq: root * 0.8, dur: 1.2, gain: 0.06, filterType: 'lowpass', filterFreq: root * 8 });
+                this._spawnFxNoise(dest, { dur: 0.7, gain: 0.03, startFreq: 1600, endFreq: 180, filterType: 'lowpass', q: 0.7 });
+                break;
+            case 'crystalline':
+            case 'crystalloid':
+            case 'glacial':
+            case 'arctic':
+                this._spawnFxCluster(dest, {
+                    baseFreq: root * 6.5,
+                    ratios: biomeId === 'crystalloid' ? [1, 9 / 8, 3 / 2, 2, 5 / 2] : [1, 5 / 4, 3 / 2, 2],
+                    wave: 'sine',
+                    gain: 0.02,
+                    dur: 0.28,
+                    spacing: 0.045,
+                    endMul: 0.98
+                });
+                break;
+            case 'desert':
+                this._spawnFxNoise(dest, { dur: 1.1, gain: 0.03, startFreq: 2600, endFreq: 400, filterType: 'bandpass', q: 0.7 });
+                this._spawnFxCluster(dest, { baseFreq: root * 3.6, ratios: [1, 6 / 5, 3 / 2], wave: 'triangle', gain: 0.018, dur: 0.16, spacing: 0.09, endMul: 0.92 });
+                break;
+            case 'nebula':
+            case 'ethereal':
+                this._spawnFxCluster(dest, { baseFreq: root * 4.8, ratios: [1, 5 / 4, 3 / 2, 2], wave: 'sine', gain: 0.02, dur: 0.65, spacing: 0.08, endMul: 1.01 });
+                break;
+            default:
+                this._spawnFxTone(dest, { wave: 'sine', startFreq: root * 4, endFreq: root * 2.6, dur: 0.4, gain: 0.022 });
+                break;
+        }
+    }
+
+    _getTensionState(planet, stepIndex = 0) {
+        const profile = this._tensionProfile || this._getTensionProfile(planet);
+        const cycleSteps = Math.max(1, this.transport?.cycleSteps || planet?.ac?.stepCount || 16);
+        const cyclePos = ((stepIndex % cycleSteps) + cycleSteps) % cycleSteps / cycleSteps;
+        const energy = this._clamp(this.tension || 0, 0, 1);
+        const phaseAngle = (this._tensionTick || 0) * profile.pulseRate + cyclePos * Math.PI * 2 + profile.phaseOffset;
+        const pocket = 0.5 + Math.sin(phaseAngle) * 0.5;
+
+        let phase = 'DORMANT';
+        if (this._climaxStartedDrain) phase = 'FALLOUT';
+        else if (this._climaxFired || energy >= Math.min(0.98, profile.climaxThreshold + 0.06)) phase = 'CLIMAX';
+        else if (energy >= profile.surgePoint) phase = 'SURGE';
+        else if (energy >= profile.buildPoint) phase = 'BUILD';
+        else if (energy >= profile.lowPoint) phase = 'STIR';
+
+        return { phase, energy, cyclePos, pocket, profile };
+    }
+
+    _getRhythmState(planet, stepIndex, barCount, rng) {
+        const tension = this._getTensionState(planet, stepIndex);
+        const profile = tension.profile;
+        const density = this._clamp((planet?.melodyDensity || 0.05) * 4.5, 0.2, 1.4);
+        const pocketLift = Math.max(0, tension.pocket - 0.42);
+        const phaseBoost = tension.phase === 'SURGE'
+            ? 0.08
+            : tension.phase === 'CLIMAX'
+                ? 0.14
+                : tension.phase === 'FALLOUT'
+                    ? -0.05
+                    : 0;
+        const fillModulo = Math.max(2, Math.round(profile.fillEvery || 4));
+        const fillBar = (barCount % fillModulo) === fillModulo - 1;
+        const fillWindow = tension.cyclePos >= profile.fillStart;
+        const preferredFillVoices = (profile.fillVoices || []).filter(v => typeof v === 'string');
+        const preferredPolyVoices = (profile.polyVoices || []).filter(v => typeof v === 'string');
+
+        return {
+            phase: tension.phase,
+            energy: tension.energy,
+            chaosChance: this._clamp(
+                Math.max(0, tension.energy - profile.surgePoint) * 1.2 * profile.chaosBias
+                + (tension.phase === 'CLIMAX' ? 0.05 * profile.chaosBias : 0),
+                0,
+                0.55
+            ),
+            ghostChance: this._clamp(
+                (0.045 + tension.energy * 0.08 + pocketLift * 0.12) * profile.ghostBias,
+                0.01,
+                0.45
+            ),
+            fillActive: this._fillsEnabled && fillWindow && fillBar
+                && tension.energy > Math.max(profile.lowPoint, profile.buildPoint - 0.08),
+            fillChance: this._clamp(
+                (0.12 + tension.energy * 0.24 + phaseBoost + pocketLift * 0.08) * profile.fillBias,
+                0.04,
+                0.95
+            ),
+            accentChance: this._clamp(
+                (0.03 + tension.energy * 0.12 + pocketLift * 0.08) * profile.accentBias,
+                0.02,
+                0.52
+            ),
+            kickPush: this._clamp(
+                (tension.energy * 0.05 + (tension.phase === 'SURGE' ? 0.05 : 0)) * profile.kickBias * density,
+                0,
+                0.32
+            ),
+            snarePush: this._clamp(
+                (tension.energy * 0.045 + (tension.phase === 'CLIMAX' ? 0.045 : 0)) * profile.snareBias * density,
+                0,
+                0.24
+            ),
+            hatPush: this._clamp(
+                (0.02 + tension.energy * 0.1 + Math.abs(tension.pocket - 0.5) * 0.16) * profile.hatBias,
+                0,
+                0.5
+            ),
+            openHatChance: this._clamp(
+                (0.06 + tension.energy * 0.14 + (tension.phase === 'SURGE' ? 0.08 : 0)) * profile.openHatBias,
+                0.03,
+                0.72
+            ),
+            extraVoiceChance: this._clamp(
+                (0.08 + tension.energy * 0.14 + (tension.phase === 'BUILD' ? 0.04 : 0)) * profile.extraBias,
+                0.02,
+                0.95
+            ),
+            velocityLift: this._clamp(
+                1 + tension.energy * 0.18 + (tension.phase === 'CLIMAX' ? 0.12 : tension.phase === 'FALLOUT' ? -0.06 : 0),
+                0.82,
+                1.36
+            ),
+            fillVoices: preferredFillVoices,
+            polyVoices: preferredPolyVoices,
+        };
+    }
+
+    _setManagedTimeout(fn, delayMs) {
+        let timeoutId = null;
+        timeoutId = setTimeout(() => {
+            const idx = this.intervals.indexOf(timeoutId);
+            if (idx !== -1) this.intervals.splice(idx, 1);
+            fn();
+        }, delayMs);
+        this.intervals.push(timeoutId);
+        return timeoutId;
+    }
+
+    _buildTransport(planet) {
+        const bpm = planet?.bpm || 120;
+        const cycleSteps = this._clamp(Math.round(planet?.ac?.stepCount || 16), 4, 32);
+        const stepSeconds = 15 / bpm; // 16th-note grid shared across sequencers
+        return {
+            bpm,
+            cycleSteps,
+            stepSeconds,
+            stepMs: stepSeconds * 1000,
+            cycleMs: stepSeconds * 1000 * cycleSteps,
+        };
+    }
+
+    _fitPatternToCycle(pattern, targetLength) {
+        const source = Array.isArray(pattern) && pattern.length ? pattern : [0];
+        if (!Number.isFinite(targetLength) || targetLength <= 0) return source.slice();
+        if (source.length === targetLength) return source.slice();
+
+        const projected = new Array(targetLength).fill(0);
+        source.forEach((value, index) => {
+            if (!value) return;
+            const mappedIndex = Math.min(targetLength - 1, Math.floor((index / source.length) * targetLength));
+            projected[mappedIndex] = Math.max(projected[mappedIndex], value);
+        });
+        return projected;
+    }
+
+    _getMelodyStride(planet, cycleSteps) {
+        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
+        let stride = density >= 0.2 ? 1 : density >= 0.09 ? 2 : 4;
+        if (cycleSteps <= 8 && stride > 1) stride -= 1;
+        return this._clamp(stride, 1, cycleSteps);
+    }
+
+    _getTargetRestProbability(planet, opts = {}) {
+        const cycleSteps = Math.max(1, opts.cycleSteps || this.transport?.cycleSteps || 16);
+        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
+        const biomeId = planet?.biome?.id;
+        const densityBias = 0.55 + (this._density * 0.9);
+        let target = 0.84 - (density * 2.25 * densityBias);
+
+        if (opts.isResponse) target -= 0.06;
+        if ((opts.cycleStep || 0) === 0) target -= 0.05;
+        if (opts.isPhraseEnd) target += 0.18;
+        target -= this._clamp((opts.tension || 0) * 0.12, 0, 0.12);
+
+        let phraseCap = Math.max(2, Math.round(cycleSteps * (0.32 + (1 - density) * 0.08)));
+        if (biomeId === 'fungal') {
+            target -= 0.05;
+            if (((opts.cycleStep || 0) % 3) === 0) target -= 0.035;
+            if (opts.isResponse) target -= 0.025;
+            if (opts.isPhraseEnd) target -= 0.07;
+            phraseCap = Math.max(2, Math.round(cycleSteps * 0.22));
+        }
+        if (this._phraseLength >= phraseCap) {
+            target += Math.min(0.26, (this._phraseLength - phraseCap + 1) * 0.08);
+        }
+        if (cycleSteps <= 7) target += 0.04;
+
+        return this._clamp(target, 0.08, 0.92);
+    }
+
+    _getAdditiveVoiceLifetime(name, atk, dur) {
+        const baseLifetime = Math.max(0.4, (atk || 0) + (dur || 0));
+        switch (name) {
+            case 'marimba': return Math.min(baseLifetime, 2.6) + 0.3;
+            case 'metallic': return 10.5;
+            case 'crystal_chimes': return 15.8;
+            case 'gong': return 20.8;
+            case 'brass_pad': return Math.max(atk || 0, 1.5) + (dur || 0) + 0.9;
+            default: return baseLifetime + 0.8;
+        }
+    }
+
+    _getPerformanceProfile(planet) {
+        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
+        const stepSeconds = this.transport?.stepSeconds || 0.125;
+        const activeNodes = this.nodes?.size || 0;
+        const nodePressure = this._clamp((activeNodes - 170) / 220, 0, 1);
+        const speedPressure = this._clamp((0.14 - stepSeconds) / 0.07, 0, 1);
+        const densityPressure = this._clamp((density - 0.1) / 0.18, 0, 1);
+        const pressure = this._clamp(nodePressure * 0.55 + speedPressure * 0.2 + densityPressure * 0.25, 0, 1);
+        return {
+            density,
+            stepSeconds,
+            activeNodes,
+            pressure,
+            scalar: 1 - pressure * 0.7,
+        };
+    }
+
+    _pickMelodyWave(planet, ac, rng) {
+        const waves = ac?.melodyWaves?.length ? ac.melodyWaves : ['sine'];
+        const perf = this._getPerformanceProfile(planet);
+        const now = this.ctx?.currentTime || 0;
+        const weighted = [];
+
+        waves.forEach((wave) => {
+            const cost = MELODY_VOICE_COSTS[wave] || 0;
+            const readyAt = this._voiceCooldowns[wave] || 0;
+            let weight = 1.15 - cost * perf.pressure * 0.9;
+
+            if (readyAt > now) weight *= 0.08;
+            if (perf.activeNodes > 280 && cost > 0.4) weight *= 0.22;
+            if (perf.pressure > 0.55 && wave === 'granular_cloud') weight *= 0.15;
+            if (perf.pressure > 0.45 && wave === 'drone_morph') weight *= 0.35;
+
+            if (weight < 0.12) return;
+            const copies = Math.max(1, Math.round(this._clamp(weight, 0.12, 1.4) * 6));
+            for (let i = 0; i < copies; i++) weighted.push(wave);
+        });
+
+        if (weighted.length) return rng.pick(weighted);
+        return waves.find((wave) => (MELODY_VOICE_COSTS[wave] || 0) < 0.4) || waves[0];
+    }
+
+    _getAdditiveVoiceEnvelope(wType, rng, atk, dur) {
+        switch (wType) {
+            case 'choir': return { atk: rng.range(0.6, 1.8), dur: rng.range(2.4, 5.2) };
+            case 'crystal_chimes': return { atk: 0.02, dur: rng.range(2.5, 6.0) };
+            case 'drone_morph': return { atk: rng.range(0.2, 0.9), dur: rng.range(1.8, 4.5) };
+            case 'gong': return { atk: 0.03, dur: rng.range(5.0, 9.0) };
+            case 'granular_cloud': return { atk: rng.range(0.03, 0.18), dur: rng.range(0.5, 1.6) };
+            case 'marimba': return { atk: 0.02, dur: rng.range(0.4, 1.0) };
+            case 'metallic': return { atk: 0.04, dur: rng.range(1.4, 3.6) };
+            case 'strings': return { atk: rng.range(0.8, 2.0), dur: rng.range(3.0, 6.5) };
+            case 'subpad': return { atk: rng.range(1.2, 2.5), dur: rng.range(3.5, 6.5) };
+            case 'theremin': return { atk: rng.range(0.12, 0.45), dur: rng.range(1.4, 3.5) };
+            case 'vowel_morph': return { atk: rng.range(0.5, 1.5), dur: rng.range(2.0, 4.5) };
+            default: return { atk, dur };
+        }
+    }
+
+    _shapeMelodyEnvelope(wType, atk, dur, planet) {
+        const perf = this._getPerformanceProfile(planet);
+        const requestedSpan = Math.max(0.12, (atk || 0) + (dur || 0));
+        let maxSpan = (perf.stepSeconds * (12 + (1 - perf.density) * 14)) * (1.05 - perf.pressure * 0.2);
+        const cost = MELODY_VOICE_COSTS[wType] || 0;
+
+        if (cost > 0.75) maxSpan *= 0.72;
+        else if (cost > 0.45) maxSpan *= 0.86;
+
+        if (['pulse', 'pluck', 'wood', 'marimba'].includes(wType)) maxSpan *= 0.8;
+        if (['theremin', 'vowel_morph', 'choir'].includes(wType)) maxSpan *= 1.08;
+
+        maxSpan = this._clamp(maxSpan, 0.65, 8.5);
+        if (requestedSpan <= maxSpan) return { atk, dur };
+
+        const attackRatio = this._clamp((atk || 0) / requestedSpan, 0.08, 0.6);
+        const nextAtk = this._clamp(maxSpan * attackRatio, 0.015, Math.max(0.08, maxSpan * 0.55));
+        const nextDur = Math.max(0.12, maxSpan - nextAtk);
+        return { atk: nextAtk, dur: nextDur };
+    }
+
+    _getMoonWavePool(planet) {
+        switch (planet?.biome?.id) {
+            case 'crystalline':
+            case 'crystalloid':
+            case 'glacial':
+            case 'arctic':
+                return ['sine', 'triangle'];
+            case 'oceanic':
+            case 'ethereal':
+            case 'nebula':
+                return ['sine'];
+            case 'organic':
+            case 'fungal':
+            case 'desert':
+                return ['triangle', 'sine'];
+            case 'corrupted':
+            case 'quantum':
+            case 'storm':
+            case 'psychedelic':
+                return ['triangle', 'square'];
+            case 'volcanic':
+            case 'abyssal':
+                return ['triangle', 'sine'];
+            default:
+                return ['sine', 'triangle'];
+        }
+    }
+
+    _buildMoonProfile(planet) {
+        const moonCount = this._clamp(Math.round(planet?.numMoons || 0), 0, 4);
+        if (!moonCount) return [];
+
+        const rng = new RNG((planet?.seed || 0) + 205000);
+        const waves = this._getMoonWavePool(planet);
+        const panPositions = moonCount === 1
+            ? [0]
+            : moonCount === 2
+                ? [-0.42, 0.42]
+                : moonCount === 3
+                    ? [-0.58, 0, 0.58]
+                    : [-0.66, -0.22, 0.22, 0.66];
+        const profiles = [];
+
+        for (let i = 0; i < moonCount; i++) {
+            const leadingMoon = i === 0;
+            const delayBase = 0.75 + i * 0.85;
+            let degreeShift = rng.pick([1, 2, 4, 5]);
+            if (!leadingMoon && rng.bool(0.4)) degreeShift += 1;
+            if (leadingMoon && moonCount > 1 && rng.bool(0.28)) degreeShift = -1;
+
+            profiles.push({
+                delaySteps: delayBase + rng.pick([0, 0.25, 0.5]),
+                degreeShift,
+                octaveOffset: (!leadingMoon && rng.bool(0.4)) ? 1 : 0,
+                gain: this._clamp(0.11 - i * 0.022, 0.05, 0.11),
+                chance: this._clamp(0.64 - i * 0.16, 0.22, 0.68),
+                pan: (panPositions[i] ?? 0) + rng.range(-0.08, 0.08),
+                detuneCents: rng.range(-9, 9),
+                filterMul: 2.3 + i * 0.55 + rng.range(-0.2, 0.25),
+                wave: rng.pick(waves),
+            });
+        }
+
+        return profiles;
+    }
+
+    _shiftScaleStep(planet, baseStep, degreeShift = 0, octaveOffset = 0) {
+        const scale = Array.isArray(planet?.scale) && planet.scale.length ? planet.scale : null;
+        if (!scale) return baseStep + degreeShift + octaveOffset * 12;
+
+        const norm = ((baseStep % 12) + 12) % 12;
+        let degreeIndex = scale.indexOf(norm);
+        if (degreeIndex === -1) {
+            let nearestIdx = 0;
+            let nearestDist = Infinity;
+            scale.forEach((value, idx) => {
+                const direct = Math.abs(value - norm);
+                const wrapped = Math.min(direct, 12 - direct);
+                if (wrapped < nearestDist) {
+                    nearestDist = wrapped;
+                    nearestIdx = idx;
+                }
+            });
+            degreeIndex = nearestIdx;
+        }
+
+        const scaleOctave = Math.floor(baseStep / 12);
+        const absoluteDegree = degreeIndex + scaleOctave * scale.length + degreeShift + octaveOffset * scale.length;
+        const wrappedDegree = ((absoluteDegree % scale.length) + scale.length) % scale.length;
+        const octave = Math.floor((absoluteDegree - wrappedDegree) / scale.length);
+        return scale[wrappedDegree] + octave * 12;
+    }
+
+    // Each moon acts like a quiet satellite canon: a delayed, scale-aware answer to the lead line.
+    _scheduleMoonCanons(planet, dest, step, meta = {}) {
+        if (!this.ctx || !this.playing || !Number.isFinite(step)) return;
+        const moons = this._moonProfile || [];
+        if (!moons.length) return;
+
+        const perf = meta.perf || this._getPerformanceProfile(planet);
+        if (perf.pressure > 0.78) return;
+
+        const transport = this.transport || this._buildTransport(planet);
+        const rng = new RNG((planet?.seed || 0) + 111000 + (this.stepNote * 37) + ((meta.phrasePos || 0) * 17));
+        const modeBias = meta.mode === 'MOTIF' ? 0.16 : meta.mode === 'RESPONSE' ? 0.1 : 0;
+        const phraseBias = meta.isPhraseEnd ? 0.12 : meta.isResponse ? 0.06 : 0;
+        const baseChance = this._clamp(
+            (0.05 + moons.length * 0.07 + modeBias + phraseBias + (this.tension || 0) * 0.08) * (0.68 + perf.scalar * 0.32),
+            0.06,
+            0.64
+        );
+        if (rng.range(0, 1) >= baseChance) return;
+
+        const ctx = this.ctx;
+        const moonDest = this._moonBus || dest;
+        if (!moonDest) return;
+        const nyquist = ctx.sampleRate / 2;
+        let scheduledCount = 0;
+        let firstDelaySeconds = Infinity;
+
+        moons.forEach((moon, idx) => {
+            if (rng.range(0, 1) > moon.chance * (0.65 + perf.scalar * 0.35)) return;
+
+            const shiftedStep = this._shiftScaleStep(planet, step, moon.degreeShift, moon.octaveOffset);
+            let freq = this._getStepFrequency(planet, shiftedStep, 1);
+            if (!Number.isFinite(freq)) return;
+
+            freq *= Math.pow(2, moon.detuneCents / 1200);
+            freq = this._clamp(freq, 60, nyquist - 240);
+
+            const start = ctx.currentTime + moon.delaySteps * transport.stepSeconds;
+            const dur = this._clamp(
+                transport.stepSeconds * (1.25 + idx * 0.4 + (meta.isPhraseEnd ? 0.55 : 0.18)),
+                0.18,
+                1.6
+            );
+            const peak = moon.gain * (meta.isPhraseEnd ? 1.12 : meta.mode === 'MOTIF' ? 1.06 : 1) * (0.86 + rng.range(0, 0.22));
+            scheduledCount++;
+            firstDelaySeconds = Math.min(firstDelaySeconds, moon.delaySteps * transport.stepSeconds);
+
+            const osc = ctx.createOscillator();
+            const filt = ctx.createBiquadFilter();
+            const env = ctx.createGain();
+            const pan = ctx.createStereoPanner();
+
+            osc.type = this._resolveOscType(moon.wave, 'sine');
+            osc.frequency.setValueAtTime(Math.min(nyquist - 240, freq * (1.02 + idx * 0.015)), start);
+            osc.frequency.exponentialRampToValueAtTime(freq, start + Math.min(0.18, dur * 0.32));
+
+            filt.type = 'bandpass';
+            filt.frequency.value = this._clamp(freq * moon.filterMul, 280, Math.min(nyquist - 200, 6800 + idx * 650));
+            filt.Q.value = 0.85 + idx * 0.25;
+
+            pan.pan.value = this._clamp(moon.pan, -0.95, 0.95);
+
+            env.gain.setValueAtTime(0, start);
+            env.gain.linearRampToValueAtTime(peak, start + Math.min(0.04, dur * 0.22));
+            env.gain.exponentialRampToValueAtTime(0.001, start + dur);
+
+            osc.connect(filt);
+            filt.connect(env);
+            env.connect(pan);
+            pan.connect(moonDest);
+            osc.start(start);
+            osc.stop(start + dur + 0.05);
+            this.nodes.pushTransient(moon.delaySteps * transport.stepSeconds + dur + 0.2, osc, filt, env, pan);
+        });
+
+        if (scheduledCount > 0 && Number.isFinite(firstDelaySeconds)) {
+            this._setManagedTimeout(() => {
+                if (!this.playing) return;
+                this._moonProcCount += scheduledCount;
+                this._moonLastBurst = scheduledCount;
+                this._lastMoonProcAt = this.ctx?.currentTime || 0;
+            }, firstDelaySeconds * 1000);
+        }
+    }
+
+    _applyBiomeMelodyGesture(planet, wType, mode, phrasePos, isPhraseEnd, atk, dur) {
+        if (planet?.biome?.id !== 'fungal') return { atk, dur };
+
+        let nextAtk = atk;
+        let nextDur = dur;
+
+        if (['marimba', 'wood', 'pluck'].includes(wType)) {
+            nextAtk = Math.min(nextAtk, 0.035);
+            nextDur *= 0.68;
+        } else if (['hollow_pipe', 'reed', 'pulse'].includes(wType)) {
+            nextAtk = Math.min(nextAtk, 0.12);
+            nextDur *= 0.62;
+        } else if (wType === 'crystal_chimes') {
+            nextAtk = Math.min(nextAtk, 0.04);
+            nextDur *= 0.58;
+        } else {
+            nextAtk = Math.min(nextAtk, 0.22);
+            nextDur *= 0.72;
+        }
+
+        if (mode === 'MOTIF') nextDur *= 0.84;
+        else if (mode === 'RESPONSE') nextDur *= 0.78;
+
+        if (!isPhraseEnd && phrasePos <= 2) nextDur *= 0.82;
+        if (isPhraseEnd) nextDur *= 0.9;
+
+        return {
+            atk: Math.max(0.008, nextAtk),
+            dur: Math.max(0.12, nextDur),
+        };
+    }
+
+    _markMelodyVoiceUsage(wType, planet) {
+        if (!this.ctx || !MELODY_VOICE_COOLDOWNS[wType]) return;
+        const perf = this._getPerformanceProfile(planet);
+        this._voiceCooldowns[wType] = this.ctx.currentTime + (MELODY_VOICE_COOLDOWNS[wType] * (0.8 + perf.pressure * 0.9));
+    }
+
+    _normalizeChordSymbol(symbol) {
+        return `${symbol || 'I'}`.replace(/Â/g, '').trim() || 'I';
+    }
+
+    _getChordFunctionKey(symbol) {
+        return this._normalizeChordSymbol(symbol).replace(/[^ivIV]/g, '') || 'I';
+    }
+
+    _getChordDegreeIndex(symbol, scaleLength) {
+        const roman = this._getChordFunctionKey(symbol).toUpperCase();
+        const degreeOrder = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+        const rawIndex = Math.max(0, degreeOrder.indexOf(roman));
+        if (!scaleLength || scaleLength >= degreeOrder.length) return rawIndex;
+        return Math.min(rawIndex, scaleLength - 1);
+    }
+
+    _buildScaleChord(symbol, planet) {
+        const normalized = this._normalizeChordSymbol(symbol);
+        const scale = Array.isArray(planet?.scale) && planet.scale.length ? planet.scale : null;
+        if (!scale || scale.length < 3) return CHORD_TEMPLATES[normalized] || [0, 4, 7];
+
+        const rootIndex = this._getChordDegreeIndex(normalized, scale.length);
+        const chord = [];
+        for (let i = 0; i < 3; i++) {
+            const absIndex = rootIndex + i * 2;
+            const scaleIndex = absIndex % scale.length;
+            const octave = Math.floor(absIndex / scale.length);
+            chord.push(scale[scaleIndex] + octave * 12);
+        }
+
+        for (let i = 1; i < chord.length; i++) {
+            while (chord[i] <= chord[i - 1]) chord[i] += 12;
+        }
+        return chord;
+    }
+
     _osc(type, freq, gain, dest) {
         const o = this.ctx.createOscillator();
         const g = this.ctx.createGain();
-        o.type = type; o.frequency.value = freq; g.gain.value = gain;
+        o.type = this._resolveOscType(type); o.frequency.value = freq; g.gain.value = gain;
         o.connect(g); g.connect(dest); o.start();
         this.nodes.push(o, g);
         return { osc: o, gain: g };
@@ -138,9 +2213,13 @@ export class AudioEngine {
     _lfo(rate, depth, param, type = 'sine') {
         const l = this.ctx.createOscillator();
         const g = this.ctx.createGain();
-        l.type = type; l.frequency.value = rate; g.gain.value = depth;
+        l.type = type; l.frequency.value = rate;
+        g.gain.value = 0; // Start at 0
+        g.gain.setValueAtTime(0, this.ctx.currentTime);
+        g.gain.linearRampToValueAtTime(depth, this.ctx.currentTime + 0.5); // Fade in lfo depth
         l.connect(g); g.connect(param); l.start();
         this.nodes.push(l, g);
+        return g; // Return gain node for live depth control
     }
 
     // _lfoOnce: LFO that runs for `dur` seconds then stops (for pitch bend, envelope-tied vibrato)
@@ -162,79 +2241,108 @@ export class AudioEngine {
         // Tier 4: Strict Determinism & Scaled Generation
         // A unique RNG seed composed of the planet seed + the total number of notes fired
         const rng = new RNG(planet.seed + 1000 + this.stepNote++);
+        const biomeId = planet?.biome?.id;
 
-        let step;
-        // 1. Call & Response: 15% chance to repeat a previous motif
-        if (this._melodyHistory.length >= 4 && rng.range(0, 1) < 0.15) {
+        // Motif / Phrase logic
+        let step = null;
+        const phrasePos = this.stepNote % 8; // 8-step micro-phrases
+        const isResponse = (this.stepNote % 16) >= 8;
+        const isPhraseEnd = phrasePos === 7;
+        const motifChance = biomeId === 'fungal' ? (isResponse ? 0.62 : 0.26) : (isResponse ? 0.4 : 0.15);
+        const responseChance = biomeId === 'fungal' ? (isResponse ? 0.46 : 0.08) : (isResponse ? 0.35 : 0.05);
+
+        // 1. Motif Recall (Bank-based)
+        // High chance of motif during response, or some chance anytime
+        if (this._motifEnabled && planet.motifBank?.length > 0 && rng.range(0, 1) < motifChance) {
+            this._melodyMode = 'MOTIF';
+            const bank = planet.motifBank[this._activeMotifIdx];
+            step = bank[phrasePos % bank.length];
+        }
+        // 2. Call & Response: History recall
+        else if (this._melodyHistory.length >= 4 && rng.range(0, 1) < responseChance) {
             this._melodyMode = 'RESPONSE';
+            const variation = biomeId === 'fungal' ? rng.int(-1, 1) : rng.int(-1, 2);
             const hIdx = this.stepNote % 4;
-            // Play a slightly varied version of the last motif (±1-2 scale steps)
-            const variation = rng.int(-1, 2);
             step = this._melodyHistory[this._melodyHistory.length - 4 + hIdx] + variation;
         }
-        // 2. Planet's 4-note motif: 25% chance
-        else if (this._motifEnabled && rng.range(0, 1) < 0.25) {
-            this._melodyMode = 'MOTIF';
-            step = planet.motif[this.stepNote % 4];
-        }
-        // 3. Normal generative logic
+        // 3. Generative structure (Scale weights)
         else {
-            // Consonance-weighted Markov transition
             const WEIGHTS = { 0: 4, 7: 3, 12: 4, 4: 2, 3: 2, 9: 2, 5: 2, 2: 1, 10: 1, 11: 0.4, 1: 0.3, 6: 0.2 };
             const sc = planet.scale;
             const pool = [];
             sc.forEach(s => {
                 const norm = ((s % 12) + 12) % 12;
+                const isRestNote = norm === 0 || norm === 7;
+
+                let structBias = 1;
+                if (isResponse || isPhraseEnd) {
+                    structBias *= isRestNote ? 4 : 0.5; // Resolve
+                } else {
+                    structBias *= !isRestNote ? 2 : 1;  // Tension
+                }
+
                 const tensionBias = (this.tension || 0) > 0.6 && (norm === 6 || norm === 1) ? 2.5 : 1;
-
-                // Chord Tone Bias: 3x weight for notes in the current chord
                 const isChordTone = this._currentChordIntervals.some(ci => ci % 12 === norm);
-                const chordBias = isChordTone ? 3 : 1;
+                let chordBias = isChordTone ? 4 : 1;
+                let motionBias = 1;
+                let fungalBias = 1;
 
-                const w = (WEIGHTS[norm] || 0.5) * tensionBias * chordBias;
+                const chordAudibility = ac && ac.chordAudibility !== undefined ? ac.chordAudibility : 0.5;
+                if (!isChordTone) chordBias *= (1 - chordAudibility * 0.8);
+                if (this.lastStep !== undefined && biomeId === 'fungal') {
+                    const diff = Math.abs(s - this.lastStep);
+                    if (diff <= 2) motionBias *= 2.8;
+                    else if (diff <= 5) motionBias *= 1.85;
+                    else if (diff >= 9) motionBias *= 0.42;
+                }
+                if (biomeId === 'fungal') {
+                    const degreeIndex = sc.indexOf(s);
+                    if (degreeIndex >= 0) {
+                        fungalBias *= 1.02 + ((degreeIndex / Math.max(1, sc.length - 1)) * 0.55);
+                    }
+                    if (!isResponse && !isPhraseEnd && norm === 0) fungalBias *= 0.72;
+                    if (isPhraseEnd && (norm === 3 || norm === 4 || norm === 9)) fungalBias *= 1.3;
+                }
+
+                const w = (WEIGHTS[norm] || 0.5) * tensionBias * chordBias * structBias * motionBias * fungalBias;
                 for (let i = 0; i < Math.max(1, Math.round(w * 2)); i++) pool.push(s);
             });
+
             if (this.lastStep !== undefined) {
                 sc.forEach(s => {
-                    const interval = Math.abs(s - this.lastStep) % 12;
-                    if (interval === 7 || interval === 3 || interval === 4) pool.push(s);
+                    const diff = Math.abs(s - this.lastStep);
+                    if (diff > 0 && diff <= 5) pool.push(s, s); // Leading tone / step-wise motion
                 });
             }
-            step = rng.pick(pool);
+            step = pool.length > 0 ? rng.pick(pool) : sc[0];
             this._melodyMode = 'GENERATIVE';
         }
-        this.lastStep = step;
 
-        // Push to history (max 16 notes)
         this._melodyHistory.push(step);
         if (this._melodyHistory.length > 16) this._melodyHistory.shift();
+
+        if (step === null || isNaN(step)) return; // Note rests here
+
+        this.lastStep = step;
+        this._lastMelodyStep = step;
 
         const oct = ac ? rng.pick(ac.melodyOcts) : rng.pick([2, 3, 4]);
 
         // Tier 4: Microtonal / Just Intonation / Pythagorean override
-        let freq;
-        // Octave multiplier with optional gamelan-style stretch
-        const octMul = Math.pow(planet.octaveStretch || 2, Math.log2(oct));
-        if (planet.useJI && planet.jiRatios) {
-            const norm = ((step % 12) + 12) % 12;
-            let ratio = planet.jiRatios[norm];
-            if (step >= 12) ratio *= (planet.octaveStretch || 1) * 2;
-            if (step <= -12) ratio *= 0.5 / (planet.octaveStretch || 1);
-            freq = planet.rootFreq * octMul * ratio;
-        } else {
-            freq = planet.rootFreq * octMul * Math.pow(2, step / 12);
-        }
+        let freq = this._getStepFrequency(planet, step, oct);
         // Quarter-tone micro-detuning: probabilistic ±50 cents offset
         if ((planet.quarterToneProb || 0) > 0 && rng.next() < planet.quarterToneProb) {
             const centsOff = rng.range(-50, 50);
             freq *= Math.pow(2, centsOff / 1200);
         }
-        // Clamp to audible range (keep generous to preserve variety)
-        freq = Math.max(20, Math.min(freq, (ctx.sampleRate / 2) - 100));
+        // Clamp to audible range and stay safely below Nyquist (sampleRate / 2)
+        const nyquist = ctx.sampleRate / 2;
+        freq = Math.max(20, Math.min(freq || 440, nyquist - 200));
 
         const osc = ctx.createOscillator();
         const env = ctx.createGain();
-        const wType = ac ? rng.pick(ac.melodyWaves) : 'sine';
+        const wType = this._pickMelodyWave(planet, ac, rng);
+        const perf = this._getPerformanceProfile(planet);
 
         let atk = rng.range(0.8, 4.5);
         let dur = rng.range(3.5, 15);
@@ -275,7 +2383,6 @@ export class AudioEngine {
             osc.setPeriodicWave(ctx.createPeriodicWave(real, imag));
             atk = 0.008; dur = rng.range(0.4, 2.5);
         } else if (wType === 'pulse') {
-            // Narrow pulse wave (~10% duty cycle) — nasal, buzzy, synth-like
             const real = new Float32Array(16);
             const imag = new Float32Array(16);
             for (let h = 1; h < 16; h++) {
@@ -283,7 +2390,34 @@ export class AudioEngine {
             }
             osc.setPeriodicWave(ctx.createPeriodicWave(real, imag));
             atk = rng.range(0.2, 1.5); dur = rng.range(2, 10);
+        } else if (wType === 'reed') {
+            // Oboe/Bassoon-like: Strong odd harmonics but with a warm fundamental
+            const real = new Float32Array([0, 1, 0, 0.8, 0.1, 0.5, 0.05, 0.3, 0.02, 0.15, 0.01, 0.08]);
+            const imag = new Float32Array(12);
+            osc.setPeriodicWave(ctx.createPeriodicWave(real, imag));
+            atk = rng.range(0.04, 0.15); dur = rng.range(1.5, 4);
+        } else if (wType === 'electric_piano') {
+            // Tine-like spectrum: High-frequency attack partials, strong fundamental
+            const real = new Float32Array([0, 1, 0.1, 0, 0, 0.4, 0, 0, 0, 0.2, 0, 0, 0, 0, 0.05]);
+            const imag = new Float32Array(15);
+            osc.setPeriodicWave(ctx.createPeriodicWave(real, imag));
+            atk = Math.max(0.01, rng.range(0.01, 0.03)); dur = rng.range(1.5, 6);
+        } else if (wType === 'saw_sync') {
+            // Hard sync simulation: many high partials
+            const real = new Float32Array(32);
+            const imag = new Float32Array(32);
+            for (let h = 1; h < 32; h++) {
+                real[h] = 1 / h;
+                // Add resonant peaks simulating a swept sync oscillator
+                if (h > 8 && h < 14) real[h] *= 2.5;
+            }
+            osc.setPeriodicWave(ctx.createPeriodicWave(real, imag));
+            atk = rng.range(0.05, 0.2); dur = rng.range(1, 4);
         } else if (ADDITIVE_VOICE_NAMES.includes(wType)) {
+            ({ atk, dur } = this._getAdditiveVoiceEnvelope(wType, rng, atk, dur));
+            ({ atk, dur } = this._applyBiomeMelodyGesture(planet, wType, this._melodyMode, phrasePos, isPhraseEnd, atk, dur));
+            ({ atk, dur } = this._shapeMelodyEnvelope(wType, atk, dur, planet));
+            this._markMelodyVoiceUsage(wType, planet);
             // ── Additive synthesis voice (self-contained, returns early)
             // Build a panner for spatial placement, same as normal notes
             const panner = ctx.createPanner();
@@ -302,13 +2436,24 @@ export class AudioEngine {
                 panner.positionX.value = sx; panner.positionY.value = sy; panner.positionZ.value = sz;
             } else if (panner.setPosition) { panner.setPosition(sx, sy, sz); }
             panner.connect(dest);
-            this.nodes.push(panner);
+            this.nodes.pushTransient(this._getAdditiveVoiceLifetime(wType, atk, dur), panner);
             buildVoice(wType, ctx, freq, panner, rng, atk, dur, this.nodes);
+            this._scheduleMoonCanons(planet, dest, step, {
+                perf,
+                mode: this._melodyMode,
+                phrasePos,
+                isPhraseEnd,
+                isResponse,
+            });
             return; // voices.js handles full envelope - no further processing needed
         } else {
-            osc.type = wType;
+            osc.type = this._resolveOscType(wType);
         }
 
+
+        ({ atk, dur } = this._applyBiomeMelodyGesture(planet, wType, this._melodyMode, phrasePos, isPhraseEnd, atk, dur));
+        ({ atk, dur } = this._shapeMelodyEnvelope(wType, atk, dur, planet));
+        this._markMelodyVoiceUsage(wType, planet);
 
         osc.frequency.value = freq;
         const now = ctx.currentTime;
@@ -351,14 +2496,24 @@ export class AudioEngine {
         osc.onended = () => { try { osc.disconnect(); env.disconnect(); panner.disconnect(); } catch (e) { } };
 
         // ── Pitch bend vibrato (gated by flag)
-        const bendCents = (this._pitchBendEnabled && ac && ac.pitchBend) ? ac.pitchBend : 0;
+        const bendScale = biomeId === 'fungal' ? 0.55 : 1;
+        const bendCents = (this._pitchBendEnabled && ac && ac.pitchBend) ? ac.pitchBend * bendScale : 0;
         if (bendCents > 0) {
             const bendHz = freq * (Math.pow(2, bendCents / 1200) - 1);
             this._lfoOnce(ctx, rng.range(3, 9), bendHz * rng.range(0.3, 1), osc.frequency, now, atk + dur);
         }
 
         // ── Chord layer (gated by flag)
-        const chordProb = (this._chordEnabled && ac && ac.chordProb) ? ac.chordProb : 0;
+        this._scheduleMoonCanons(planet, dest, step, {
+            perf,
+            mode: this._melodyMode,
+            phrasePos,
+            isPhraseEnd,
+            isResponse,
+        });
+
+        const chordLoadScale = perf.activeNodes > 280 ? 0.3 : (0.55 + perf.scalar * 0.45);
+        const chordProb = ((this._chordEnabled && ac && ac.chordProb) ? ac.chordProb : 0) * chordLoadScale;
         if (chordProb > 0 && rng.next() < chordProb && planet.scale.length >= 3) {
             const intervals = [3, 4, 5, 7, 8, 9]; // thirds, fourth, fifths, sixths
             const numNotes = rng.bool(0.4) ? 2 : 1;
@@ -368,10 +2523,10 @@ export class AudioEngine {
                 const co = ctx.createOscillator(), ce = ctx.createGain();
                 const wType2 = ac ? rng.pick(ac.melodyWaves) : 'sine';
                 // Re-use same waveform type as the main note (simplified)
-                if (['bell', 'glass', 'wood', 'organ', 'pluck', 'brass', 'pulse'].includes(wType2) || ADDITIVE_VOICE_NAMES.includes(wType2)) {
-                    // For chord tones, use the plain oscillator type to keep CPU low
-                    co.type = ['sawtooth', 'triangle', 'sine', 'square'][rng.int(0, 4)];
-                } else { co.type = wType2 || 'sine'; }
+                const validNative = ['sine', 'square', 'sawtooth', 'triangle'];
+                if (validNative.includes(wType2)) {
+                    co.type = wType2;
+                } else { co.type = validNative[rng.int(0, 4)]; }
                 co.frequency.value = chordFreq;
                 ce.gain.setValueAtTime(0, now);
                 ce.gain.linearRampToValueAtTime(0.08 + rng.range(0, 0.05), now + atk * 1.2);
@@ -385,16 +2540,19 @@ export class AudioEngine {
         }
 
         // ── Arp run (gated by flag)
-        const arpProb = (this._arpEnabled && ac && ac.arpProb) ? ac.arpProb : 0;
+        const arpLoadScale = perf.activeNodes > 250 ? 0.15 : perf.scalar;
+        const arpProb = ((this._arpEnabled && ac && ac.arpProb) ? ac.arpProb : 0) * arpLoadScale;
         if (arpProb > 0 && rng.next() < arpProb && planet.scale.length >= 4) {
             const sc = planet.scale;
-            const startIdx = rng.int(0, Math.max(1, sc.length - 4));
-            const arpNotes = sc.slice(startIdx, startIdx + 4);
+            const arpSpan = perf.pressure > 0.6 ? 2 : (perf.pressure > 0.35 ? 3 : 4);
+            const startIdx = rng.int(0, Math.max(1, sc.length - arpSpan));
+            const arpNotes = sc.slice(startIdx, startIdx + arpSpan);
             const arpSpeed = rng.range(0.08, 0.22); // seconds between notes
             arpNotes.forEach((s, i) => {
-                const arpFreq = planet.rootFreq * (oct || 3) * Math.pow(2, s / 12);
+                const arpFreq = this._getStepFrequency(planet, s, oct || 1);
                 const ao = ctx.createOscillator(), ae = ctx.createGain();
-                ao.type = ac ? (ac.melodyWaves.find(w => !['bell', 'glass', 'wood', 'organ', 'pluck', 'brass', 'pulse'].includes(w) && !ADDITIVE_VOICE_NAMES.includes(w)) || 'sine') : 'sine';
+                const nw = ac ? ac.melodyWaves.find(w => NATIVE_OSC_TYPES.has(w)) : 'sine';
+                ao.type = this._resolveOscType(nw, 'sine');
                 ao.frequency.value = arpFreq;
                 const t0 = now + i * arpSpeed;
                 ae.gain.setValueAtTime(0, t0);
@@ -411,7 +2569,11 @@ export class AudioEngine {
         this._boot();
         this.stop();
         this.planet = planet;
+        this._voiceCooldowns = Object.create(null);
+        this._resetSteps();
         const ctx = this.ctx, p = planet, ac = p.ac;
+        const transport = this._buildTransport(p);
+        this.transport = transport;
 
         // Effect chain -> routes into EQ -> MasterGain
         const conv = this._buildReverb(p.reverbDecay, p.seed);
@@ -420,6 +2582,7 @@ export class AudioEngine {
         this.reverbGain = wet; this.dryGain = dry;
         conv.connect(wet); wet.connect(this.eqLow);
         dry.connect(this.eqLow);
+        this.nodes.push(conv, wet, dry);
 
         // Delay — feedback & time vary per biome.
         // IMPORTANT: clamp feedback gain to 0.75 to prevent runaway infinite echo.
@@ -463,17 +2626,25 @@ export class AudioEngine {
         effectNode.connect(del);
         effectNode.connect(dry);
 
-        this._lfo(p.lfoRate * 0.12, p.filterFreq * 0.20, filt.frequency);
+        this.tensionLfos = [];
+        const fLfo = this._lfo(p.lfoRate * 0.12, p.filterFreq * 0.20, filt.frequency);
+        if (fLfo) this.tensionLfos.push(fLfo);
 
         // ── Harmony & Phrasing Initialization ──
         this._progression = p.progression;
         this._chordIndex = 0;
-        this._updateChord();
+        // _updateChord() will be called once at the end of start() to kick off the recursive loop
         this._phraseLength = 0;
         this._restProb = 0.05;
+        this.lastStep = undefined;
+        this._lastMelodyStep = null;
+        this._melodyHistory = [];
+        this._activeMotifIdx = 0;
+        this._motifSwapCounter = 0;
 
         // Drone — Tier 4: Custom Wavetable base + dynamic FM
         const base = p.rootFreq;
+        this.harmonicNodes = { pads: [] };
 
         // Custom Seeded PeriodicWave for drone fundamental
         const wRng = new RNG(p.seed);
@@ -484,15 +2655,19 @@ export class AudioEngine {
         }
         const wave = ctx.createPeriodicWave(real, imag);
         const baseOsc = ctx.createOscillator(); baseOsc.setPeriodicWave(wave);
-        const baseGain = ctx.createGain(); baseGain.gain.value = 0.4;
+        const baseGain = ctx.createGain();
+        baseGain.gain.value = 0.4 * (p.ac.chordAudibility !== undefined ? p.ac.chordAudibility : 0.5);
         baseOsc.frequency.value = base * 0.5; // sub octave
         baseOsc.connect(baseGain); baseGain.connect(filt);
         baseOsc.start();
         this.nodes.push(baseOsc, baseGain);
+        this.harmonicNodes.baseOsc = baseOsc;
         this._lfo(p.lfoRate * 0.2, base * 0.01, baseOsc.frequency);
 
         const d1 = this._osc(ac.droneWave, base, 0.045, filt);
         const d2 = this._osc(ac.droneWave, base * 2 + p.droneDetune, 0.025, filt);
+        this.harmonicNodes.d1 = d1.osc;
+        this.harmonicNodes.d2 = d2.osc;
 
         // Simple FM synthesis for drone
         const fmMod = ctx.createOscillator(), fmModG = ctx.createGain();
@@ -501,12 +2676,14 @@ export class AudioEngine {
         fmModG.gain.value = this.fmIndexBase;
         this.fmModGainNode = fmModG; // store for tension morphing
         const fmCarrier = ctx.createOscillator(), fmCarrierG = ctx.createGain();
-        fmCarrier.type = ac.droneWave; fmCarrier.frequency.value = base;
-        fmCarrierG.gain.value = 0.04;
+        fmCarrier.type = this._resolveOscType(ac.droneWave); fmCarrier.frequency.value = base;
+        fmCarrierG.gain.value = 0.04 * (p.ac.chordAudibility !== undefined ? p.ac.chordAudibility : 0.5);
         fmMod.connect(fmModG); fmModG.connect(fmCarrier.frequency);
         fmCarrier.connect(fmCarrierG); fmCarrierG.connect(filt);
         fmMod.start(); fmCarrier.start();
         this.nodes.push(fmMod, fmModG, fmCarrier, fmCarrierG);
+        this.harmonicNodes.fmMod = fmMod;
+        this.harmonicNodes.fmCarrier = fmCarrier;
 
         this._lfo(p.lfoRate * 0.3, base * 0.014, d1.osc.frequency);
         this._lfo(p.lfoRate * 0.55, base * 0.025, d2.osc.frequency, 'triangle');
@@ -514,14 +2691,16 @@ export class AudioEngine {
         // Pad — intro phase: pads fade in from silence over ~15s (was 45s)
         const padBus = ctx.createGain();
         padBus.gain.setValueAtTime(0, ctx.currentTime);
-        padBus.gain.linearRampToValueAtTime(1, ctx.currentTime + 15);
+        const padTarget = 1.0 * (p.ac.chordAudibility !== undefined ? p.ac.chordAudibility : 0.5);
+        padBus.gain.linearRampToValueAtTime(padTarget, ctx.currentTime + 15);
         padBus.connect(filt);
         this.nodes.push(padBus);
         p.scale.slice(0, 5).forEach((step, i) => {
-            const freq = base * ac.octScale * Math.pow(2, step / 12);
+            const freq = this._getStepFrequency(p, step, ac.octScale);
             const det = (i % 2 === 0 ? 1 : -1) * p.padDetune * 0.012 * freq;
             const pad = this._osc(ac.padWave, freq + det, 0.018, padBus);
             this._lfo(p.lfoRate * (0.09 + i * 0.07), freq * 0.005, pad.osc.frequency);
+            this.harmonicNodes.pads.push({ osc: pad.osc, stepIndex: i, detuneRatio: det / freq });
         });
         this.padBus = padBus;
 
@@ -542,35 +2721,93 @@ export class AudioEngine {
             this.nodes.push(ns, nf, ng);
         }
 
-        // Stochastic melody — notes from biome octave range
-        // melodyBus fades in over ~20s
+        // Unified Melody Sequencer — phrase/rest/motif logic consolidated
         const melodyBus = ctx.createGain();
+        const melodyFilter = ctx.createBiquadFilter();
+        const melodyFilterFreq = Math.max(180, Math.min(ac.melFiltFreq || p.filterFreq || 2400, ctx.sampleRate / 2 - 200));
         melodyBus.gain.setValueAtTime(0, ctx.currentTime);
         melodyBus.gain.linearRampToValueAtTime(1, ctx.currentTime + 20);
-        melodyBus.connect(filt);
-        this.nodes.push(melodyBus);
+        melodyFilter.type = 'lowpass';
+        melodyFilter.frequency.setValueAtTime(melodyFilterFreq, ctx.currentTime);
+        melodyFilter.Q.value = Math.max(0.0001, ac.melFiltQ || 0.7);
+        melodyBus.connect(melodyFilter);
+        melodyFilter.connect(filt);
+        this.nodes.push(melodyBus, melodyFilter);
         this.melodyBus = melodyBus;
-        this.intervals.push(setInterval(() => {
+        this.melodyFilter = melodyFilter;
+        this._moonProfile = this._buildMoonProfile(p);
+        if (this._moonProfile.length) {
+            const moonBus = ctx.createGain();
+            moonBus.gain.setValueAtTime(0, ctx.currentTime);
+            moonBus.gain.linearRampToValueAtTime(this._clamp(0.16 + this._moonProfile.length * 0.06, 0.18, 0.36), ctx.currentTime + 12);
+            moonBus.connect(melodyFilter);
+            this.nodes.push(moonBus);
+            this._moonBus = moonBus;
+        } else {
+            this._moonBus = null;
+        }
+        this.playing = true;
+
+        const baseMelodyStride = this._getMelodyStride(p, transport.cycleSteps);
+        let melodyTransportStep = 0;
+        const scheduleLoop = () => {
             if (!this.playing) return;
-            const rng = new RNG(p.seed + 10000 + this.stepFX++);
-            const tensionBoost = 1 + (this.tension || 0) * 3;
+            const seqRng = new RNG(p.seed + 10000 + melodyTransportStep);
+            const tension = this.tension || 0;
+            const cycleStep = melodyTransportStep % transport.cycleSteps;
+            const isResponse = cycleStep >= Math.ceil(transport.cycleSteps / 2);
+            const isPhraseEnd = cycleStep === transport.cycleSteps - 1;
 
-            // Phrase/Rest Logic: 
-            // If we've been playing a long phrase, increase rest chance.
-            // If we are resting, decay rest chance back to baseline.
-            const densityBias = 1.0 + (this._density * 2.5);
-            const baseProb = (p.melodyDensity * 4.0 * densityBias * tensionBoost);
-            const currentProb = Math.max(0, baseProb - (this._restProb || 0));
-
-            if (rng.range(0, 1) < currentProb) {
-                this._scheduleNote(p, melodyBus, ac);
-                this._phraseLength++;
-                this._restProb += 0.08; // Each note adds to "fatigue"
-            } else {
-                this._phraseLength = 0;
-                this._restProb = Math.max(0, this._restProb - 0.15); // Resting reduces fatigue
+            // 2. Motif Swapping (Variety)
+            if (cycleStep === 0) {
+                this._motifSwapCounter++;
+                if (this._motifSwapCounter >= 2) {
+                    this._motifSwapCounter = 0;
+                    this._activeMotifIdx = (this._activeMotifIdx + 1) % (p.motifBank?.length || 1);
+                }
             }
-        }, 500));
+
+            // 3. Step-quantized melody gate: tension can tighten the stride,
+            // drift can nudge it by whole grid steps without leaving the transport.
+            let melodyStride = baseMelodyStride;
+            if (tension > 0.72 && melodyStride > 1) melodyStride -= 1;
+            if (this._drift > 0.15 && seqRng.range(0, 1) < this._drift * 0.22) {
+                melodyStride += seqRng.bool(0.6) ? 1 : -1;
+            }
+            melodyStride = this._clamp(melodyStride, 1, transport.cycleSteps);
+            const shouldAttempt = cycleStep === 0 || (cycleStep % melodyStride) === 0;
+
+            // 4. Rest logic now tracks a biome-aware target instead of runaway fatigue swings.
+            if (shouldAttempt) {
+                const targetRest = this._getTargetRestProbability(p, {
+                    cycleStep,
+                    cycleSteps: transport.cycleSteps,
+                    isResponse,
+                    isPhraseEnd,
+                    tension,
+                });
+                this._restProb += (targetRest - this._restProb) * 0.28;
+                this._restProb = this._clamp(this._restProb, 0.08, 0.92);
+
+                if (seqRng.range(0, 1) >= this._restProb) {
+                    this._scheduleNote(p, melodyBus, ac);
+                    this._phraseLength++;
+                } else {
+                    this._phraseLength = 0;
+                    this.stepNote++;
+                }
+            }
+
+            if (!shouldAttempt && isPhraseEnd) {
+                this._restProb = this._clamp(this._restProb + 0.04, 0.08, 0.92);
+            }
+
+            melodyTransportStep++;
+
+            // Schedule next tick
+            this._setManagedTimeout(scheduleLoop, transport.stepMs);
+        };
+        scheduleLoop();
 
         // Biome-specific periodic effects
         if (p.biome.id === 'corrupted') {
@@ -629,27 +2866,46 @@ export class AudioEngine {
         // ── Tier 1: Chorus / stereo widening ──────────────────────
         this._addChorus(filt, this.masterGain, ac);
 
+        // ── Tier 1: Nature Ambiance ───────────────────────────────
+        this._startNatureAmbiance(p, filt);
+
         // ── Tier 2: Harmonic tension arc ──────────────────────────
         this.tension = 0;
         this.tensionFilt = filt;
         this.tensionBase = { filtFreq: p.filterFreq, lfoRate: p.lfoRate };
         this._startTensionArc(p, filt);
-        // ── Tier 2: Harmonic progression sequencer ────────────────
-        this.intervals.push(setInterval(() => {
-            if (!this.playing) return;
-            // Advance chord every 32 beats (approx 10-15s at typical BPMs)
-            this._chordIndex = (this._chordIndex + 1) % this._progression.length;
-            this._updateChord();
-        }, 12000)); // Fixed 12s per chord for now, could be BPM-synced later
 
-        this.playing = true;
+        // Immediately apply initial chord frequencies to the bed
+        this._updateChord();
     }
 
-    _updateChord() {
-        this._chordName = this._progression[this._chordIndex];
-        this._currentChordIntervals = CHORD_TEMPLATES[this._chordName] || [0, 4, 7];
-        // Log progression for debugging (optional)
-        // console.log(`PROG: ${this._progression.join('-')} | CURRENT: ${this._chordName}`);
+    _syncChordBed() {
+        this._chordName = this._normalizeChordSymbol(this._progression[this._chordIndex]);
+        this._currentChordIntervals = this._buildScaleChord(this._chordName, this.planet);
+
+        if (!this.harmonicNodes || !this.planet || !this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const rootOffset = this._currentChordIntervals[0];
+        const newRootFreq = this._getStepFrequency(this.planet, rootOffset, 1);
+        const glide = 2.0; // Slow, smooth chord transitions
+
+        if (this.harmonicNodes.baseOsc) {
+            this.harmonicNodes.baseOsc.frequency.linearRampToValueAtTime(newRootFreq * 0.5, now + glide);
+            this.harmonicNodes.d1.frequency.linearRampToValueAtTime(newRootFreq, now + glide);
+            this.harmonicNodes.d2.frequency.linearRampToValueAtTime(newRootFreq * 2 + this.planet.droneDetune, now + glide);
+            this.harmonicNodes.fmMod.frequency.linearRampToValueAtTime(newRootFreq * this.planet.ac.fmRatio, now + glide);
+            this.harmonicNodes.fmCarrier.frequency.linearRampToValueAtTime(newRootFreq, now + glide);
+        }
+
+        const chordInts = this._currentChordIntervals;
+        this.harmonicNodes.pads.forEach((pData, i) => {
+            const cStep = chordInts[i % chordInts.length];
+            const octBase = i >= 3 ? 2 : 1;
+            const newFreq = this._getStepFrequency(this.planet, cStep, this.planet.ac.octScale * octBase);
+            const newFreqWithDetune = newFreq + (newFreq * pData.detuneRatio);
+            pData.osc.frequency.linearRampToValueAtTime(newFreqWithDetune, now + glide);
+        });
     }
 
     // ── GRANULAR SYNTHESIS ─────────────────────────────────────────────
@@ -657,6 +2913,10 @@ export class AudioEngine {
         if (!this._granularEnabled) return; // user toggle
         const ctx = this.ctx, ac = p.ac, sr = ctx.sampleRate;
         if (!ac.grainDensity || ac.grainDensity < 0.05) return;
+        const perf = this._getPerformanceProfile(p);
+        const densityCap = 2.5 + (1 - perf.density) * 8.5;
+        const effectiveDensity = Math.min(ac.grainDensity, densityCap);
+        if (effectiveDensity < 0.05) return;
 
         // A single bus gain for the whole cloud — toggle ramps this
         const granularBus = ctx.createGain();
@@ -682,8 +2942,8 @@ export class AudioEngine {
             }
         }
 
-        const intervalMs = 1000 / ac.grainDensity;
-        const peak = 0.015 * Math.sqrt(ac.grainDensity);
+        const intervalMs = 1000 / effectiveDensity;
+        const peak = 0.012 * Math.sqrt(Math.min(effectiveDensity, 9));
 
         const scheduleGrain = (rng) => {
             const nominalDur = ac.grainSize * 0.001 * (0.8 + rng.range(0, 0.5));
@@ -718,15 +2978,21 @@ export class AudioEngine {
 
             gs.connect(env); env.connect(pn); pn.connect(granularBus);
             gs.start(now, startPos, totalEnv + 0.06);
+            this.nodes.push(gs, env, pn);
         };
         // Wait a moment before firing grains to let the bus fade in and avoid load clicks
-        setTimeout(() => {
+        this._setManagedTimeout(() => {
             if (!this.playing) return;
             this.intervals.push(setInterval(() => {
+                if (!this.playing) return;
                 const grng = new RNG(p.seed + 40000 + this.stepGrain++);
+                const activeNodes = this.nodes?.size || 0;
+                if (activeNodes > 320 && grng.range(0, 1) < 0.65) return;
                 scheduleGrain(grng);
-                if (ac.grainDensity > 4 && grng.range(0, 1) < 0.4) {
-                    setTimeout(() => scheduleGrain(grng), intervalMs * 0.35);
+                if (effectiveDensity > 4 && activeNodes < 280 && grng.range(0, 1) < 0.24) {
+                    this._setManagedTimeout(() => {
+                        if (this.playing) scheduleGrain(grng);
+                    }, intervalMs * 0.35);
                 }
             }, intervalMs));
         }, 500);
@@ -803,82 +3069,154 @@ export class AudioEngine {
 
     _startPercussion(p, dest) {
         const ctx = this.ctx, base = p.rootFreq, bid = p.biome.id;
-        const bpm = p.bpm || 90;
-        const stepTime = 15 / bpm; // 16th note in seconds
+        const transport = this.transport || this._buildTransport(p);
+        const stepTime = transport.stepSeconds;
+        const cycleSteps = transport.cycleSteps;
         const rng = new RNG(p.seed);
+        const tensionProfile = this._tensionProfile || this._getTensionProfile(p);
+        const drumTone = this._getDrumToneProfile(p);
+        const fungalGroove = bid === 'fungal';
 
         // Live-toggle bus: fade in/out without stopping
+        const percBody = ctx.createBiquadFilter();
+        percBody.type = 'lowshelf';
+        percBody.frequency.value = 220;
+        percBody.gain.value = drumTone.bodyShelf;
+
+        const percPresence = ctx.createBiquadFilter();
+        percPresence.type = 'peaking';
+        percPresence.frequency.value = drumTone.presenceFreq;
+        percPresence.Q.value = 0.9;
+        percPresence.gain.value = drumTone.presenceGain;
+
+        const percAir = ctx.createBiquadFilter();
+        percAir.type = 'highshelf';
+        percAir.frequency.value = 3200;
+        percAir.gain.value = drumTone.airShelf;
+
         const percBus = ctx.createGain();
         percBus.gain.setValueAtTime(0, ctx.currentTime);
         percBus.gain.linearRampToValueAtTime(
             this._percussionEnabled ? this._percVol : 0,
             ctx.currentTime + 0.5
         );
+        percBody.connect(percPresence);
+        percPresence.connect(percAir);
+        percAir.connect(percBus);
         percBus.connect(dest);
-        this.nodes.push(percBus);
+        this.nodes.push(percBody, percPresence, percAir, percBus);
         this._percBus = percBus;
 
         // Kit variations per planet — tuned via seed
         const kit = {
-            kPitch: rng.range(0.85, 1.2), kDecay: rng.range(0.7, 1.3),
-            sPitch: rng.range(0.8, 1.3), sDecay: rng.range(0.6, 1.5),
-            hPitch: rng.range(0.7, 1.4), hDecay: rng.range(0.5, 1.8)
+            kPitch: rng.range(0.85, 1.2) * drumTone.kickPitch,
+            kDecay: rng.range(0.7, 1.3) * drumTone.kickDecay,
+            kPunch: drumTone.kickPunch,
+            kClick: drumTone.kickClick,
+            sPitch: rng.range(0.8, 1.3) * drumTone.snarePitch,
+            sDecay: rng.range(0.6, 1.5) * drumTone.snareDecay,
+            sNoise: drumTone.snareNoise,
+            sBody: drumTone.snareBody,
+            hPitch: rng.range(0.7, 1.4) * drumTone.hatPitch,
+            hDecay: rng.range(0.5, 1.8) * drumTone.hatDecay,
+            hBright: drumTone.hatBright,
+            subWeight: drumTone.subWeight,
+            extraTone: drumTone.extraTone
         };
 
-        // All drum voices route through percBus
-        const dest2 = percBus;
+        // All drum voices route through the per-biome shaping bus
+        const dest2 = percBody;
 
         // Synthesize Drum Voices
         const playKick = (vel) => {
             const t = ctx.currentTime;
             const osc = ctx.createOscillator(), env = ctx.createGain();
-            // Softer pitch envelope for less click
-            osc.frequency.setValueAtTime(120 * kit.kPitch, t);
-            osc.frequency.exponentialRampToValueAtTime(45 * kit.kPitch, t + 0.08 * kit.kDecay);
+            // Hard transient pitch envelope for punch
+            osc.frequency.setValueAtTime(180 * kit.kPitch * kit.kPunch, t);
+            osc.frequency.exponentialRampToValueAtTime(45 * kit.kPitch, t + 0.05 * kit.kDecay);
             env.gain.setValueAtTime(0, t);
-            env.gain.linearRampToValueAtTime(vel, t + 0.015); // slower attack
+            env.gain.linearRampToValueAtTime(vel, t + 0.005);
             env.gain.exponentialRampToValueAtTime(0.001, t + 0.4 * kit.kDecay);
             osc.connect(env); env.connect(dest2);
             osc.start(t); osc.stop(t + 0.5 * kit.kDecay);
-            this.nodes.push(osc, env);
+
+            // Sweeping noise layer for attack punch
+            const nSrc = ctx.createBufferSource();
+            nSrc.buffer = this._noiseBuffer;
+            const nFilt = ctx.createBiquadFilter();
+            nFilt.type = 'lowpass';
+            nFilt.frequency.setValueAtTime(1000 * kit.kClick, t);
+            nFilt.frequency.exponentialRampToValueAtTime(100 * Math.max(0.75, kit.kClick * 0.9), t + 0.05);
+            const nEnv = ctx.createGain();
+            nEnv.gain.setValueAtTime(vel * 0.4 * kit.kPunch, t);
+            nEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+            nSrc.connect(nFilt); nFilt.connect(nEnv); nEnv.connect(dest2);
+            nSrc.start(t); nSrc.stop(t + 0.06);
+
+            this.nodes.push(osc, env, nSrc, nFilt, nEnv);
             if (p.ac.sidechainAmt > 0) this._duck(p.ac.sidechainAmt, 0.4);
         };
 
         const playSnare = (vel) => {
             const t = ctx.currentTime;
             const noise = ctx.createBufferSource();
-            noise.buffer = this._noiseBuffer; // Use cached noise buffer
+            noise.buffer = this._noiseBuffer;
             const nFilt = ctx.createBiquadFilter();
-            nFilt.type = 'highpass'; nFilt.frequency.value = 1000 * kit.sPitch;
+            nFilt.type = 'bandpass';
+            nFilt.frequency.value = (fungalGroove ? 2600 : 3500) * kit.sPitch * kit.sNoise;
+            nFilt.Q.value = fungalGroove ? 0.75 : 1.0;
             const nEnv = ctx.createGain();
 
             const osc = ctx.createOscillator(), tEnv = ctx.createGain();
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(250 * kit.sPitch, t);
-            osc.frequency.exponentialRampToValueAtTime(120 * kit.sPitch, t + 0.1);
+            osc.type = fungalGroove ? 'sine' : 'triangle';
+            osc.frequency.setValueAtTime((fungalGroove ? 220 : 280) * kit.sPitch, t);
+            osc.frequency.exponentialRampToValueAtTime((fungalGroove ? 160 : 180) * kit.sPitch, t + (fungalGroove ? 0.07 : 0.05));
 
+            // Crisper noise snap decoupled from tonal body
             nEnv.gain.setValueAtTime(0, t);
-            nEnv.gain.linearRampToValueAtTime(vel * 0.8, t + 0.01);
-            nEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.25 * kit.sDecay);
+            nEnv.gain.linearRampToValueAtTime(vel * (fungalGroove ? 0.72 : 1.0) * kit.sNoise, t + 0.005);
+            nEnv.gain.exponentialRampToValueAtTime(0.001, t + (fungalGroove ? 0.28 : 0.2) * kit.sDecay);
 
+            // Shorter, punchier tonal body
             tEnv.gain.setValueAtTime(0, t);
-            tEnv.gain.linearRampToValueAtTime(vel * 0.6, t + 0.01);
-            tEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.15 * kit.sDecay);
+            tEnv.gain.linearRampToValueAtTime(vel * (fungalGroove ? 0.42 : 0.7) * kit.sBody, t + 0.005);
+            tEnv.gain.exponentialRampToValueAtTime(0.001, t + (fungalGroove ? 0.14 : 0.08) * kit.sDecay);
 
             noise.connect(nFilt); nFilt.connect(nEnv); nEnv.connect(dest2);
             osc.connect(tEnv); tEnv.connect(dest2);
             noise.start(t); osc.start(t);
+            noise.stop(t + (fungalGroove ? 0.36 : 0.3) * kit.sDecay);
+            osc.stop(t + (fungalGroove ? 0.26 : 0.2) * kit.sDecay);
             this.nodes.push(noise, nFilt, nEnv, osc, tEnv);
         };
 
         const playHat = (vel, open) => {
             const t = ctx.currentTime;
+            if (fungalGroove) {
+                const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator();
+                const bp = ctx.createBiquadFilter(), hp = ctx.createBiquadFilter(), env = ctx.createGain();
+                osc1.type = 'triangle'; osc1.frequency.value = 760 * kit.hPitch;
+                osc2.type = 'sine'; osc2.frequency.value = 1180 * kit.hPitch;
+                bp.type = 'bandpass'; bp.frequency.value = 2400 * kit.hBright; bp.Q.value = 1.2;
+                hp.type = 'highpass'; hp.frequency.value = 1400;
+
+                const dur = (open ? 0.48 : 0.13) * kit.hDecay;
+                env.gain.setValueAtTime(0, t);
+                env.gain.linearRampToValueAtTime(vel * 0.34, t + 0.008);
+                env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+                osc1.connect(bp); osc2.connect(bp); bp.connect(hp); hp.connect(env); env.connect(dest2);
+                osc1.start(t); osc2.start(t);
+                osc1.stop(t + dur + 0.05); osc2.stop(t + dur + 0.05);
+                this.nodes.push(osc1, osc2, bp, hp, env);
+                return;
+            }
             // Hat is high-passed squarish FM or just noise (using square for metallic sound)
             const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator();
             const filt = ctx.createBiquadFilter(), env = ctx.createGain();
-            osc1.type = 'square'; osc1.frequency.value = 400;
-            osc2.type = 'square'; osc2.frequency.value = 600;
-            filt.type = 'highpass'; filt.frequency.value = 7000;
+            osc1.type = 'square'; osc1.frequency.value = 400 * kit.hPitch;
+            osc2.type = 'square'; osc2.frequency.value = 600 * kit.hPitch;
+            filt.type = 'highpass'; filt.frequency.value = 7000 * kit.hBright;
 
             const dur = (open ? 0.35 : 0.08) * kit.hDecay;
             env.gain.setValueAtTime(0, t);
@@ -897,7 +3235,7 @@ export class AudioEngine {
             osc.type = 'triangle';
             osc.frequency.value = base * Math.pow(2, pitchOff / 12);
             env.gain.setValueAtTime(0, t);
-            env.gain.linearRampToValueAtTime(vel * 0.8, t + 0.05);
+            env.gain.linearRampToValueAtTime(vel * 0.8 * kit.subWeight, t + 0.05);
             env.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
             osc.connect(env); env.connect(dest2);
             osc.start(t); osc.stop(t + 0.7);
@@ -919,23 +3257,42 @@ export class AudioEngine {
         };
         const playCowbell = (vel) => {
             const t = ctx.currentTime;
-            const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), env = ctx.createGain();
-            o1.type = 'square'; o1.frequency.value = 800 * kit.hPitch;
-            o2.type = 'square'; o2.frequency.value = 540 * kit.hPitch;
-            env.gain.setValueAtTime(vel * 0.18, t);
-            env.gain.exponentialRampToValueAtTime(0.001, t + 0.9 * kit.hDecay);
-            o1.connect(env); o2.connect(env); env.connect(dest2);
-            o1.start(t); o2.start(t);
-            o1.stop(t + 1.0); o2.stop(t + 1.0);
-            this.nodes.push(o1, o2, env);
+            const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator();
+            const rmGain = ctx.createGain(), env = ctx.createGain(), filt = ctx.createBiquadFilter();
+
+            // Inharmonic square waves
+            osc1.type = 'square'; osc1.frequency.value = 540 * kit.hPitch;
+            osc2.type = 'square'; osc2.frequency.value = 800 * kit.hPitch;
+
+            // Ring modulation: osc1 modulates the amplitude of osc2 completely
+            rmGain.gain.value = 0;
+            osc1.connect(rmGain.gain);
+            osc2.connect(rmGain);
+
+            // Bandpass filter to tame harshness and shape the "tonk"
+            filt.type = 'bandpass';
+            filt.frequency.value = 900 * kit.hPitch;
+            filt.Q.value = 1.5;
+
+            env.gain.setValueAtTime(0, t);
+            env.gain.linearRampToValueAtTime(vel * 1.5, t + 0.005);
+            env.gain.exponentialRampToValueAtTime(0.001, t + 0.4 * kit.hDecay);
+
+            rmGain.connect(filt); filt.connect(env); env.connect(dest2);
+            osc1.start(t); osc2.start(t);
+            osc1.stop(t + 0.5); osc2.stop(t + 0.5);
+            this.nodes.push(osc1, osc2, rmGain, filt, env);
         };
         const playTom = (vel) => {
             const t = ctx.currentTime;
             const osc = ctx.createOscillator(), env = ctx.createGain();
-            const pitch = 120 * kit.kPitch * 0.55; // Lower than kick
-            osc.frequency.setValueAtTime(pitch * 1.8, t);
-            osc.frequency.exponentialRampToValueAtTime(pitch, t + 0.06);
-            env.gain.setValueAtTime(vel * 0.5, t);
+            const pitch = 110 * kit.kPitch * rng.range(0.9, 1.1);
+            // Randomized explosive pitch decay slope for stretched skin feel
+            osc.frequency.setValueAtTime(pitch * rng.range(1.5, 2.8), t);
+            osc.frequency.exponentialRampToValueAtTime(pitch, t + rng.range(0.04, 0.1));
+
+            env.gain.setValueAtTime(0, t);
+            env.gain.linearRampToValueAtTime(vel * 0.6, t + 0.01);
             env.gain.exponentialRampToValueAtTime(0.001, t + 0.35 * kit.kDecay);
             osc.connect(env); env.connect(dest2);
             osc.start(t); osc.stop(t + 0.45);
@@ -943,28 +3300,35 @@ export class AudioEngine {
         };
         const playShaker = (vel) => {
             const t = ctx.currentTime;
-            const src = ctx.createBufferSource();
-            const buf = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate);
-            const d = buf.getChannelData(0);
-            for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-            src.buffer = buf;
+            // Metallic FM oscillator pair instead of flat buffer source
+            const mSrc = ctx.createOscillator(), mMod = ctx.createOscillator(), mModGain = ctx.createGain();
+            mSrc.type = 'square'; mSrc.frequency.value = 4000 * kit.hPitch;
+            mMod.type = 'square'; mMod.frequency.value = 6500 * kit.hPitch;
+            mModGain.gain.value = 3000;
+            mMod.connect(mModGain); mModGain.connect(mSrc.frequency);
+
             const filt = ctx.createBiquadFilter();
-            filt.type = 'bandpass'; filt.frequency.value = 6000 + rng.range(0, 3000); filt.Q.value = 3;
+            filt.type = 'highpass'; filt.frequency.value = 5000;
             const env = ctx.createGain();
-            env.gain.setValueAtTime(vel * 0.3, t);
-            env.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-            src.connect(filt); filt.connect(env); env.connect(dest2);
-            src.start(t); src.stop(t + 0.15);
-            this.nodes.push(src, filt, env);
+            env.gain.setValueAtTime(0, t);
+            env.gain.linearRampToValueAtTime(vel * 0.4, t + 0.01);
+            env.gain.exponentialRampToValueAtTime(0.001, t + 0.08); // very short decay
+
+            mSrc.connect(filt); filt.connect(env); env.connect(dest2);
+            mSrc.start(t); mMod.start(t);
+            mSrc.stop(t + 0.1); mMod.stop(t + 0.1);
+            this.nodes.push(mSrc, mMod, mModGain, filt, env);
         };
         const playConga = (vel) => {
             const t = ctx.currentTime;
             const osc = ctx.createOscillator(), env = ctx.createGain();
             osc.type = 'triangle';
-            const pitch = 280 * kit.sPitch; // Mid-pitched skin sound
-            osc.frequency.setValueAtTime(pitch * 1.5, t);
-            osc.frequency.exponentialRampToValueAtTime(pitch * 0.85, t + 0.04);
-            env.gain.setValueAtTime(vel * 0.45, t);
+            const pitch = 260 * kit.sPitch * rng.range(0.95, 1.05); // Organic pitch variance
+            osc.frequency.setValueAtTime(pitch * rng.range(1.3, 1.8), t);
+            osc.frequency.exponentialRampToValueAtTime(pitch * 0.9, t + rng.range(0.03, 0.08));
+
+            env.gain.setValueAtTime(0, t);
+            env.gain.linearRampToValueAtTime(vel * 0.5, t + 0.005);
             env.gain.exponentialRampToValueAtTime(0.001, t + 0.22 * kit.sDecay);
             osc.connect(env); env.connect(dest2);
             osc.start(t); osc.stop(t + 0.3);
@@ -972,6 +3336,20 @@ export class AudioEngine {
         };
         const playRimshot = (vel) => {
             const t = ctx.currentTime;
+            if (fungalGroove) {
+                const osc = ctx.createOscillator(), env = ctx.createGain(), bp = ctx.createBiquadFilter();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1650 * kit.hPitch, t);
+                osc.frequency.exponentialRampToValueAtTime(980 * kit.hPitch, t + 0.03);
+                bp.type = 'bandpass'; bp.frequency.value = 1450 * kit.hPitch; bp.Q.value = 2.4;
+                env.gain.setValueAtTime(0, t);
+                env.gain.linearRampToValueAtTime(vel * 0.18, t + 0.003);
+                env.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+                osc.connect(bp); bp.connect(env); env.connect(dest2);
+                osc.start(t); osc.stop(t + 0.08);
+                this.nodes.push(osc, env, bp);
+                return;
+            }
             const osc = ctx.createOscillator(), env = ctx.createGain();
             osc.type = 'square';
             osc.frequency.setValueAtTime(800 * kit.sPitch, t);
@@ -995,9 +3373,36 @@ export class AudioEngine {
             osc.start(t); osc.stop(t + 0.2);
             this.nodes.push(osc, env);
         };
+        const playTaiko = (vel) => {
+            const t = ctx.currentTime;
+            const osc = ctx.createOscillator(), env = ctx.createGain(), lpf = ctx.createBiquadFilter();
+            osc.type = 'triangle';
+            const pitch = 80 * kit.kPitch;
+            osc.frequency.setValueAtTime(pitch * 2, t);
+            osc.frequency.exponentialRampToValueAtTime(pitch, t + 0.1);
+            lpf.type = 'lowpass'; lpf.frequency.value = 400; lpf.Q.value = 2;
+            env.gain.setValueAtTime(0, t);
+            env.gain.linearRampToValueAtTime(vel * 1.5, t + 0.01);
+            env.gain.exponentialRampToValueAtTime(0.001, t + 0.8 * kit.kDecay);
+            osc.connect(lpf); lpf.connect(env); env.connect(dest2);
+            osc.start(t); osc.stop(t + 1.0);
+            this.nodes.push(osc, lpf, env);
+        };
+        const playWoodBlock = (vel) => {
+            const t = ctx.currentTime;
+            const osc = ctx.createOscillator(), env = ctx.createGain(), bpf = ctx.createBiquadFilter();
+            osc.type = 'sine';
+            osc.frequency.value = 1200 * kit.hPitch;
+            bpf.type = 'bandpass'; bpf.frequency.value = 1200 * kit.hPitch; bpf.Q.value = 5;
+            env.gain.setValueAtTime(vel * 0.6, t);
+            env.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+            osc.connect(bpf); bpf.connect(env); env.connect(dest2);
+            osc.start(t); osc.stop(t + 0.1);
+            this.nodes.push(osc, bpf, env);
+        };
 
         // Map voice name → function for biome-driven percVoices dispatch
-        const extraVoices = { clave: playClave, cowbell: playCowbell, tom: playTom, shaker: playShaker, conga: playConga, rimshot: playRimshot, bongo: playBongo };
+        const extraVoices = { clave: playClave, cowbell: playCowbell, tom: playTom, shaker: playShaker, conga: playConga, rimshot: playRimshot, bongo: playBongo, taiko: playTaiko, woodblock: playWoodBlock };
 
 
         // ── Biome Sequence Patterns (16 steps) ──
@@ -1060,10 +3465,22 @@ export class AudioEngine {
             b: [eu(3, 16), eu(5, 16)]
         };
         P.fungal = {
-            k: [eu(4, 16), eu(6, 16)],
-            s: [eu(5, 16), eu(7, 16)],
-            h: [eu(9, 16), eu(13, 16)],
-            b: [eu(4, 16), eu(6, 16)]
+            k: [
+                [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+                [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+            ],
+            s: [
+                [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0]
+            ],
+            h: [
+                [2, 0, 1, 1, 0, 1, 2, 0, 1, 1, 0, 1],
+                [2, 0, 1, 1, 0, 0, 2, 0, 1, 1, 0, 1]
+            ],
+            b: [
+                [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+            ]
         };
         P.abyssal = {
             k: [eu(2, 16), eu(3, 16)],
@@ -1096,11 +3513,33 @@ export class AudioEngine {
             b: [eu(4, 16), eu(6, 16)]
         };
 
+        // ── Tribal / Organic Rhythms ──
+        const tribal = {
+            k: [eu(2, 8), eu(3, 8)],
+            s: [eu(3, 16), eu(5, 24)],
+            h: [eu(9, 16), eu(13, 24)],
+            b: [eu(3, 8), eu(4, 8)]
+        };
+        if (bid === 'fungal') {
+            if (!p.ac.percVoices.includes('woodblock')) p.ac.percVoices.push('woodblock');
+            if (!p.ac.percVoices.includes('clave')) p.ac.percVoices.push('clave');
+        }
+        if (['organic', 'desert'].includes(bid)) {
+            P[bid] = tribal;
+            if (!p.ac.percVoices.includes('taiko')) p.ac.percVoices.push('taiko');
+            if (!p.ac.percVoices.includes('woodblock')) p.ac.percVoices.push('woodblock');
+        }
+
         const bPats = P[bid] || ambient;
 
         // Pick specific array variations for this planet
-        const patK = rng.pick(bPats.k), patS = rng.pick(bPats.s);
-        const patH = rng.pick(bPats.h), patB = rng.pick(bPats.b);
+        const basePercPatterns = {
+            k: this._fitPatternToCycle(rng.pick(bPats.k), cycleSteps),
+            s: this._fitPatternToCycle(rng.pick(bPats.s), cycleSteps),
+            h: this._fitPatternToCycle(rng.pick(bPats.h), cycleSteps),
+            b: this._fitPatternToCycle(rng.pick(bPats.b), cycleSteps)
+        };
+        const phasePatternBanks = this._buildPhasePatternBanks(basePercPatterns, cycleSteps, p.seed, bid);
         const subPitch = rng.pick([0, -5, -7]);
 
         // Generate extra-voice Euclidean patterns from percVoices list
@@ -1108,8 +3547,21 @@ export class AudioEngine {
         const pVoices = p.ac.percVoices || [];
         pVoices.forEach((v, i) => {
             const k = [3, 4, 5, 6, 7][i % 5];
-            extraPats[v] = this._euclidean(k, 16);
+            extraPats[v] = this._euclidean(Math.min(k, cycleSteps), cycleSteps);
         });
+        if (bid === 'fungal') {
+            const fungalExtraPatterns = {
+                woodblock: [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
+                clave: [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+                bongo: [0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0],
+                shaker: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+            };
+            Object.keys(fungalExtraPatterns).forEach((voice) => {
+                if (pVoices.includes(voice)) {
+                    extraPats[voice] = this._fitPatternToCycle(fungalExtraPatterns[voice], cycleSteps);
+                }
+            });
+        }
 
         // Swing offset (delays even 16th-steps by swing*stepTime)
         const swingAmt = (p.ac.swing || 0) * stepTime;
@@ -1119,9 +3571,11 @@ export class AudioEngine {
         this.intervals.push(setInterval(() => {
             if (!this.playing) return;
             const seqRng = new RNG(p.seed + 50000 + this.stepPerc++);
-            const chaos = this.tension > 0.7 ? seqRng.range(0, 1) < 0.2 : false;
-            // Apply swing: delay even steps
-            const swDelay = (step % 2 === 1) ? swingAmt : 0;
+            const stepIndex = step;
+            const swDelay = (stepIndex % 2 === 1) ? swingAmt : 0;
+            const rhythmState = this._getRhythmState(p, stepIndex, barCount, seqRng);
+            const phasePatterns = phasePatternBanks[rhythmState.phase] || phasePatternBanks.STIR || basePercPatterns;
+            const chaos = seqRng.range(0, 1) < rhythmState.chaosChance;
 
             // Velocity variance
             const velScale = 1 - (p.ac.velocityVar || 0) * seqRng.range(0, 1);
@@ -1129,51 +3583,117 @@ export class AudioEngine {
             // ── Ghost notes: very quiet hat & snare on empty adjacent steps ──
             // Fires only when the pattern has no hit on this step (off-beats)
             const doGhost = this._ghostEnabled && !chaos
-                && patK[step] === 0 && patS[step] === 0
-                && seqRng.range(0, 1) < 0.22 * (1 + (this.tension || 0) * 0.5);
+                && phasePatterns.k[stepIndex] === 0 && phasePatterns.s[stepIndex] === 0
+                && seqRng.range(0, 1) < rhythmState.ghostChance;
 
             // ── Fill detection: last 4 steps of a 16-step bar when fills on ──
-            const isFillZone = this._fillsEnabled && (step >= 12) && (barCount % 4 === 3)
-                && this.tension > 0.35;
+            const playStep = (s, state) => {
+                let kickHit = phasePatterns.k[s] === 1;
+                let snareHit = phasePatterns.s[s] === 1;
+                let hatHit = phasePatterns.h[s];
+                const subHit = phasePatterns.b[s] === 1;
+                const dynVel = velScale * state.velocityLift;
+                const kickVelMul = fungalGroove ? 0.8 : 1;
+                const snareVelMul = fungalGroove ? 0.88 : 1;
+                const hatVelMul = fungalGroove ? 0.82 : 1;
+                const subVelMul = fungalGroove ? 0.72 : 1;
 
-            const playStep = (s) => {
-                if (patK[s] === 1 && !chaos) playKick(0.25 * velScale);
-                if (patS[s] === 1 && !chaos) playSnare(0.12 * velScale);
-                if (patH[s] === 1) playHat(0.04 * velScale, false);
-                if (patH[s] === 2) playHat(0.06 * velScale, true);
-                if (patB[s] === 1 && !chaos) playSub(0.15 * velScale, subPitch);
-                pVoices.forEach(v => { if (extraPats[v]?.[s] === 1 && extraVoices[v]) extraVoices[v](0.1 * velScale); });
-
-                // Ghost note on empty step
-                if (doGhost) {
-                    if (seqRng.range(0, 1) < 0.55) playHat(0.018 * velScale, false);
-                    else playSnare(0.028 * velScale);
+                if (chaos) {
+                    if (!kickHit && s % 2 === 0 && seqRng.range(0, 1) < 0.28) kickHit = true;
+                    if (snareHit && seqRng.range(0, 1) < 0.35) snareHit = false;
+                    if (hatHit === 0 && seqRng.range(0, 1) < 0.65) {
+                        hatHit = seqRng.range(0, 1) < state.openHatChance ? 2 : 1;
+                    }
+                } else {
+                    if (!kickHit && seqRng.range(0, 1) < state.kickPush && (s % 4 === 0 || s === cycleSteps - 1)) {
+                        kickHit = true;
+                    }
+                    if (!snareHit && seqRng.range(0, 1) < state.snarePush && (s + 2) % 4 === 0) {
+                        snareHit = true;
+                    }
+                    if (hatHit === 0 && seqRng.range(0, 1) < state.hatPush) {
+                        hatHit = seqRng.range(0, 1) < state.openHatChance ? 2 : 1;
+                    }
+                }
+                if (fungalGroove && hatHit === 0 && !chaos && ((s % 3) === 2 || s === cycleSteps - 1) && seqRng.range(0, 1) < 0.24) {
+                    hatHit = (s === cycleSteps - 1 && seqRng.range(0, 1) < 0.16) ? 2 : 1;
                 }
 
-                // Fill: rapid extra hits on last 4 steps of every 4th bar
-                if (isFillZone) {
-                    const fillVel = 0.06 + seqRng.range(0, 0.06);
-                    if (seqRng.range(0, 1) < 0.65) playHat(fillVel, false);
-                    if (seqRng.range(0, 1) < 0.3 && s === 15) playSnare(0.09 * velScale);
-                    // Half-step microtimed extra hit for roll effect
-                    setTimeout(() => {
+                if (hatHit === 1 && seqRng.range(0, 1) < state.openHatChance * 0.28) hatHit = 2;
+
+                if (kickHit) playKick(0.22 * dynVel * kickVelMul * (seqRng.range(0, 1) < state.accentChance ? 1.2 : 1));
+                if (snareHit) playSnare(0.11 * dynVel * snareVelMul * (state.phase === 'CLIMAX' ? 1.15 : 1));
+                if (hatHit === 1) playHat(0.038 * dynVel * hatVelMul, false);
+                if (hatHit === 2) playHat(0.055 * dynVel * hatVelMul, true);
+                if (subHit && !chaos) playSub(0.13 * dynVel * subVelMul, subPitch);
+
+                pVoices.forEach(v => {
+                    if (extraPats[v]?.[s] !== 1 || !extraVoices[v]) return;
+                    const preferredLift = state.fillVoices.includes(v) ? 0.12 : 0;
+                    if (seqRng.range(0, 1) < this._clamp(state.extraVoiceChance + preferredLift, 0, 0.95)) {
+                        extraVoices[v](0.09 * dynVel);
+                    }
+                });
+
+                if (doGhost && !kickHit && !snareHit && hatHit === 0) {
+                    if (fungalGroove) {
+                        if (seqRng.range(0, 1) < 0.75) playHat(0.022 * dynVel, seqRng.range(0, 1) < 0.18);
+                        else playSnare(0.018 * dynVel);
+                    } else if (seqRng.range(0, 1) < 0.6) playHat(0.018 * dynVel, false);
+                    else playSnare(0.026 * dynVel);
+                }
+
+                if (state.fillActive) {
+                    const fillVel = (0.05 + seqRng.range(0, 0.05)) * dynVel;
+                    const fillPool = state.fillVoices.filter(v => extraVoices[v]);
+                    if (seqRng.range(0, 1) < state.fillChance) {
+                        playHat(fillVel, seqRng.range(0, 1) < state.openHatChance);
+                    }
+                    if (seqRng.range(0, 1) < state.fillChance * 0.45 && s >= cycleSteps - 2) {
+                        playSnare(0.08 * dynVel);
+                    }
+                    if (fillPool.length && seqRng.range(0, 1) < state.fillChance * 0.55) {
+                        extraVoices[seqRng.pick(fillPool)](0.1 * dynVel);
+                    }
+                    this._setManagedTimeout(() => {
                         if (!this.playing) return;
-                        if (seqRng.range(0, 1) < 0.45) playHat(fillVel * 0.7, false);
+                        if (fillPool.length && seqRng.range(0, 1) < state.fillChance * 0.4) {
+                            extraVoices[seqRng.pick(fillPool)](0.075 * dynVel);
+                        } else if (seqRng.range(0, 1) < state.fillChance * 0.6) {
+                            playHat(fillVel * 0.7, false);
+                        }
                     }, (stepTime * 0.5) * 1000);
+                    if (fungalGroove && s >= cycleSteps - 2) {
+                        const fungalFillPool = (fillPool.length ? fillPool : ['bongo', 'woodblock', 'clave', 'rimshot'])
+                            .flatMap(v => v === 'rimshot' ? [v] : [v, v])
+                            .filter(v => extraVoices[v]);
+                        if (fungalFillPool.length && seqRng.range(0, 1) < state.fillChance * 0.62) {
+                            this._setManagedTimeout(() => {
+                                if (!this.playing) return;
+                                extraVoices[seqRng.pick(fungalFillPool)](0.07 * dynVel);
+                            }, (stepTime * 0.32) * 1000);
+                        }
+                        if (seqRng.range(0, 1) < state.fillChance * 0.54) {
+                            this._setManagedTimeout(() => {
+                                if (!this.playing) return;
+                                playHat(fillVel * 0.82, false);
+                            }, (stepTime * 0.68) * 1000);
+                        }
+                    }
                 }
             };
 
             if (swDelay > 0) {
-                setTimeout(() => playStep(step), swDelay * 1000);
+                this._setManagedTimeout(() => playStep(stepIndex, rhythmState), swDelay * 1000);
             } else {
-                playStep(step);
+                playStep(stepIndex, rhythmState);
             }
 
-            // Tension-driven extra hat accent (gated by ghost flag as it's decorative)
-            if (this._ghostEnabled && this.tension > 0.6 && seqRng.range(0, 1) < 0.1)
-                playHat(0.03, false);
+            if (this._ghostEnabled && seqRng.range(0, 1) < rhythmState.accentChance * 0.35) {
+                playHat(0.026 * rhythmState.velocityLift, false);
+            }
 
-            step = (step + 1) % 16;
+            step = (step + 1) % cycleSteps;
             if (step === 0) barCount++;
         }, stepTime * 1000));
 
@@ -1181,13 +3701,18 @@ export class AudioEngine {
         // Only on "complex" rhythmic biomes (fungal, crystalloid, quantum, psychedelic)
         const complexBiomes = ['fungal', 'crystalloid', 'quantum', 'psychedelic', 'corrupted'];
         if (complexBiomes.includes(p.biome.id) || rng.range(0, 1) < 0.25) {
-            const polySound = extraVoices[rng.pick(['clave', 'cowbell', 'conga'])];
+            const polyVoicePool = (tensionProfile.polyVoices || []).filter(v => extraVoices[v]);
+            let polyStep = 0;
             const tripletTime = (stepTime * 4) / 3; // 3 beats over 4 sub-steps
             this.intervals.push(setInterval(() => {
-                if (!this.playing || (this.tension || 0) < 0.3) return;
-                // Only play occasionally to avoid cluttering
-                if (new RNG(Date.now()).range(0, 1) < 0.6) {
-                    polySound(0.08 * (0.8 + this.tension * 0.4));
+                if (!this.playing) return;
+                const polyRng = new RNG(p.seed + 65000 + this.stepFX++);
+                const polyState = this._getRhythmState(p, polyStep++ % cycleSteps, barCount, polyRng);
+                if (polyState.energy < Math.max(0.18, tensionProfile.lowPoint - 0.04)) return;
+                const voicePool = polyVoicePool.length ? polyVoicePool : ['clave', 'cowbell', 'conga'].filter(v => extraVoices[v]);
+                const polySound = extraVoices[polyRng.pick(voicePool)];
+                if (polySound && polyRng.range(0, 1) < this._clamp(0.2 + polyState.energy * 0.38, 0.15, 0.82)) {
+                    polySound(0.07 * polyState.velocityLift);
                 }
             }, tripletTime * 1000));
         }
@@ -1200,27 +3725,90 @@ export class AudioEngine {
     _startTensionArc(p, filt) {
         const ctx = this.ctx;
         const base = this.tensionBase;
+        const profile = this._tensionProfile = this._getTensionProfile(p);
         this.tension = 0;
+        this._tensionBaseValue = 0;
+        this._tensionTick = 0;
+        this._tensionSurge = 0;
+        this._tensionState = { phase: 'DORMANT', energy: 0, cyclePos: 0, pocket: 0.5 };
         this._climaxFired = false;
+        this._climaxStartedDrain = false;
 
         this.intervals.push(setInterval(() => {
             if (!this.playing) return;
-            this.tension = Math.min(1, this.tension + 0.035); // faster arc
+            const nyquist = ctx.sampleRate / 2;
+            const arcRng = new RNG(p.seed + 88000 + this._tensionTick);
+            const density = this._clamp(p.melodyDensity || 0.05, 0.01, 0.35);
+            const wave = Math.sin((this._tensionTick + profile.phaseOffset) * profile.pulseRate) * profile.pulseDepth;
+
+            // Increment tension ONLY if we are not in the climax release phase
+            if (!this._climaxStartedDrain) {
+                const surgeHit = arcRng.range(0, 1) < profile.surgeChance
+                    ? arcRng.range(profile.surgeAmount * 0.35, profile.surgeAmount)
+                    : 0;
+                const drift = arcRng.range(-profile.riseVariance, profile.riseVariance);
+                this._tensionSurge = Math.max(0, this._tensionSurge * profile.surgeDecay + surgeHit - profile.surgeAmount * 0.08);
+                this._tensionBaseValue = this._clamp(
+                    this._tensionBaseValue + profile.riseRate + ((density - 0.08) * 0.05) + drift + (wave * profile.pulseLift),
+                    0,
+                    1
+                );
+            } else {
+                this._tensionSurge *= 0.45;
+                this._tensionBaseValue = Math.max(profile.floor, this._tensionBaseValue - profile.drainRate);
+                if (this._tensionBaseValue <= profile.reset) {
+                    this._climaxFired = false;
+                    this._climaxStartedDrain = false;
+                }
+            }
+
+            this.tension = this._clamp(this._tensionBaseValue + wave + this._tensionSurge, 0, 1);
+            this._tensionTick++;
+            const prevPhase = this._tensionState?.phase || 'DORMANT';
+            const state = this._getTensionState(p, this.stepPerc || 0);
+            this._tensionState = state;
+            this._lastTensionPhase = state.phase;
+
+            if (prevPhase !== state.phase && !(prevPhase === 'DORMANT' && state.phase === 'STIR')) {
+                if ((ctx.currentTime - this._lastPhaseEventTime) > 1.25) {
+                    this._lastPhaseEventTime = ctx.currentTime;
+                    this._firePhaseTransitionEvent(p, filt, prevPhase, state.phase);
+                }
+            }
+            if (ctx.currentTime >= this._macroEventCooldownUntil) {
+                const macroChance = this._getMacroEventChance(p.biome.id, state);
+                if (arcRng.range(0, 1) < macroChance) {
+                    this._fireSignatureMacroEvent(p, filt, state);
+                    this._macroEventCooldownUntil = ctx.currentTime + this._getMacroEventCooldown(p.biome.id, state.phase, arcRng);
+                }
+            }
 
             // ─ Filter & FM morphing as tension rises ────────────────────────
-            const tSq = this.tension * this.tension;
+            const tSq = state.energy * state.energy;
+            const lfoDepth = (base ? base.lfoRate : 0.1) * 1000 * state.energy; // Estimating depth
+            const safeCeiling = nyquist - lfoDepth - 400; // Leave headroom for LFO peaks
+
+            // Dynamic LFO Depth Scaling: reduce LFO impact as we hit the ceiling
+            if (this.tensionLfos) {
+                this.tensionLfos.forEach(lg => {
+                    const reduction = 1.0 - (state.energy * 0.7); // Scale down to 30% depth
+                    const originalDepth = base ? base.filtFreq * 0.20 : 200;
+                    lg.gain.linearRampToValueAtTime(originalDepth * reduction, ctx.currentTime + 2);
+                });
+            }
+
             const newFiltFreq = Math.min(
-                base.filtFreq * (1 + this.tension * 2.5),
-                (this.ctx.sampleRate / 2) - 1
+                (base ? base.filtFreq : 1000) * (1 + state.energy * profile.filterMul),
+                safeCeiling
             );
             if (this.tensionFilt) {
                 this.tensionFilt.frequency.linearRampToValueAtTime(
-                    newFiltFreq, ctx.currentTime + 2
+                    Math.max(20, newFiltFreq), ctx.currentTime + 2
                 );
             }
             if (this.fmModGainNode && this.fmIndexBase) {
-                // Morph FM harshness dramatically with tension
-                const newIndex = this.fmIndexBase * (1 + tSq * 5);
+                // Morph FM harshness according to each biome's own arc profile.
+                const newIndex = this.fmIndexBase * (1 + tSq * profile.fmMul);
                 this.fmModGainNode.gain.linearRampToValueAtTime(
                     newIndex, ctx.currentTime + 2
                 );
@@ -1229,21 +3817,26 @@ export class AudioEngine {
             // ─ Update tension bar UI ──────────────────────────────────────
             const bar = document.getElementById('tension-fill');
             const icon = document.getElementById('tension-icon');
-            if (bar) bar.style.width = `${this.tension * 100}%`;
+            if (bar) bar.style.width = `${state.energy * 100}%`;
             if (icon) {
-                const phase = this.tension < 0.4 ? 'low' : this.tension < 0.75 ? 'mid' : 'high';
-                icon.className = `tension-icon tension-${phase}`;
+                const iconPhase = (state.phase === 'SURGE' || state.phase === 'CLIMAX' || state.phase === 'FALLOUT')
+                    ? 'high'
+                    : state.phase === 'BUILD'
+                        ? 'mid'
+                        : 'low';
+                icon.className = `tension-icon tension-${iconPhase}`;
             }
 
             // ─ Climax event at tension ≥ 0.85 ────────────────────────────
-            if (this.tension >= 0.85 && !this._climaxFired) {
+            if (state.energy >= profile.climaxThreshold && !this._climaxFired) {
                 this._climaxFired = true;
                 this._fireClimax(p, filt);
-                // After climax, drop tension back and allow next arc
-                setTimeout(() => {
-                    this.tension = 0.45;
-                    this._climaxFired = false;
-                }, 18000);
+            }
+
+            // If climax fired, wait until it HITS 1.0 before starting the drain
+            // This ensures the UI bar feels "maxed out" for a moment
+            if (this._climaxFired && state.energy >= 0.98) {
+                this._climaxStartedDrain = true;
             }
         }, 2000)); // every 2s instead of 8s
     }
@@ -1251,24 +3844,256 @@ export class AudioEngine {
     // Fires a rich swelling chord at climax, then fades
     _fireClimax(p, dest) {
         const ctx = this.ctx, base = p.rootFreq;
-        // Schedule 5 harmonic intervals as a chord
-        [1, 5 / 4, 3 / 2, 2, 5 / 2].forEach((ratio, i) => {
-            const o = ctx.createOscillator(), g = ctx.createGain();
-            o.type = p.ac.padWave; o.frequency.value = base * ratio;
-            const now = ctx.currentTime + i * 0.08;
+        const profile = this._tensionProfile || this._getTensionProfile(p);
+        const ratios = profile.climaxRatios || DEFAULT_TENSION_PROFILE.climaxRatios;
+        ratios.forEach((ratio, i) => {
+            const o = ctx.createOscillator(), g = ctx.createGain(), pan = ctx.createStereoPanner();
+            o.type = this._resolveOscType(p.ac.padWave); o.frequency.value = base * ratio;
+            pan.pan.value = ratios.length > 1
+                ? ((i / (ratios.length - 1)) * 0.9) - 0.45
+                : 0;
+
+            const now = ctx.currentTime + i * profile.climaxSpacing;
             g.gain.setValueAtTime(0, now);
-            g.gain.linearRampToValueAtTime(0.055, now + 2.5);
-            g.gain.linearRampToValueAtTime(0.055, now + 10);
-            g.gain.linearRampToValueAtTime(0, now + 16);
-            o.connect(g); g.connect(dest);
-            o.start(now); o.stop(now + 17);
-            this.nodes.push(o, g);
+            g.gain.linearRampToValueAtTime(profile.climaxGain, now + 2.5);
+            g.gain.linearRampToValueAtTime(profile.climaxGain, now + profile.climaxHold);
+            g.gain.linearRampToValueAtTime(0, now + profile.climaxRelease);
+
+            o.connect(pan); pan.connect(g); g.connect(dest);
+            o.start(now); o.stop(now + profile.climaxRelease + 1);
+            this.nodes.push(o, g, pan);
         });
         // Brief master swell
         const mg = this.masterGain;
         const now = ctx.currentTime;
-        mg.gain.linearRampToValueAtTime(this._vol * 1.35, now + 3);
-        mg.gain.linearRampToValueAtTime(this._vol, now + 12);
+        mg.gain.linearRampToValueAtTime(this._vol * profile.climaxMasterBoost, now + 3);
+        mg.gain.linearRampToValueAtTime(this._vol, now + Math.max(8, profile.climaxHold + 2));
+    }
+
+    _startNatureAmbiance(p, dest) {
+        const ctx = this.ctx, ac = p.ac, bid = p.biome.id;
+        const features = ac.ambianceFeatures || [];
+        if (features.length === 0) return;
+
+        const ambBus = ctx.createGain();
+        const ambTarget = bid === 'fungal' ? 0.58 : 0.5;
+        ambBus.gain.setValueAtTime(0, ctx.currentTime);
+        ambBus.gain.linearRampToValueAtTime(ambTarget, ctx.currentTime + 2);
+        ambBus.connect(dest);
+        this.nodes.push(ambBus);
+
+        features.forEach(feat => {
+            if (feat === 'birds') {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 70000);
+                    if (rng.range(0, 1) < 0.2) {
+                        const t = ctx.currentTime;
+                        const o = ctx.createOscillator(), g = ctx.createGain();
+                        const f0 = 2000 + rng.range(0, 3000);
+                        o.frequency.setValueAtTime(f0, t);
+                        o.frequency.exponentialRampToValueAtTime(f0 * rng.range(0.5, 1.5), t + 0.1);
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime(0.04, t + 0.01);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+                        o.connect(g); g.connect(ambBus);
+                        o.start(t); o.stop(t + 0.2);
+                        this.nodes.push(o, g);
+                    }
+                }, 1500));
+            }
+            if (feat === 'rain') {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 80000);
+                    if (rng.range(0, 1) < 0.6) {
+                        const t = ctx.currentTime;
+                        const n = ctx.createBufferSource();
+                        n.buffer = this._noiseBuffer;
+                        const f = ctx.createBiquadFilter();
+                        f.type = 'highpass'; f.frequency.value = 4000 + rng.range(0, 4000);
+                        const g = ctx.createGain();
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime(0.08, t + 0.005);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+                        n.connect(f); f.connect(g); g.connect(ambBus);
+                        n.start(t); n.stop(t + 0.05);
+                        this.nodes.push(n, f, g);
+                    }
+                }, 100));
+            }
+            if (feat === 'bubbles') {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 81000);
+                    if (rng.range(0, 1) < 0.42) {
+                        const t = ctx.currentTime;
+                        const dur = rng.range(0.18, 0.55);
+                        const f0 = 180 + rng.range(0, 260);
+                        const o = ctx.createOscillator();
+                        const f = ctx.createBiquadFilter();
+                        const g = ctx.createGain();
+                        const pan = ctx.createStereoPanner();
+                        o.type = 'sine';
+                        o.frequency.setValueAtTime(f0, t);
+                        o.frequency.exponentialRampToValueAtTime(f0 * rng.range(1.4, 2.6), t + dur);
+                        f.type = 'bandpass'; f.frequency.value = f0 * 4; f.Q.value = 1.2;
+                        pan.pan.value = rng.range(-0.7, 0.7);
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime(0.018 + rng.range(0, 0.018), t + 0.03);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                        o.connect(f); f.connect(g); g.connect(pan); pan.connect(ambBus);
+                        o.start(t); o.stop(t + dur + 0.05);
+                        this.nodes.push(o, f, g, pan);
+                    }
+                }, 240));
+            }
+            if (feat === 'dew') {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 81250);
+                    if (rng.range(0, 1) < 0.22) {
+                        const t = ctx.currentTime;
+                        const dur = rng.range(0.16, 0.42);
+                        const baseFreq = 620 + rng.range(0, 980);
+                        const o = ctx.createOscillator();
+                        const bp = ctx.createBiquadFilter();
+                        const g = ctx.createGain();
+                        const pan = ctx.createStereoPanner();
+                        o.type = rng.range(0, 1) < 0.6 ? 'sine' : 'triangle';
+                        o.frequency.setValueAtTime(baseFreq * rng.range(1.08, 1.35), t);
+                        o.frequency.exponentialRampToValueAtTime(baseFreq, t + dur * 0.85);
+                        bp.type = 'bandpass'; bp.frequency.value = baseFreq * 1.8; bp.Q.value = 1.5;
+                        pan.pan.value = rng.range(-0.75, 0.75);
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime(0.012 + rng.range(0, 0.01), t + 0.02);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                        o.connect(bp); bp.connect(g); g.connect(pan); pan.connect(ambBus);
+                        o.start(t); o.stop(t + dur + 0.03);
+                        this.nodes.push(o, bp, g, pan);
+                    }
+                }, 650));
+            }
+            if (feat === 'thunder' && bid === 'storm') {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 90000);
+                    if (rng.range(0, 1) < 0.05) {
+                        const t = ctx.currentTime;
+                        const n = ctx.createBufferSource();
+                        n.buffer = this._noiseBuffer;
+                        const f = ctx.createBiquadFilter();
+                        f.type = 'lowpass'; f.frequency.value = 100 + rng.range(0, 200);
+                        const g = ctx.createGain();
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime(0.4, t + 0.1);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + 3.0);
+                        n.connect(f); f.connect(g); g.connect(ambBus);
+                        n.start(t); n.stop(t + 3.1);
+                        this.nodes.push(n, f, g);
+                    }
+                }, 5000));
+            }
+            if (feat === 'lightning' && bid === 'storm' && this._noiseBuffer) {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 90500);
+                    if (rng.range(0, 1) < 0.08) {
+                        const t = ctx.currentTime;
+                        const n = ctx.createBufferSource();
+                        const hp = ctx.createBiquadFilter();
+                        const bp = ctx.createBiquadFilter();
+                        const g = ctx.createGain();
+                        const baseFreq = 3800 + rng.range(0, 4200);
+                        n.buffer = this._noiseBuffer;
+                        hp.type = 'highpass'; hp.frequency.value = baseFreq;
+                        bp.type = 'bandpass'; bp.frequency.value = baseFreq * 0.85; bp.Q.value = 2.2;
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime(0.16 + rng.range(0, 0.05), t + 0.004);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+                        n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(ambBus);
+                        n.start(t); n.stop(t + 0.16);
+                        if (dest?.frequency) {
+                            const flashFreq = Math.min(ctx.sampleRate / 2 - 200, Math.max(dest.frequency.value * 1.7, 5000));
+                            dest.frequency.setValueAtTime(dest.frequency.value, t);
+                            dest.frequency.linearRampToValueAtTime(flashFreq, t + 0.01);
+                            dest.frequency.exponentialRampToValueAtTime(Math.max(80, p.filterFreq), t + 0.18);
+                        }
+                        this.nodes.push(n, hp, bp, g);
+                    }
+                }, 1800));
+            }
+            if (feat === 'wind') {
+                const n = ctx.createBufferSource();
+                if (this._noiseBuffer) {
+                    n.buffer = this._noiseBuffer; n.loop = true;
+                    const f = ctx.createBiquadFilter();
+                    f.type = 'bandpass'; f.frequency.value = 800; f.Q.value = 0.5;
+                    const g = ctx.createGain(); g.gain.value = 0.05;
+                    n.connect(f); f.connect(g); g.connect(ambBus);
+                    n.start();
+                    this._lfo(0.05, 400, f.frequency);
+                    this.nodes.push(n, f, g);
+                }
+            }
+            if (feat === 'rustle' && this._noiseBuffer) {
+                const n = ctx.createBufferSource();
+                const hp = ctx.createBiquadFilter();
+                const bp = ctx.createBiquadFilter();
+                const g = ctx.createGain();
+                const pan = ctx.createStereoPanner();
+                n.buffer = this._noiseBuffer; n.loop = true;
+                hp.type = 'highpass'; hp.frequency.value = bid === 'fungal' ? 240 : 650;
+                bp.type = 'bandpass'; bp.frequency.value = bid === 'fungal' ? 920 : 1800; bp.Q.value = bid === 'fungal' ? 0.72 : 0.9;
+                g.gain.value = bid === 'fungal' ? 0.024 : 0.018;
+                pan.pan.value = 0;
+                n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(pan); pan.connect(ambBus);
+                n.start();
+                this._lfo(0.07, bid === 'fungal' ? 250 : 520, bp.frequency, 'triangle');
+                this._lfo(0.11, g.gain.value * 0.55, g.gain, 'sine');
+                if (bid === 'fungal') this._lfo(0.035, 0.45, pan.pan, 'sine');
+                this.nodes.push(n, hp, bp, g, pan);
+            }
+            if (feat === 'spores' && this._noiseBuffer) {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 91500);
+                    if (rng.range(0, 1) < 0.28) {
+                        const t = ctx.currentTime;
+                        const dur = rng.range(0.45, 1.1);
+                        const n = ctx.createBufferSource();
+                        const f = ctx.createBiquadFilter();
+                        const g = ctx.createGain();
+                        const pan = ctx.createStereoPanner();
+                        n.buffer = this._noiseBuffer;
+                        n.playbackRate.value = bid === 'fungal' ? rng.range(0.55, 1.1) : rng.range(0.4, 0.9);
+                        f.type = 'bandpass'; f.frequency.value = (bid === 'fungal' ? 800 : 1200) + rng.range(0, bid === 'fungal' ? 1800 : 2800); f.Q.value = 0.7 + rng.range(0, 1.2);
+                        pan.pan.value = rng.range(-0.6, 0.6);
+                        g.gain.setValueAtTime(0, t);
+                        g.gain.linearRampToValueAtTime((bid === 'fungal' ? 0.016 : 0.022) + rng.range(0, 0.02), t + dur * 0.35);
+                        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                        n.connect(f); f.connect(g); g.connect(pan); pan.connect(ambBus);
+                        n.start(t); n.stop(t + dur + 0.05);
+                        this.nodes.push(n, f, g, pan);
+                        if (bid === 'fungal') {
+                            const o = ctx.createOscillator();
+                            const og = ctx.createGain();
+                            const of = ctx.createBiquadFilter();
+                            o.type = rng.range(0, 1) < 0.5 ? 'sine' : 'triangle';
+                            o.frequency.setValueAtTime(420 + rng.range(0, 520), t);
+                            o.frequency.exponentialRampToValueAtTime((680 + rng.range(0, 680)) * rng.range(0.95, 1.08), t + dur * 0.7);
+                            of.type = 'bandpass'; of.frequency.value = 1200 + rng.range(0, 900); of.Q.value = 1.1;
+                            og.gain.setValueAtTime(0, t);
+                            og.gain.linearRampToValueAtTime(0.006 + rng.range(0, 0.008), t + dur * 0.18);
+                            og.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.82);
+                            o.connect(of); of.connect(og); og.connect(pan);
+                            o.start(t); o.stop(t + dur + 0.04);
+                            this.nodes.push(o, og, of);
+                        }
+                    }
+                }, 1200));
+            }
+        });
     }
 
     // ── TIER 3: DOPPLER WHOOSH ────────────────────────────────────────
@@ -1308,17 +4133,36 @@ export class AudioEngine {
         const t = this.ctx ? this.ctx.currentTime : 0;
         this.nodes.forEach(n => {
             try {
-                if (n.stop) n.stop(t + 0.05);
-                else n.disconnect(); // Gain/filter nodes can disconnect immediately
+                if (n.stop) n.stop(t + 0.01);
+                n.disconnect();
             } catch (e) { }
         });
-        this.nodes = [];
+        this.nodes.clear();
+        this.melodyBus = null;
+        this.melodyFilter = null;
+        this._moonBus = null;
+        this._moonProfile = [];
+        this._moonProcCount = 0;
+        this._moonLastBurst = 0;
+        this._lastMoonProcAt = Number.NEGATIVE_INFINITY;
+        this.transport = null;
+        this._lastMelodyStep = null;
+        this._voiceCooldowns = Object.create(null);
+        this._tensionBaseValue = 0;
+        this._tensionTick = 0;
+        this._tensionSurge = 0;
+        this._tensionProfile = null;
+        this._tensionState = { phase: 'DORMANT', energy: 0, cyclePos: 0, pocket: 0.5 };
+        this._lastTensionPhase = 'DORMANT';
+        this._lastPhaseEventTime = 0;
+        this._macroEventCooldownUntil = 0;
         this.playing = false;
     }
 
     setVolume(v) { this._vol = v; if (this.masterGain) this.masterGain.gain.linearRampToValueAtTime(v, this.ctx.currentTime + 0.1); }
     setReverb(v) { this._reverb = v; if (this.reverbGain) { this.reverbGain.gain.linearRampToValueAtTime(v, this.ctx.currentTime + 0.2); this.dryGain.gain.linearRampToValueAtTime(1 - v * 0.5, this.ctx.currentTime + 0.2); } }
     getAnalyser() { return this.analyser; }
+    getRecordingStream() { return this.recordDest?.stream || null; }
 
     // Smooth crossfade: fade current out, start new, fade in
     crossfadeTo(planet, cb) {
@@ -1327,7 +4171,7 @@ export class AudioEngine {
         const fadeOut = 1.1;
         this.masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeOut);
         // Stop old nodes after fade, start new quietly, then ramp up
-        setTimeout(() => {
+        this._setManagedTimeout(() => {
             this.stop();
             this.start(planet);
             const now2 = this.ctx.currentTime;
@@ -1340,7 +4184,8 @@ export class AudioEngine {
 
     // ── BASS LINE GENERATOR ───────────────────────────────────────────
     _startBass(p, dest) {
-        const ctx = this.ctx, ac = p.ac;
+        const ctx = this.ctx;
+        const transport = this.transport || this._buildTransport(p);
         const bassBus = ctx.createGain();
         bassBus.gain.value = 0.55;
         bassBus.connect(dest);
@@ -1355,23 +4200,25 @@ export class AudioEngine {
             [1, 0, 1, 0, 1, 0, 1, 0], // Simple 1/8ths
         ];
         const rng = new RNG(p.seed + 777);
-        const activePattern = rng.pick(patterns);
+        const activePattern = this._fitPatternToCycle(rng.pick(patterns), transport.cycleSteps);
         const bassOctave = p.biome.id === 'abyssal' ? 0.5 : 1.0;
+        const bassStepMs = transport.stepMs;
+        let bassStep = 0;
 
         this.intervals.push(setInterval(() => {
             if (!this.playing) return;
-            const step = this.stepPerc % 8; // Sync with percussion step
-            if (activePattern[step]) {
-                this._scheduleBassNote(p, bassBus, bassOctave);
+            if (activePattern[bassStep]) {
+                this._scheduleBassNote(p, bassBus, bassOctave, transport.stepSeconds * 1.9);
             }
-        }, 250)); // 1/8th note tick at ~120BPM (approx)
+            bassStep = (bassStep + 1) % transport.cycleSteps;
+        }, bassStepMs));
     }
 
-    _scheduleBassNote(p, dest, octScale) {
+    _scheduleBassNote(p, dest, octScale, gateSeconds = 0.4) {
         const ctx = this.ctx;
         // Bass always stays on the ROOT of the current chord for stability
         const chordBase = this._currentChordIntervals[0];
-        const freq = p.rootFreq * octScale * Math.pow(2, chordBase / 12);
+        const freq = this._getStepFrequency(p, chordBase, octScale);
 
         const osc = ctx.createOscillator();
         const sub = ctx.createOscillator();
@@ -1384,14 +4231,15 @@ export class AudioEngine {
         sub.frequency.value = freq * 0.5;
 
         const now = ctx.currentTime;
+        const noteDur = Math.max(0.22, gateSeconds || 0.4);
         env.gain.setValueAtTime(0, now);
-        env.gain.linearRampToValueAtTime(0.4, now + 0.02);
-        env.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+        env.gain.linearRampToValueAtTime(0.4, now + Math.min(0.03, noteDur * 0.18));
+        env.gain.exponentialRampToValueAtTime(0.001, now + noteDur * 0.85);
 
         osc.connect(env); sub.connect(env);
         env.connect(dest);
         osc.start(now); sub.start(now);
-        osc.stop(now + 0.5); sub.stop(now + 0.5);
+        osc.stop(now + noteDur); sub.stop(now + noteDur);
         this.nodes.push(osc, sub, env);
     }
 
@@ -1454,14 +4302,126 @@ export class AudioEngine {
         return { input, output, nodes: [...filters, lfo, lfoDepth, input, output] };
     }
 
+    // ── HARMONIC PROGRESSION ──────────────────────────────────────────
+    _updateChord() {
+        if (!this.playing || !this._progression || !this._progression.length) return;
+
+        this._chordName = this._normalizeChordSymbol(this._progression[this._chordIndex]);
+        const c = this._chordName || 'I';
+        const cKey = this._getChordFunctionKey(c);
+        const intervals = this._buildScaleChord(c, this.planet);
+        this._currentChordIntervals = intervals;
+
+        // Dynamic Drone/Pad frequency ramping
+        const now = this.ctx ? this.ctx.currentTime : 0;
+        const ramp = 2.5; // seconds to smoothly glide
+
+        if (this.harmonicNodes && this.ctx) {
+            const rootPitch = this._getStepFrequency(this.planet, intervals[0], 1);
+            if (this.harmonicNodes.baseOsc) this.harmonicNodes.baseOsc.frequency.linearRampToValueAtTime(rootPitch * 0.5, now + ramp);
+            if (this.harmonicNodes.d1) this.harmonicNodes.d1.frequency.linearRampToValueAtTime(rootPitch, now + ramp);
+            if (this.harmonicNodes.d2) this.harmonicNodes.d2.frequency.linearRampToValueAtTime(rootPitch * 2 + (this.planet?.droneDetune || 0), now + ramp);
+            if (this.harmonicNodes.fmCarrier) this.harmonicNodes.fmCarrier.frequency.linearRampToValueAtTime(rootPitch, now + ramp);
+            if (this.harmonicNodes.fmMod) this.harmonicNodes.fmMod.frequency.linearRampToValueAtTime(rootPitch * (this.planet?.ac?.fmRatio || 1), now + ramp);
+
+            if (this.harmonicNodes.pads) {
+                this.harmonicNodes.pads.forEach(pad => {
+                    const interval = intervals[pad.stepIndex % intervals.length];
+                    const oct = pad.stepIndex > 2 ? 2 : 1;
+                    const targetFreq = this._getStepFrequency(this.planet, interval, (this.planet?.ac?.octScale || 1) * oct);
+                    pad.osc.frequency.linearRampToValueAtTime(targetFreq + (targetFreq * pad.detuneRatio), now + ramp);
+                });
+            }
+        }
+
+        // ── MARKOV PROBABILISTIC SELECTION ──────────────────────────
+        const transitions = {
+            'I': { 'IV': 4, 'V': 5, 'vi': 3, 'ii': 2 },
+            'ii': { 'V': 6, 'vi': 2, 'IV': 2 },
+            'iii': { 'vi': 5, 'IV': 3, 'I': 2 },
+            'IV': { 'I': 3, 'V': 5, 'ii': 2 },
+            'V': { 'I': 7, 'vi': 2, 'iii': 1 },
+            'vi': { 'IV': 4, 'ii': 3, 'V': 3 },
+            'vii': { 'I': 8, 'iii': 2 },
+            // Minor scale transitions
+            'i': { 'iv': 4, 'v': 4, 'VI': 3, 'VII': 3 },
+            'ii°': { 'v': 7, 'i': 3 },
+            'III': { 'VI': 5, 'iv': 3, 'i': 2 },
+            'iv': { 'i': 4, 'v': 4, 'ii°': 2 },
+            'v': { 'i': 6, 'VI': 3, 'III': 1 },
+            'VI': { 'iv': 4, 'ii°': 3, 'v': 3 },
+            'VII': { 'III': 6, 'i': 4 }
+        };
+
+        const tMap = transitions[cKey] || {};
+        let pool = [];
+        this._progression.forEach((cand) => {
+            const weight = tMap[this._getChordFunctionKey(cand)] || 1; // 1 represents a fallback equal likelihood if no rules exist
+            for (let i = 0; i < weight; i++) pool.push(cand);
+        });
+
+        // Pick next chord from the Markov weighted pool
+        const rng = new RNG((this.planet?.seed || 0) + 90000 + this.stepChord++);
+        const nextTarget = pool.length ? rng.pick(pool) : this._progression[0];
+        this._chordIndex = this._progression.indexOf(nextTarget);
+        if (this._chordIndex === -1) this._chordIndex = 0;
+
+        // ── VARIABLE CHORD DURATION BASED ON TENSION ────────────────
+        // High tension chords (V, vii) might resolve faster, or hold for dramatic effect
+        const isTension = ['V', 'vii', 'v', 'ii°'].includes(c);
+        const isRest = ['I', 'i', 'vi', 'VI'].includes(c);
+
+        const transport = this.transport || this._buildTransport(this.planet);
+        let minCycles = 2, maxCycles = 3;
+        if (['V', 'vii', 'v', 'ii'].includes(cKey)) { minCycles = 1; maxCycles = 2; }
+        if (['I', 'i', 'vi', 'VI'].includes(cKey)) { minCycles = 2; maxCycles = 4; }
+        if (transport.cycleSteps <= 8 && !['V', 'vii', 'v', 'ii'].includes(cKey)) {
+            minCycles += 1;
+            maxCycles += 1;
+        }
+
+        const chordCycles = rng.int(minCycles, maxCycles + 1);
+        const durMs = transport.cycleMs * chordCycles;
+
+        this._setManagedTimeout(() => this._updateChord(), durMs);
+    }
+
     getChord() {
         return this._chordName || 'I';
     }
     getMelodyState() {
+        const motifCount = this.planet?.motifBank?.length || 0;
         return {
             mode: this._melodyMode,
             phraseLength: this._phraseLength,
-            restProb: this._restProb
+            restProb: this._restProb,
+            motifEnabled: this._motifEnabled,
+            motifIndex: motifCount ? this._activeMotifIdx + 1 : 0,
+            motifCount,
+            step: this._lastMelodyStep
+        };
+    }
+
+    getDebugState() {
+        const transport = this.transport || (this.planet ? this._buildTransport(this.planet) : null);
+        const perf = this.planet ? this._getPerformanceProfile(this.planet) : null;
+        const now = this.ctx?.currentTime || 0;
+        const moonLastProcAgoMs = Number.isFinite(this._lastMoonProcAt)
+            ? Math.max(0, Math.round((now - this._lastMoonProcAt) * 1000))
+            : null;
+        return {
+            activeNodes: this.nodes?.size || 0,
+            load: perf?.pressure || 0,
+            tensionPhase: this._tensionState?.phase || 'DORMANT',
+            tensionEnergy: this._tensionState?.energy || 0,
+            cycleSteps: transport?.cycleSteps || 0,
+            stepMs: transport ? Math.round(transport.stepMs) : 0,
+            bpm: transport?.bpm || 0,
+            moonCount: this._moonProfile?.length || this.planet?.numMoons || 0,
+            moonProcCount: this._moonProcCount || 0,
+            moonLastBurst: this._moonLastBurst || 0,
+            moonLastProcAgoMs,
+            moonProcActive: moonLastProcAgoMs !== null && moonLastProcAgoMs < 900,
         };
     }
 }

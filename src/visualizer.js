@@ -1,30 +1,41 @@
 export class AudioReactiveEcosystem {
-    constructor(main, mini) {
-        this.main = main; this.mini = mini;
+    constructor(main, mini, planetOverlay) {
+        this.main = main; this.mini = mini; this.planetOverlay = planetOverlay;
         this.analyser = null; this.color = '#5b9dff';
         this.biomeId = 'barren'; this.raf = null;
         this.particles = [];
         this.phase = 0;
+        this._initParticles();
+    }
+
+    _initParticles() {
+        this.particles = [];
+        for (let i = 0; i < 60; i++) {
+            this.particles.push({
+                x: Math.random(), y: Math.random(),
+                vx: (Math.random() - 0.5) * 0.005, vy: (Math.random() - 0.5) * 0.005,
+                life: Math.random(),
+                size: Math.random() * 2 + 0.5
+            });
+        }
     }
 
     setAnalyser(a) { this.analyser = a; }
     setColor(c) { this.color = c; }
     setBiome(id) {
         this.biomeId = id;
-        this.particles = []; // Reset particles on planet change
-        for (let i = 0; i < 40; i++) {
-            this.particles.push({
-                x: Math.random(), y: Math.random(),
-                vx: (Math.random() - 0.5) * 0.01, vy: (Math.random() - 0.5) * 0.01,
-                life: Math.random()
-            });
-        }
+        this._initParticles();
     }
 
     _draw(cv) {
-        if (!this.analyser || !cv) return;
+        if (!cv) return;
         const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
         ctx.clearRect(0, 0, W, H);
+
+        // Always draw particle sway background
+        this._drawParticleBackground(ctx, W, H);
+
+        if (!this.analyser) return;
 
         const freqBuf = new Uint8Array(this.analyser.frequencyBinCount);
         this.analyser.getByteFrequencyData(freqBuf);
@@ -152,15 +163,63 @@ export class AudioReactiveEcosystem {
         ctx.globalAlpha = 1; ctx.shadowBlur = 0;
     }
 
+    _drawParticleBackground(ctx, W, H) {
+        // Gentle particle sway effect for ambient background
+        ctx.save();
+        this.phase += 0.008;
+        
+        this.particles.forEach(p => {
+            // Sway motion
+            p.x += p.vx + Math.sin(this.phase + p.life) * 0.0002;
+            p.y += p.vy + Math.cos(this.phase + p.life * 0.7) * 0.0002;
+            p.life += 0.01;
+            
+            // Wrap around edges
+            if (p.x < 0) p.x = 1;
+            if (p.x > 1) p.x = 0;
+            if (p.y < 0) p.y = 1;
+            if (p.y > 1) p.y = 0;
+            
+            const px = p.x * W;
+            const py = p.y * H;
+            const opacity = 0.15 + Math.sin(p.life * 0.5) * 0.1;
+            
+            // Draw particle with glow
+            const glow = ctx.createRadialGradient(px, py, 0, px, py, p.size * 4);
+            glow.addColorStop(0, `${this.color}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`);
+            glow.addColorStop(0.5, `${this.color}22`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(px, py, p.size * 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Core
+            ctx.fillStyle = `${this.color}${Math.floor(opacity * 200).toString(16).padStart(2, '0')}`;
+            ctx.beginPath();
+            ctx.arc(px, py, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        ctx.restore();
+    }
+
     animate() {
         const loop = () => {
             this._draw(this.main);
             this._draw(this.mini);
-            if (this.isMobile) {
-                this.raf = null; // No loop on mobile
-                return;
+            if (this.planetOverlay) {
+                // Resize planet overlay canvas to match its container
+                const po = this.planetOverlay;
+                if (po.offsetWidth !== po.width || po.offsetHeight !== po.height) {
+                    po.width = po.offsetWidth;
+                    po.height = po.offsetHeight;
+                }
+                this._draw(this.planetOverlay);
             }
-            this.raf = requestAnimationFrame(loop);
+            if (!this.isMobile) {
+                this.raf = requestAnimationFrame(loop);
+            }
         };
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = requestAnimationFrame(loop);

@@ -3,6 +3,17 @@ export class PlanetRenderer {
     constructor(canvas) {
         this.cv = canvas; this.ctx = canvas.getContext('2d');
         this.planet = null; this.angle = 0; this.raf = null; this._tex = null;
+        this.lastW = 0; this.lastH = 0;
+        // Debounced resize to prevent distortion
+        this.resizeTimeout = null;
+        window.addEventListener('resize', () => this._handleResize());
+    }
+
+    _handleResize() {
+        if (this.resizeTimeout) clearTimeout(this.resizeTimeout);
+        this.resizeTimeout = setTimeout(() => {
+            this._frame();
+        }, 100);
     }
 
     _noise(grid, gw, x, y) {
@@ -59,8 +70,13 @@ export class PlanetRenderer {
 
     _frame() {
         const cv = this.cv, ctx = this.ctx;
-        cv.width = cv.offsetWidth; cv.height = cv.offsetHeight;
-        const W = cv.width, H = cv.height, p = this.planet;
+        // Only resize canvas if dimensions actually changed
+        const W = cv.offsetWidth, H = cv.offsetHeight;
+        if (this.lastW !== W || this.lastH !== H) {
+            cv.width = W; cv.height = H;
+            this.lastW = W; this.lastH = H;
+        }
+        const p = this.planet;
         ctx.clearRect(0, 0, W, H);
         if (!p) return;
         const cx = W / 2, cy = H / 2, r = Math.min(W, H) * 0.36;
@@ -275,13 +291,13 @@ export class PlanetRenderer {
 
     animate() {
         const loop = () => {
-            this.angle += 0.22;
-            this._frame();
-            if (this.isMobile) {
-                this.raf = null; // No loop on mobile
-                return;
+            if (!this.isMobile) {
+                this.angle += 0.22;
             }
-            this.raf = requestAnimationFrame(loop);
+            this._frame();
+            if (!this.isMobile) {
+                this.raf = requestAnimationFrame(loop);
+            }
         };
         if (this.raf) cancelAnimationFrame(this.raf);
         this.raf = requestAnimationFrame(loop);

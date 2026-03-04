@@ -417,6 +417,39 @@
             animation: pulse-dot 0.5s infinite;
         }
 
+        .export-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .export-label {
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            min-width: 54px;
+        }
+
+        .export-input {
+            width: 82px;
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: #000;
+            color: var(--text);
+            font-family: 'Space Mono', monospace;
+            font-size: 11px;
+        }
+
+        .export-status {
+            margin-top: 6px;
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            min-height: 12px;
+        }
+
         /* History / Bookmarks */
         .chips {
             display: flex;
@@ -514,12 +547,20 @@
             grid-column: span 2;
             text-align: center;
             padding: 4px;
+            border: 1px solid transparent;
             background: rgba(91, 157, 255, 0.1);
             color: var(--accent);
             border-radius: 2px;
             margin-bottom: 5px;
             font-weight: bold;
             letter-spacing: 2px;
+        }
+
+        .melody-sep {
+            grid-column: span 2;
+            height: 1px;
+            margin: 2px 0;
+            background: rgba(91, 157, 255, 0.18);
         }
     </style>
 </head>
@@ -559,11 +600,16 @@
             <span class="info-key">ROOT FREQ</span><span class="info-val" id="info-freq">—</span>
             <span class="info-key">SCALE</span><span class="info-val" id="info-scale">—</span>
             <span class="info-key">TUNING</span><span class="info-val" id="info-tuning">—</span>
-            <span class="info-key">REVERB</span><span class="info-val" id="info-reverb">—</span>
+            <span class="info-key">DRONE WAVE</span><span class="info-val" id="info-drone">—</span>
+            <span class="info-key">PAD WAVE</span><span class="info-val" id="info-pad">—</span>
+            <span class="info-key">MELODY VOICES</span><span class="info-val" id="info-voices"
+                style="font-size: 8px;">—</span>
+            <span class="info-key">CHORD LIFT</span><span class="info-val" id="info-chord-aud">—</span>
             <span class="info-key">ATMOSPHERE</span><span class="info-val" id="info-atmo">—</span>
             <span class="info-key">MOONS</span><span class="info-val" id="info-moons">—</span>
             <span class="info-key">COORDINATES</span><span class="info-val" id="info-coords">—</span>
             <span class="info-key">PROGRESSION</span><span class="info-val" id="info-progression">—</span>
+            <span class="info-key">REVERB</span><span class="info-val" id="info-reverb">—</span>
             <span class="info-key">RARITY</span><span class="info-val" id="info-rarity">—</span>
         </div>
 
@@ -573,6 +619,17 @@
             <div class="melody-val" id="mel-len">0</div>
             <div class="melody-label">Rest Prob</div>
             <div class="melody-val" id="mel-rest">5%</div>
+            <div class="melody-label">Motif Bank</div>
+            <div class="melody-val" id="mel-bank">--</div>
+            <div class="melody-sep"></div>
+            <div class="melody-label">Active Nodes</div>
+            <div class="melody-val" id="dbg-nodes">0</div>
+            <div class="melody-label">Load</div>
+            <div class="melody-val" id="dbg-load">0%</div>
+            <div class="melody-label">Step Grid</div>
+            <div class="melody-val" id="dbg-step">--</div>
+            <div class="melody-label">Moon Proc</div>
+            <div class="melody-val" id="dbg-moon">--</div>
         </div>
     </div>
 
@@ -620,7 +677,7 @@
                     class="toggle-track"></span>RHYTHM</label>
             <label class="toggle-label"><input type="checkbox" id="ctrl-chords" checked><span
                     class="toggle-track"></span>CHORDS</label>
-            <label class="toggle-label"><input type="checkbox" id="ctrl-arp"><span
+            <label class="toggle-label"><input type="checkbox" id="ctrl-arp" checked><span
                     class="toggle-track"></span>ARP</label>
             <label class="toggle-label"><input type="checkbox" id="ctrl-bend" checked><span
                     class="toggle-track"></span>BEND</label>
@@ -639,6 +696,14 @@
             </div>
             <span class="tension-icon tension-low" id="tension-icon">♥</span>
         </div>
+        <hr class="divider">
+        <div class="panel-label">EXPORT</div>
+        <div class="export-row">
+            <label class="export-label" for="export-minutes">MINUTES</label>
+            <input class="export-input" id="export-minutes" type="number" min="0.25" max="15" step="0.25" value="1">
+            <button class="btn" id="btn-export">DOWNLOAD</button>
+        </div>
+        <div class="export-status" id="export-status">Idle. Uses MP3 if supported, otherwise exports WAV.</div>
     </div>
 
     <!-- Dummy elements that the app.js code references but we don't display -->
@@ -663,12 +728,28 @@
         import { RNG } from './src/rng.js';
         import { GLYPHS } from './src/data.js';
 
+        // URL encoding: convert glyph indices to base-36 (0-9a-t)
+        function encodeAddress(address) {
+            return [...address].map(g => {
+                const idx = GLYPHS.indexOf(g);
+                return idx >= 0 ? idx.toString(36) : '0';
+            }).join('');
+        }
+
+        function decodeAddress(encoded) {
+            return [...encoded].map(c => {
+                const idx = parseInt(c, 36);
+                return GLYPHS[idx] || GLYPHS[0];
+            }).join('');
+        }
+
         // Minimal synth-only controller
         const audio = new AudioEngine();
         let planet = null;
         let address = '';
         let history = [];
         let playPending = false;
+        let exportJob = null;
 
         const $ = id => document.getElementById(id);
 
@@ -708,9 +789,13 @@
             $('info-freq').textContent = `${planet.rootFreq.toFixed(1)} Hz`;
             $('info-scale').textContent = planet.scaleName;
             $('info-tuning').textContent = planet.tuningSystem + (planet.quarterToneProb > 0 ? ' · μTONE' : '') + (planet.octaveStretch > 1.001 ? ' · STRETCH' : '');
+            $('info-drone').textContent = planet.ac?.droneWave?.replace('_', ' ').toUpperCase() || '—';
+            $('info-pad').textContent = planet.ac?.padWave?.replace('_', ' ').toUpperCase() || '—';
+            $('info-voices').textContent = planet.ac?.melodyWaves?.join(', ').replace(/_/g, ' ').toUpperCase() || '—';
+            $('info-chord-aud').textContent = `${Math.round((planet.ac?.chordAudibility || 0) * 100)}%`;
             $('info-atmo').textContent = planet.biome.atmosphere;
-            $('info-reverb').textContent = planet.biome.reverbLabel;
             $('info-moons').textContent = planet.numMoons === 0 ? 'NONE' : `${planet.numMoons} SATELLITE${planet.numMoons > 1 ? 'S' : ''}`;
+            $('info-reverb').textContent = planet.biome.reverbLabel;
             $('info-progression').textContent = planet.progression.join(' - ');
             const glyphs = [...address];
             const third = Math.max(1, Math.floor(glyphs.length / 3));
@@ -730,7 +815,7 @@
             if (audio.playing) audio.crossfadeTo(planet);
 
             syncBookmarkBtn();
-            window.location.hash = encodeURIComponent(address);
+            window.location.hash = encodeAddress(address);
         }
 
         function renderHistory() {
@@ -785,10 +870,206 @@
             });
         }
 
+        function setExportStatus(message, tone = 'neutral') {
+            const el = $('export-status');
+            if (!el) return;
+            el.textContent = message;
+            el.style.color = tone === 'error'
+                ? 'var(--danger)'
+                : tone === 'active'
+                    ? 'var(--accent)'
+                    : 'var(--text-dim)';
+        }
+
+        function syncExportButton() {
+            const btn = $('btn-export');
+            if (!btn) return;
+            btn.textContent = exportJob ? 'STOP EXPORT' : 'DOWNLOAD';
+            btn.classList.toggle('btn-danger', !!exportJob);
+        }
+
+        function pickRecorderFormat() {
+            if (!window.MediaRecorder) return null;
+            const candidates = [
+                { mimeType: 'audio/mpeg', ext: 'mp3', label: 'MP3' },
+                { mimeType: 'audio/webm;codecs=opus', ext: 'webm', label: 'WEBM/OPUS' },
+                { mimeType: 'audio/ogg;codecs=opus', ext: 'ogg', label: 'OGG/OPUS' },
+                { mimeType: 'audio/webm', ext: 'webm', label: 'WEBM' }
+            ];
+            for (const candidate of candidates) {
+                if (!candidate.mimeType) return candidate;
+                if (!MediaRecorder.isTypeSupported || MediaRecorder.isTypeSupported(candidate.mimeType)) {
+                    return candidate;
+                }
+            }
+            return { mimeType: '', ext: 'webm', label: 'BROWSER DEFAULT' };
+        }
+
+        function audioBufferToWavBlob(buffer) {
+            const channels = buffer.numberOfChannels;
+            const sampleRate = buffer.sampleRate;
+            const frameCount = buffer.length;
+            const bytesPerSample = 2;
+            const blockAlign = channels * bytesPerSample;
+            const dataSize = frameCount * blockAlign;
+            const wav = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(wav);
+
+            const writeString = (offset, str) => {
+                for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + dataSize, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, channels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * blockAlign, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bytesPerSample * 8, true);
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            let offset = 44;
+            for (let i = 0; i < frameCount; i++) {
+                for (let ch = 0; ch < channels; ch++) {
+                    const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+                    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+                    offset += 2;
+                }
+            }
+
+            return new Blob([wav], { type: 'audio/wav' });
+        }
+
+        async function finalizeRecordingBlob(blob, format) {
+            if (!blob || format.ext === 'mp3') {
+                return { blob, ext: format.ext, label: format.label };
+            }
+
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) {
+                return { blob, ext: format.ext, label: format.label };
+            }
+
+            let ctx = null;
+            try {
+                ctx = new Ctx();
+                const arrayBuffer = await blob.arrayBuffer();
+                const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+                return { blob: audioBufferToWavBlob(decoded), ext: 'wav', label: 'WAV' };
+            } catch (err) {
+                return { blob, ext: format.ext, label: format.label };
+            } finally {
+                if (ctx && ctx.close) {
+                    try { await ctx.close(); } catch (e) { }
+                }
+            }
+        }
+
+        function ensurePlaybackForExport() {
+            if (audio.playing) return;
+            if (!planet) navigate();
+            audio.start(planet);
+            $('play-btn').textContent = '■';
+            $('play-btn').classList.add('playing');
+            $('status-dot').className = 'status-dot playing';
+            $('status-text').textContent = 'TRANSMITTING';
+            playPending = false;
+        }
+
+        function stopExport() {
+            if (!exportJob) return;
+            clearTimeout(exportJob.timeoutId);
+            clearInterval(exportJob.tickId);
+            if (exportJob.recorder && exportJob.recorder.state !== 'inactive') {
+                exportJob.recorder.stop();
+            }
+        }
+
+        function startExport() {
+            if (exportJob) { stopExport(); return; }
+            const minutes = Math.max(0.25, Math.min(15, +( $('export-minutes').value || 1 )));
+            if (!window.MediaRecorder) {
+                setExportStatus('MediaRecorder is not available in this browser.', 'error');
+                return;
+            }
+
+            ensurePlaybackForExport();
+            const stream = audio.getRecordingStream();
+            if (!stream) {
+                setExportStatus('Recording stream is unavailable in this browser.', 'error');
+                return;
+            }
+
+            const format = pickRecorderFormat();
+            const options = format?.mimeType ? { mimeType: format.mimeType } : undefined;
+            const recorder = new MediaRecorder(stream, options);
+            const chunks = [];
+            const durationMs = minutes * 60 * 1000;
+            const startedAt = Date.now();
+            const exportPlanet = planet;
+
+            recorder.addEventListener('dataavailable', (event) => {
+                if (event.data && event.data.size > 0) chunks.push(event.data);
+            });
+            recorder.addEventListener('stop', async () => {
+                clearTimeout(exportJob?.timeoutId);
+                clearInterval(exportJob?.tickId);
+                const activeFormat = exportJob?.format || format;
+                if (chunks.length) {
+                    const blobType = activeFormat.mimeType || recorder.mimeType || 'audio/webm';
+                    setExportStatus('Finalizing export...', 'active');
+                    const blob = new Blob(chunks, { type: blobType });
+                    const finalFile = await finalizeRecordingBlob(blob, activeFormat);
+                    const safeBase = `${(exportPlanet?.designation || exportPlanet?.pname || 'planet').replace(/[^A-Za-z0-9_-]+/g, '-')}-${minutes.toFixed(2).replace('.', '_')}min`;
+                    const url = URL.createObjectURL(finalFile.blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `${safeBase}.${finalFile.ext}`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    setExportStatus(`Saved ${finalFile.label} capture.`, 'neutral');
+                } else {
+                    setExportStatus('Export stopped before audio data was captured.', 'error');
+                }
+                exportJob = null;
+                syncExportButton();
+            });
+            recorder.addEventListener('error', () => {
+                clearTimeout(exportJob?.timeoutId);
+                clearInterval(exportJob?.tickId);
+                exportJob = null;
+                syncExportButton();
+                setExportStatus('Recorder failed to start.', 'error');
+            });
+
+            recorder.start(250);
+            exportJob = {
+                recorder,
+                format,
+                timeoutId: setTimeout(() => stopExport(), durationMs),
+                tickId: null
+            };
+            exportJob.tickId = setInterval(() => {
+                if (!exportJob) return;
+                const remaining = Math.max(0, durationMs - (Date.now() - startedAt));
+                setExportStatus(`Recording ${format.label} | ${(remaining / 1000).toFixed(1)}s left`, 'active');
+            }, 250);
+            syncExportButton();
+            setExportStatus(`Recording ${format.label}${format.ext === 'mp3' ? '' : ' fallback'}...`, 'active');
+        }
+
         function togglePlay() {
             if (playPending) return;
             const btn = $('play-btn'), dot = $('status-dot'), txt = $('status-text');
             if (audio.playing) {
+                if (exportJob) stopExport();
                 audio.stop();
                 btn.textContent = '▶'; btn.classList.remove('playing');
                 dot.className = 'status-dot'; txt.textContent = 'STANDBY';
@@ -833,6 +1114,7 @@
         $('btn-navigate').addEventListener('click', navigate);
         $('btn-bookmark').addEventListener('click', toggleBookmark);
         $('play-btn').addEventListener('click', togglePlay);
+        $('btn-export').addEventListener('click', startExport);
 
         const sl = id => { const el = $(id); fillSlider(el); return el; };
         sl('ctrl-vol').addEventListener('input', e => { audio.setVolume(+e.target.value); fillSlider(e.target); });
@@ -870,6 +1152,7 @@
         });
         $('ctrl-chords').addEventListener('change', e => { audio._chordEnabled = e.target.checked; });
         $('ctrl-arp').addEventListener('change', e => { audio._arpEnabled = e.target.checked; });
+        $('ctrl-arp').checked = audio._arpEnabled;
         $('ctrl-bend').addEventListener('change', e => { audio._pitchBendEnabled = e.target.checked; });
         $('ctrl-motif').addEventListener('change', e => { audio._motifEnabled = e.target.checked; });
         $('ctrl-ghost').addEventListener('change', e => { audio._ghostEnabled = e.target.checked; });
@@ -877,50 +1160,109 @@
 
         // Init
         const hash = window.location.hash.slice(1);
-        setAddress(hash ? decodeURIComponent(hash) : 'ᚠᚢᚦᚨᚱᚲ');
+        if (hash) {
+            // Try new base-36 encoding first, fall back to old URI encoding
+            const decoded = /^[0-9a-t]+$/.test(hash) ? decodeAddress(hash) : decodeURIComponent(hash);
+            setAddress(decoded);
+        } else {
+            setAddress('ᚠᚢᚦᚨᚱᚲ');
+        }
         navigate();
         renderBookmarks();
+        syncExportButton();
+        if (!window.MediaRecorder) setExportStatus('MediaRecorder is unavailable in this browser.', 'error');
 
         // Polling for chord and melody intelligence display
         const chordEl = $('chord-display');
         const melModeEl = $('mel-mode');
         const melLenEl = $('mel-len');
         const melRestEl = $('mel-rest');
+        const melBankEl = $('mel-bank');
+        const dbgNodesEl = $('dbg-nodes');
+        const dbgLoadEl = $('dbg-load');
+        const dbgStepEl = $('dbg-step');
+        const dbgMoonEl = $('dbg-moon');
 
         setInterval(() => {
             if (audio.playing) {
                 // Chord update
                 const c = audio.getChord();
-                if (chordEl.textContent !== c) {
+                if (chordEl && chordEl.textContent !== c) {
                     chordEl.textContent = c;
                     chordEl.style.transform = 'scale(1.1)';
-                    setTimeout(() => chordEl.style.transform = 'scale(1)', 100);
+                    setTimeout(() => { if (chordEl) chordEl.style.transform = 'scale(1)'; }, 100);
                 }
 
                 // Melody Intelligence update
                 const m = audio.getMelodyState();
-                melModeEl.textContent = m.mode;
-                melLenEl.textContent = m.phraseLength;
-                melRestEl.textContent = Math.round(m.restProb * 100) + '%';
+                const d = audio.getDebugState();
+                if (melModeEl) melModeEl.textContent = m.mode;
+                if (melLenEl) melLenEl.textContent = m.phraseLength;
+                if (melRestEl) melRestEl.textContent = Math.round(m.restProb * 100) + '%';
+                if (dbgNodesEl) dbgNodesEl.textContent = d.activeNodes;
+                if (dbgLoadEl) dbgLoadEl.textContent = Math.round(d.load * 100) + '%';
+                if (dbgStepEl) dbgStepEl.textContent = d.stepMs
+                    ? `${d.tensionPhase} | ${d.cycleSteps}/${d.stepMs}ms`
+                    : '--';
+                if (dbgMoonEl) {
+                    if (!d.moonCount) {
+                        dbgMoonEl.textContent = 'NONE';
+                        dbgMoonEl.style.color = 'var(--text-dim)';
+                    } else if (d.moonProcActive) {
+                        dbgMoonEl.textContent = `${d.moonLastBurst || 1}x NOW`;
+                        dbgMoonEl.style.color = '#9dff5b';
+                    } else if (d.moonLastProcAgoMs !== null) {
+                        dbgMoonEl.textContent = `${d.moonCount} SAT | ${d.moonLastProcAgoMs}ms`;
+                        dbgMoonEl.style.color = 'var(--accent)';
+                    } else {
+                        dbgMoonEl.textContent = `${d.moonCount} SAT | IDLE`;
+                        dbgMoonEl.style.color = 'var(--text-dim)';
+                    }
+                }
+                if (melBankEl) {
+                    melBankEl.textContent = m.motifEnabled
+                        ? (m.motifCount ? `${m.motifIndex}/${m.motifCount}` : '--')
+                        : 'OFF';
+                    melBankEl.style.color = m.motifEnabled ? 'var(--accent)' : 'var(--text-dim)';
+                }
 
                 // Visual feedback for modes
-                if (m.mode === 'RESPONSE') {
-                    melModeEl.style.background = 'rgba(255, 157, 91, 0.2)';
-                    melModeEl.style.color = '#ff9d5b';
-                } else if (m.mode === 'MOTIF') {
-                    melModeEl.style.background = 'rgba(157, 255, 91, 0.2)';
-                    melModeEl.style.color = '#9dff5b';
-                } else {
-                    melModeEl.style.background = 'rgba(91, 157, 255, 0.2)';
-                    melModeEl.style.color = 'var(--accent)';
+                if (melModeEl) {
+                    if (m.mode === 'RESPONSE') {
+                        melModeEl.style.background = 'rgba(255, 157, 91, 0.2)';
+                        melModeEl.style.color = '#ff9d5b';
+                        melModeEl.style.borderColor = 'rgba(255, 157, 91, 0.45)';
+                    } else if (m.mode === 'MOTIF') {
+                        melModeEl.style.background = 'rgba(157, 255, 91, 0.2)';
+                        melModeEl.style.color = '#9dff5b';
+                        melModeEl.style.borderColor = 'rgba(157, 255, 91, 0.45)';
+                    } else {
+                        melModeEl.style.background = 'rgba(91, 157, 255, 0.2)';
+                        melModeEl.style.color = 'var(--accent)';
+                        melModeEl.style.borderColor = 'rgba(91, 157, 255, 0.35)';
+                    }
                 }
             } else {
-                chordEl.textContent = '';
-                melLenEl.textContent = '0';
-                melRestEl.textContent = '5%';
-                melModeEl.textContent = 'STANDBY';
-                melModeEl.style.background = 'rgba(255, 255, 255, 0.05)';
-                melModeEl.style.color = 'var(--text-dim)';
+                if (chordEl) chordEl.textContent = '';
+                if (melLenEl) melLenEl.textContent = '0';
+                if (melRestEl) melRestEl.textContent = '5%';
+                if (melBankEl) {
+                    melBankEl.textContent = '--';
+                    melBankEl.style.color = 'var(--text-dim)';
+                }
+                if (dbgNodesEl) dbgNodesEl.textContent = '0';
+                if (dbgLoadEl) dbgLoadEl.textContent = '0%';
+                if (dbgStepEl) dbgStepEl.textContent = '--';
+                if (dbgMoonEl) {
+                    dbgMoonEl.textContent = '--';
+                    dbgMoonEl.style.color = 'var(--text-dim)';
+                }
+                if (melModeEl) {
+                    melModeEl.textContent = 'STANDBY';
+                    melModeEl.style.background = 'rgba(255, 255, 255, 0.05)';
+                    melModeEl.style.color = 'var(--text-dim)';
+                    melModeEl.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                }
             }
         }, 100);
     </script>

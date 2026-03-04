@@ -44,10 +44,11 @@ export function generatePlanet(address) {
     const hex1 = (seed & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
     const hex2 = ((seed >>> 16) & 0xFF).toString(16).toUpperCase().padStart(2, '0');
 
-    const ac = AUDIO_CONFIGS[biome.id];
     const rareRoll = rng.range(0, 1);
     const rarityClass = rareRoll > 0.98 ? 'LEGENDARY' : rareRoll > 0.9 ? 'RARE' : rareRoll > 0.7 ? 'UNCOMMON' : 'COMMON';
-    const melodyDensity = rng.range(0.01, 0.08);
+    const baseAc = AUDIO_CONFIGS[biome.id];
+    const ac = { ...baseAc };
+    const melodyDensity = (baseAc.melodyDensity || 0.05) * rng.range(0.5, 2.0);
 
     // ── Feature overrides from flags ──
     const quarterToneProb = (flags & 4) ? 0.15 : 0;
@@ -58,6 +59,53 @@ export function generatePlanet(address) {
     const hasAuroras = ['ethereal', 'quantum', 'oceanic', 'barren'].includes(biome.id) && rng.bool(0.7);
     const hasCraters = ['barren', 'volcanic', 'desert'].includes(biome.id);
     const hasLavaGlow = biome.id === 'volcanic';
+
+    // Create a deeply unique AudioConfig for this specific planet seed
+    // by using the biome's config as base values and scaling them.
+
+    // Huge multiplicative variance
+    ac.noiseMul = baseAc.noiseMul * rng.range(0.2, 5.0);
+    ac.lfoMul = baseAc.lfoMul * rng.range(0.5, 3.0);
+    ac.fmIndex = baseAc.fmIndex * rng.range(0.3, 4.0);
+    ac.fmRatio = baseAc.fmRatio * rng.range(0.8, 1.5);
+    ac.reverbMul = baseAc.reverbMul * rng.range(0.5, 2.0);
+    ac.grainDensity = baseAc.grainDensity * rng.range(0.2, 3.0);
+    ac.grainPitchScatter = baseAc.grainPitchScatter * rng.range(0.5, 2.5);
+    ac.chorusDepth = baseAc.chorusDepth * rng.range(0.5, 2.0);
+    ac.chordAudibility = Math.max(0, Math.min(1.0, baseAc.chordAudibility + rng.range(-0.3, 0.3)));
+
+    // Add 1-3 extra random percussion voices on top of the base
+    const extraPercPool = ['tom', 'shaker', 'cowbell', 'clave', 'conga'];
+    const percCount = rng.int(0, 3);
+    const uniquePercs = new Set(ac.percVoices);
+    for (let i = 0; i < percCount; i++) {
+        uniquePercs.add(rng.pick(extraPercPool));
+    }
+    ac.percVoices = Array.from(uniquePercs);
+
+    // Motif Bank generation for variety
+    const motifBank = [];
+    for (let m = 0; m < 4; m++) {
+        const motifRng = new RNG(seed + 500 + m);
+        if (biome.id === 'fungal' && scale.length > 0) {
+            const baseIndex = motifRng.int(0, scale.length - 1);
+            const offsets = [
+                0,
+                motifRng.pick([-1, 1]),
+                motifRng.pick([0, 1, -1]),
+                motifRng.pick([1, 2, -1]),
+            ];
+            motifBank.push(offsets.map((offset) => {
+                const idx = (baseIndex + offset + scale.length) % scale.length;
+                return scale[idx];
+            }));
+        } else {
+            motifBank.push([
+                motifRng.pick(scale), motifRng.pick(scale),
+                motifRng.pick(scale), motifRng.pick(scale)
+            ]);
+        }
+    }
 
     return {
         seed, address, pname,
@@ -83,7 +131,7 @@ export function generatePlanet(address) {
         rarityClass,
         useJI: tuningRatios !== null,
         jiRatios: tuningRatios || TUNING_SYSTEMS['Just'],
-        motif: [rng.pick(scale), rng.pick(scale), rng.pick(scale), rng.pick(scale)],
+        motifBank,
         progression: PROGRESSIONS[rng.int(0, PROGRESSIONS.length)],
         ac,
     };

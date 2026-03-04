@@ -6,6 +6,35 @@ import { PlanetRenderer } from './renderer.js';
 import { Starfield } from './starfield.js';
 import { AudioReactiveEcosystem } from './visualizer.js';
 import { WarpRenderer } from './warp.js';
+
+// URL-friendly address encoding/decoding
+function encodeAddress(address) {
+    // Convert glyphs to indices, then to base36 string
+    const indices = [...address].map(g => {
+        const idx = GLYPHS.indexOf(g);
+        return idx === -1 ? 0 : idx;
+    });
+    // Join with dashes for readability: e.g., "0-1-2-3-4-5"
+    return indices.map(i => i.toString(36)).join('');
+}
+
+function decodeAddress(encoded) {
+    if (!encoded) return '';
+    try {
+        // Parse compact base36 string back to indices
+        const indices = [];
+        for (let i = 0; i < encoded.length; i++) {
+            const idx = parseInt(encoded[i], 36);
+            if (!isNaN(idx) && idx >= 0 && idx < GLYPHS.length) {
+                indices.push(idx);
+            }
+        }
+        return indices.map(i => GLYPHS[i]).join('');
+    } catch (e) {
+        return '';
+    }
+}
+
 export class App {
     constructor() {
         this.audio = new AudioEngine(); this.planet = null;
@@ -13,6 +42,8 @@ export class App {
         this.planetR = null; this.waveViz = null; this.starfield = null; this.warpR = null;
         this.isMobile = window.innerWidth <= 950 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
         this.chordEl = null;
+        this.melodyEls = null;
+        this.debugEls = null;
     }
 
     init() {
@@ -27,7 +58,8 @@ export class App {
 
         this.waveViz = new AudioReactiveEcosystem(
             document.getElementById('waveform-canvas'),
-            document.getElementById('viz-mini')
+            document.getElementById('viz-mini'),
+            document.getElementById('planet-viz-canvas')
         );
         this.waveViz.isMobile = this.isMobile;
         this.waveViz.animate();
@@ -58,6 +90,7 @@ export class App {
         document.getElementById('btn-random').addEventListener('click', () => this._randomAddress());
         document.getElementById('btn-navigate').addEventListener('click', () => this._navigate());
         document.getElementById('btn-bookmark').addEventListener('click', () => this._toggleBookmark());
+        document.getElementById('btn-share').addEventListener('click', () => this._copyShareLink());
         document.getElementById('play-btn').addEventListener('click', () => this._togglePlay());
 
         // Sliders
@@ -139,33 +172,117 @@ export class App {
         document.getElementById('ctrl-fills').addEventListener('change', e => {
             this.audio._fillsEnabled = e.target.checked;
         });
+        document.getElementById('ctrl-arp').checked = this.audio._arpEnabled;
 
         this.warpR = new WarpRenderer(document.getElementById('warp-canvas'));
         this.warpR.isMobile = this.isMobile;
 
         // Parse URL hash for sharable planet address
         const hash = window.location.hash.slice(1);
-        const initAddr = hash ? decodeURIComponent(hash) : 'ᚠᚢᚦᚨᚱᚲ';
+        let initAddr = 'ᚠᚢᚦᚨᚱᚲ';
+        if (hash) {
+            // Try decoding as new format first
+            const decoded = decodeAddress(hash);
+            if (decoded) {
+                initAddr = decoded;
+            } else {
+                // Fallback to old format (direct Unicode)
+                try {
+                    initAddr = decodeURIComponent(hash);
+                } catch (e) {
+                    console.warn('Failed to decode URL hash:', e);
+                }
+            }
+        }
         this._setAddress(initAddr);
         this._navigate();
 
         // Chord polling
         this.chordEl = document.getElementById('chord-display');
-        setInterval(() => this._updateChordUI(), 100);
+        this.melodyEls = {
+            display: document.getElementById('melody-display'),
+            mode: document.getElementById('mel-mode'),
+            len: document.getElementById('mel-len'),
+            rest: document.getElementById('mel-rest'),
+            bank: document.getElementById('mel-bank'),
+        };
+        this.debugEls = {
+            nodes: document.getElementById('dbg-nodes'),
+            load: document.getElementById('dbg-load'),
+            step: document.getElementById('dbg-step'),
+        };
+        setInterval(() => this._updateAudioUI(), 100);
     }
 
-    _updateChordUI() {
-        if (!this.chordEl) return;
+    _updateAudioUI() {
+        const melDisplay = this.melodyEls?.display;
+        const melModeEl = this.melodyEls?.mode;
+        const melLenEl = this.melodyEls?.len;
+        const melRestEl = this.melodyEls?.rest;
+        const melBankEl = this.melodyEls?.bank;
+        const dbgNodesEl = this.debugEls?.nodes;
+        const dbgLoadEl = this.debugEls?.load;
+        const dbgStepEl = this.debugEls?.step;
+
         if (this.audio.playing) {
             const chord = this.audio.getChord();
-            if (this.chordEl.textContent !== chord) {
+            if (this.chordEl && this.chordEl.textContent !== chord) {
                 this.chordEl.textContent = chord;
                 this.chordEl.style.transform = 'scale(1.2)';
                 setTimeout(() => this.chordEl.style.transform = 'scale(1)', 100);
             }
-            this.chordEl.style.opacity = '0.6';
+            if (this.chordEl) this.chordEl.style.opacity = '0.6';
+
+            const melody = this.audio.getMelodyState();
+            const debug = this.audio.getDebugState();
+            if (melDisplay) melDisplay.style.opacity = '1';
+            if (melLenEl) melLenEl.textContent = `${melody.phraseLength}`;
+            if (melRestEl) melRestEl.textContent = `${Math.round(melody.restProb * 100)}%`;
+            if (dbgNodesEl) dbgNodesEl.textContent = `${debug.activeNodes}`;
+            if (dbgLoadEl) dbgLoadEl.textContent = `${Math.round(debug.load * 100)}%`;
+            if (dbgStepEl) dbgStepEl.textContent = debug.stepMs
+                ? `${debug.tensionPhase} | ${debug.cycleSteps}/${debug.stepMs}ms`
+                : '--';
+            if (melBankEl) {
+                melBankEl.textContent = melody.motifEnabled
+                    ? (melody.motifCount ? `${melody.motifIndex}/${melody.motifCount}` : '--')
+                    : 'OFF';
+                melBankEl.style.color = melody.motifEnabled ? 'var(--planet-glow)' : 'var(--text-secondary)';
+            }
+            if (melModeEl) {
+                melModeEl.textContent = melody.mode;
+                if (melody.mode === 'RESPONSE') {
+                    melModeEl.style.background = 'rgba(255, 157, 91, 0.18)';
+                    melModeEl.style.color = '#ff9d5b';
+                    melModeEl.style.borderColor = 'rgba(255, 157, 91, 0.45)';
+                } else if (melody.mode === 'MOTIF') {
+                    melModeEl.style.background = 'rgba(157, 255, 91, 0.18)';
+                    melModeEl.style.color = '#9dff5b';
+                    melModeEl.style.borderColor = 'rgba(157, 255, 91, 0.45)';
+                } else {
+                    melModeEl.style.background = 'rgba(91, 157, 255, 0.16)';
+                    melModeEl.style.color = 'var(--accent)';
+                    melModeEl.style.borderColor = 'rgba(91, 157, 255, 0.35)';
+                }
+            }
         } else {
-            this.chordEl.style.opacity = '0';
+            if (this.chordEl) this.chordEl.style.opacity = '0';
+            if (melDisplay) melDisplay.style.opacity = '0.55';
+            if (melLenEl) melLenEl.textContent = '0';
+            if (melRestEl) melRestEl.textContent = '5%';
+            if (dbgNodesEl) dbgNodesEl.textContent = '0';
+            if (dbgLoadEl) dbgLoadEl.textContent = '0%';
+            if (dbgStepEl) dbgStepEl.textContent = '--';
+            if (melBankEl) {
+                melBankEl.textContent = '--';
+                melBankEl.style.color = 'var(--text-secondary)';
+            }
+            if (melModeEl) {
+                melModeEl.textContent = 'STANDBY';
+                melModeEl.style.background = 'rgba(255, 255, 255, 0.05)';
+                melModeEl.style.color = 'var(--text-secondary)';
+                melModeEl.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+            }
         }
     }
 
@@ -231,10 +348,25 @@ export class App {
         document.getElementById('info-scale').textContent = planet.scaleName;
         const tuningEl = document.getElementById('info-tuning');
         if (tuningEl) tuningEl.textContent = planet.tuningSystem + (planet.quarterToneProb > 0 ? ' · μTONE' : '') + (planet.octaveStretch > 1.001 ? ' · STRETCH' : '');
-        document.getElementById('info-atmo').textContent = planet.biome.atmosphere;
-        document.getElementById('info-reverb').textContent = planet.biome.reverbLabel;
-        document.getElementById('planet-desc').textContent = planet.biome.desc;
-        document.getElementById('info-moons').textContent = planet.numMoons === 0 ? 'NONE' : `${planet.numMoons} SATELLITE${planet.numMoons > 1 ? 'S' : ''}`;
+
+        // Synth additions
+        const droneEl = document.getElementById('info-drone');
+        if (droneEl) droneEl.textContent = planet.ac?.droneWave?.replace('_', ' ').toUpperCase() || '—';
+        const padEl = document.getElementById('info-pad');
+        if (padEl) padEl.textContent = planet.ac?.padWave?.replace('_', ' ').toUpperCase() || '—';
+        const voicesEl = document.getElementById('info-voices');
+        if (voicesEl) voicesEl.textContent = planet.ac?.melodyWaves?.join(', ').replace(/_/g, ' ').toUpperCase() || '—';
+        const chordAudEl = document.getElementById('info-chord-aud');
+        if (chordAudEl) chordAudEl.textContent = `${Math.round((planet.ac?.chordAudibility || 0) * 100)}%`;
+
+        const atmoEl = document.getElementById('info-atmo');
+        if (atmoEl) atmoEl.textContent = planet.biome.atmosphere;
+        const revEl = document.getElementById('info-reverb');
+        if (revEl) revEl.textContent = planet.biome.reverbLabel;
+        const descEl = document.getElementById('planet-desc');
+        if (descEl) descEl.textContent = planet.biome.desc;
+        const moonsEl = document.getElementById('info-moons');
+        if (moonsEl) moonsEl.textContent = planet.numMoons === 0 ? 'NONE' : `${planet.numMoons} SATELLITE${planet.numMoons > 1 ? 'S' : ''}`;
 
         // Sector · System · Planet coordinate split
         const glyphs = [...this.address];
@@ -273,8 +405,8 @@ export class App {
             this._renderHistory();
         }
 
-        // URL hash — makes every planet a shareable link
-        window.location.hash = encodeURIComponent(this.address);
+        // URL hash — makes every planet a shareable link (using compact encoding)
+        window.location.hash = encodeAddress(this.address);
 
         // Crossfade audio if playing, else just record new planet
         if (this.audio.playing) {
@@ -316,6 +448,53 @@ export class App {
         const saved = this._loadBookmarks().some(b => b.address === this.address);
         btn.textContent = saved ? '★ SAVED' : '☆ SAVE';
         btn.classList.toggle('saved', saved);
+    }
+
+    _copyShareLink() {
+        const url = window.location.href;
+        const icon = document.getElementById('share-icon');
+        const text = document.getElementById('share-text');
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(() => {
+                // Success feedback
+                if (icon) icon.textContent = '✓';
+                if (text) text.textContent = 'COPIED!';
+                setTimeout(() => {
+                    if (icon) icon.textContent = '🔗';
+                    if (text) text.textContent = 'COPY LINK';
+                }, 2000);
+            }).catch(err => {
+                console.warn('Failed to copy:', err);
+                this._fallbackCopy(url);
+            });
+        } else {
+            this._fallbackCopy(url);
+        }
+    }
+
+    _fallbackCopy(text) {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            const icon = document.getElementById('share-icon');
+            const textEl = document.getElementById('share-text');
+            if (icon) icon.textContent = '✓';
+            if (textEl) textEl.textContent = 'COPIED!';
+            setTimeout(() => {
+                if (icon) icon.textContent = '🔗';
+                if (textEl) textEl.textContent = 'COPY LINK';
+            }, 2000);
+        } catch (err) {
+            console.warn('Fallback copy failed:', err);
+        }
+        document.body.removeChild(textarea);
     }
 
     _renderBookmarks() {
