@@ -70,6 +70,7 @@
         <!-- Center: Planet View -->
         <section class="planet-view panel">
             <canvas id="planet-canvas"></canvas>
+            <div class="chord-display" id="chord-display"></div>
             <div class="planet-overlay-name" id="planet-overlay-name"></div>
         </section>
 
@@ -94,6 +95,10 @@
             <div class="info-row">
                 <span class="info-key">MODAL SCALE</span>
                 <span class="info-value" id="info-scale">—</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">TUNING</span>
+                <span class="info-value" id="info-tuning">—</span>
             </div>
             <div class="info-row">
                 <span class="info-key">ATMOSPHERE</span>
@@ -214,7 +219,7 @@
         </footer>
     </main>
 
-    <script src="app.js"></script>
+    <script type="module" src="main.js"></script>
 </body>
 
 </html>

@@ -47,18 +47,54 @@ const BIOMES = [
 ];
 
 const SCALES = {
+    // ── Western Diatonic Modes ──
+    'Ionian': [0, 2, 4, 5, 7, 9, 11],
     'Dorian': [0, 2, 3, 5, 7, 9, 10],
     'Phrygian': [0, 1, 3, 5, 7, 8, 10],
     'Lydian': [0, 2, 4, 6, 7, 9, 11],
     'Mixolydian': [0, 2, 4, 5, 7, 9, 10],
     'Aeolian': [0, 2, 3, 5, 7, 8, 10],
-    'Whole Tone': [0, 2, 4, 6, 8, 10],
+    'Locrian': [0, 1, 3, 5, 6, 8, 10],
+    // ── Harmonic & Melodic Variants ──
+    'Harm. Minor': [0, 2, 3, 5, 7, 8, 11],
+    'Mel. Minor': [0, 2, 3, 5, 7, 9, 11],
+    'Hung. Minor': [0, 2, 3, 6, 7, 8, 11],
+    'Dbl. Harmonic': [0, 1, 4, 5, 7, 8, 11],
+    // ── Pentatonic ──
+    'Pent. Major': [0, 2, 4, 7, 9],
     'Pent. Minor': [0, 3, 5, 7, 10],
+    'Blues': [0, 3, 5, 6, 7, 10],
+    // ── World / Ethnic ──
+    'Hirajoshi': [0, 2, 3, 7, 8],
+    'In Sen': [0, 1, 5, 7, 10],
+    'Pelog': [0, 1, 3, 7, 8],
+    'Slendro': [0, 2, 5, 7, 9],
+    'Raga Bhairav': [0, 1, 4, 5, 7, 8, 11],
+    'Raga Todi': [0, 1, 3, 6, 7, 8, 11],
     'Persian': [0, 1, 4, 5, 6, 8, 11],
+    // ── Symmetric / Avant-garde ──
+    'Whole Tone': [0, 2, 4, 6, 8, 10],
+    'Diminished': [0, 2, 3, 5, 6, 8, 9, 11],
+    'Augmented': [0, 3, 4, 7, 8, 11],
+    'Tritone': [0, 1, 4, 6, 7, 10],
     'Enigmatic': [0, 1, 4, 6, 8, 10, 11],
+    'Chromatic': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
 
-const ROOT_NOTES = [32.7, 36.7, 41.2, 43.7, 49.0, 55.0, 61.7, 65.4, 73.4, 82.4, 87.3, 98.0];
+// Root frequencies: full chromatic range across octaves 1-3 (C1–B3)
+const ROOT_NOTES = [
+    32.70, 34.65, 36.71, 38.89, 41.20, 43.65, 46.25, 49.00, 51.91, 55.00, 58.27, 61.74, // C1–B1
+    65.41, 69.30, 73.42, 77.78, 82.41, 87.31, 92.50, 98.00, 103.83, 110.0, 116.54, 123.47, // C2–B2
+];
+
+// ── Tuning Systems ──
+// Each maps semitone index (0-11) → frequency ratio relative to root
+const TUNING_SYSTEMS = {
+    'Equal': null, // 12-TET — computed as Math.pow(2, step/12)
+    'Just': [1, 16 / 15, 9 / 8, 6 / 5, 5 / 4, 4 / 3, 45 / 32, 3 / 2, 8 / 5, 5 / 3, 9 / 5, 15 / 8],
+    'Pythagorean': [1, 256 / 243, 9 / 8, 32 / 27, 81 / 64, 4 / 3, 729 / 512, 3 / 2, 128 / 81, 27 / 16, 16 / 9, 243 / 128],
+};
+const TUNING_NAMES = Object.keys(TUNING_SYSTEMS);
 
 // ============================================================
 // SEEDED RNG — cyrb53 hash + Mulberry32
@@ -125,6 +161,27 @@ function generatePlanet(address) {
     const rarityClass = rareRoll > 0.98 ? 'LEGENDARY' : rareRoll > 0.9 ? 'RARE' : rareRoll > 0.7 ? 'UNCOMMON' : 'COMMON';
     const melodyDensity = rng.range(0.01, 0.08);
 
+    // ── Tuning system selection ──
+    // Each planet picks a tuning system weighted by biome:
+    // crystalline/ethereal/glacial favour JI, corrupted/quantum favour Pythagorean
+    const tuningWeights = {
+        crystalline: [0.3, 0.5, 0.2], ethereal: [0.3, 0.5, 0.2], glacial: [0.2, 0.6, 0.2],
+        corrupted: [0.2, 0.2, 0.6], quantum: [0.15, 0.25, 0.6],
+    };
+    const tw = tuningWeights[biome.id] || [0.55, 0.3, 0.15]; // default: mostly equal
+    const tuningRoll = rng.range(0, 1);
+    const tuningSystem = tuningRoll < tw[0] ? 'Equal' : tuningRoll < tw[0] + tw[1] ? 'Just' : 'Pythagorean';
+    const tuningRatios = TUNING_SYSTEMS[tuningSystem];
+
+    // Quarter-tone micro-detuning: probability of ±50 cents offset on any note
+    // High for quantum/psychedelic, moderate for fungal/corrupted, zero for crystalline/glacial
+    const qtBiomes = { quantum: 0.25, psychedelic: 0.15, corrupted: 0.12, fungal: 0.10, organic: 0.05 };
+    const quarterToneProb = qtBiomes[biome.id] || 0;
+
+    // Stretched octave: gamelan-style slightly-sharp octave for Indonesian scales
+    const isGamelan = ['Pelog', 'Slendro'].includes(scaleName);
+    const octaveStretch = isGamelan ? (1 + rng.range(0.005, 0.015)) : 1.0; // 2.01–2.03 instead of 2.0
+
     // Visual features tied to biomes
     const hasIceCaps = ['glacial', 'crystalline', 'abyssal'].includes(biome.id);
     const hasAuroras = ['ethereal', 'quantum', 'oceanic', 'barren'].includes(biome.id) && rng.bool(0.7);
@@ -135,6 +192,7 @@ function generatePlanet(address) {
         seed, address, pname,
         designation: `PL-${hex1}-${hex2}`,
         biome, scaleName, scale, rootFreq,
+        tuningSystem, tuningRatios, quarterToneProb, octaveStretch,
         colors: biome.colors,
         numMoons: rng.int(0, 4),
         hasRings: rng.bool(0.25),
@@ -152,8 +210,8 @@ function generatePlanet(address) {
         bpm: rng.int(60, 180),
         melodyDensity,
         rarityClass,
-        useJI: rng.bool(0.4),
-        jiRatios: [1, 16 / 15, 9 / 8, 6 / 5, 5 / 4, 4 / 3, 45 / 32, 3 / 2, 8 / 5, 5 / 3, 9 / 5, 15 / 8],
+        useJI: tuningRatios !== null, // backwards compat — true if any non-Equal tuning
+        jiRatios: tuningRatios || TUNING_SYSTEMS['Just'], // fallback for legacy code paths
         motif: [rng.pick(scale), rng.pick(scale), rng.pick(scale), rng.pick(scale)],
         ac,
     };
@@ -172,6 +230,7 @@ class AudioEngine {
         this._granularEnabled = true;
         this._percussionEnabled = true;
         this._percVol = 0.8;
+        this._noiseBuffer = null; // Cached noise buffer for percussion
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
         this._arpEnabled = false;
@@ -205,11 +264,27 @@ class AudioEngine {
             this.masterGain = this.ctx.createGain();
             this.masterGain.gain.value = this._vol;
 
+            // Master limiter/compressor to prevent clipping during climax events
+            this.compressor = this.ctx.createDynamicsCompressor();
+            this.compressor.threshold.value = -6;
+            this.compressor.knee.value = 10;
+            this.compressor.ratio.value = 4;
+            this.compressor.attack.value = 0.003;
+            this.compressor.release.value = 0.25;
+
             this.eqLow.connect(this.eqMid);
             this.eqMid.connect(this.eqHigh);
             this.eqHigh.connect(this.masterGain);
-            this.masterGain.connect(this.analyser);
+            this.masterGain.connect(this.compressor);
+            this.compressor.connect(this.analyser);
             this.analyser.connect(this.ctx.destination);
+
+            // Pre-build shared noise buffer for percussion (snare/shaker)
+            const nLen = this.ctx.sampleRate;
+            const nBuf = this.ctx.createBuffer(1, nLen, this.ctx.sampleRate);
+            const nd = nBuf.getChannelData(0);
+            for (let i = 0; i < nLen; i++) nd[i] = Math.random() * 2 - 1;
+            this._noiseBuffer = nBuf;
             // Set up AudioListener for HRTF spatial audio (Tier 3)
             const L = this.ctx.listener;
             if (L.positionX) {
@@ -227,7 +302,8 @@ class AudioEngine {
     _buildReverb(decay, seed) {
         const ctx = this.ctx;
         const rng = new RNG(seed || 0);
-        const len = ctx.sampleRate * Math.max(2, decay);
+        // Cap IR length to 4s to avoid massive buffer allocation on long-reverb biomes
+        const len = ctx.sampleRate * Math.min(Math.max(2, decay), 4);
         const ir = ctx.createBuffer(2, len, ctx.sampleRate);
         for (let c = 0; c < 2; c++) {
             const d = ir.getChannelData(c);
@@ -241,6 +317,13 @@ class AudioEngine {
                 const t = i / len;
                 if (i > 0.04 * ctx.sampleRate)
                     d[i] += rng.range(-1, 1) * Math.pow(1 - t, 1.6) * 0.55;
+            }
+            // High-frequency damping (simulates air absorption in real rooms)
+            let prev = 0;
+            for (let i = 0; i < len; i++) {
+                const damping = 0.3 + 0.7 * (1 - i / len);
+                d[i] = prev + damping * (d[i] - prev);
+                prev = d[i];
             }
         }
         const conv = ctx.createConvolver();
@@ -312,17 +395,26 @@ class AudioEngine {
 
         const oct = ac ? rng.pick(ac.melodyOcts) : rng.pick([2, 3, 4]);
 
-        // Tier 4: Microtonal / Just Intonation override
+        // Tier 4: Microtonal / Just Intonation / Pythagorean override
         let freq;
-        if (planet.useJI) {
+        // Octave multiplier with optional gamelan-style stretch
+        const octMul = Math.pow(planet.octaveStretch || 2, Math.log2(oct));
+        if (planet.useJI && planet.jiRatios) {
             const norm = ((step % 12) + 12) % 12;
             let ratio = planet.jiRatios[norm];
-            if (step >= 12) ratio *= 2;      // crude octave shift
-            if (step <= -12) ratio *= 0.5;
-            freq = planet.rootFreq * oct * ratio;
+            if (step >= 12) ratio *= (planet.octaveStretch || 1) * 2;
+            if (step <= -12) ratio *= 0.5 / (planet.octaveStretch || 1);
+            freq = planet.rootFreq * octMul * ratio;
         } else {
-            freq = planet.rootFreq * oct * Math.pow(2, step / 12);
+            freq = planet.rootFreq * octMul * Math.pow(2, step / 12);
         }
+        // Quarter-tone micro-detuning: probabilistic ±50 cents offset
+        if ((planet.quarterToneProb || 0) > 0 && rng.next() < planet.quarterToneProb) {
+            const centsOff = rng.range(-50, 50);
+            freq *= Math.pow(2, centsOff / 1200);
+        }
+        // Clamp to audible range (keep generous to preserve variety)
+        freq = Math.max(20, Math.min(freq, (ctx.sampleRate / 2) - 100));
 
         const osc = ctx.createOscillator();
         const env = ctx.createGain();
@@ -417,6 +509,8 @@ class AudioEngine {
         osc.connect(env); env.connect(panner); panner.connect(dest);
         osc.start(now); osc.stop(now + atk + dur + 0.1);
         this.nodes.push(osc, env, panner);
+        // Auto-cleanup when note ends to prevent node accumulation
+        osc.onended = () => { try { osc.disconnect(); env.disconnect(); panner.disconnect(); } catch (e) { } };
 
         // ── Pitch bend vibrato (gated by flag)
         const bendCents = (this._pitchBendEnabled && ac && ac.pitchBend) ? ac.pitchBend : 0;
@@ -509,7 +603,7 @@ class AudioEngine {
         filt.connect(conv); filt.connect(del);
         filt.connect(dry);
         this.nodes.push(filt);
-        this._lfo(p.lfoRate * 0.12, p.filterFreq * 0.35, filt.frequency);
+        this._lfo(p.lfoRate * 0.12, p.filterFreq * 0.20, filt.frequency);
 
         // Drone — Tier 4: Custom Wavetable base + dynamic FM
         const base = p.rootFreq;
@@ -605,8 +699,9 @@ class AudioEngine {
                 const rng = new RNG(p.seed + 20000 + this.stepFX++);
                 if (rng.range(0, 1) < 0.2) {
                     const orig = filt.frequency.value;
-                    filt.frequency.setValueAtTime(orig * (0.2 + rng.range(0, 3)), ctx.currentTime);
-                    filt.frequency.setValueAtTime(orig, ctx.currentTime + 0.04 + rng.range(0, 0.12));
+                    const nyquist = ctx.sampleRate / 2;
+                    filt.frequency.setValueAtTime(Math.min(orig * (0.2 + rng.range(0, 3)), nyquist), ctx.currentTime);
+                    filt.frequency.setValueAtTime(Math.min(orig, nyquist), ctx.currentTime + 0.04 + rng.range(0, 0.12));
                 }
             }, 700));
         }
@@ -837,10 +932,7 @@ class AudioEngine {
         const playSnare = (vel) => {
             const t = ctx.currentTime;
             const noise = ctx.createBufferSource();
-            const nBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
-            const d = nBuf.getChannelData(0);
-            for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-            noise.buffer = nBuf;
+            noise.buffer = this._noiseBuffer; // Use cached noise buffer
             const nFilt = ctx.createBiquadFilter();
             nFilt.type = 'highpass'; nFilt.frequency.value = 1000 * kit.sPitch;
             const nEnv = ctx.createGain();
@@ -1139,7 +1231,10 @@ class AudioEngine {
 
             // ─ Filter & FM morphing as tension rises ────────────────────────
             const tSq = this.tension * this.tension;
-            const newFiltFreq = base.filtFreq * (1 + this.tension * 2.5);
+            const newFiltFreq = Math.min(
+                base.filtFreq * (1 + this.tension * 2.5),
+                (this.ctx.sampleRate / 2) - 1
+            );
             if (this.tensionFilt) {
                 this.tensionFilt.frequency.linearRampToValueAtTime(
                     newFiltFreq, ctx.currentTime + 2
@@ -1234,8 +1329,10 @@ class AudioEngine {
         if (bar) bar.style.width = '0%';
         const t = this.ctx ? this.ctx.currentTime : 0;
         this.nodes.forEach(n => {
-            try { if (n.stop) n.stop(t + 0.05); } catch (e) { }
-            setTimeout(() => { try { n.disconnect(); } catch (e) { } }, 120);
+            try {
+                if (n.stop) n.stop(t + 0.05);
+                else n.disconnect(); // Gain/filter nodes can disconnect immediately
+            } catch (e) { }
         });
         this.nodes = [];
         this.playing = false;
@@ -1283,7 +1380,8 @@ class PlanetRenderer {
     }
 
     _buildTex(planet) {
-        const rng = new RNG(planet.seed + 7), sz = 256, gw = 16;
+        const sz = this.isMobile ? 128 : 256;
+        const rng = new RNG(planet.seed + 7), gw = 16;
         const g1 = Array.from({ length: gw * gw }, () => rng.next());
         const g2 = Array.from({ length: gw * gw }, () => rng.next());
         const off = document.createElement('canvas'); off.width = off.height = sz;
@@ -1317,8 +1415,11 @@ class PlanetRenderer {
 
     load(planet) {
         this.planet = planet;
-        this._tex = this._buildTex(planet);
-        if (this.isMobile) this._frame();
+        // Defer texture build to avoid blocking click handler
+        requestAnimationFrame(() => {
+            this._tex = this._buildTex(planet);
+            this._frame();
+        });
     }
 
     _frame() {
@@ -1565,8 +1666,10 @@ class Starfield {
     _init() {
         const W = window.innerWidth, H = window.innerHeight;
         this.cv.width = W; this.cv.height = H;
-        this.stars = Array.from({ length: 300 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.2, a: Math.random(), phase: Math.random() * Math.PI * 2, spd: Math.random() * 0.002 + 0.0004 }));
-        this.nebula = Array.from({ length: 7 }, () => ({ x: Math.random() * W, y: Math.random() * H, rx: Math.random() * 320 + 100, ry: Math.random() * 200 + 80, a: Math.random() * 0.04 + 0.007, hue: Math.floor(Math.random() * 70) + 200 }));
+        const starCount = this.isMobile ? 120 : 300;
+        const nebulaCount = this.isMobile ? 3 : 7;
+        this.stars = Array.from({ length: starCount }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.2, a: Math.random(), phase: Math.random() * Math.PI * 2, spd: Math.random() * 0.002 + 0.0004 }));
+        this.nebula = Array.from({ length: nebulaCount }, () => ({ x: Math.random() * W, y: Math.random() * H, rx: Math.random() * 320 + 100, ry: Math.random() * 200 + 80, a: Math.random() * 0.04 + 0.007, hue: Math.floor(Math.random() * 70) + 200 }));
     }
     draw(t) {
         const cv = this.cv, ctx = this.ctx, W = cv.width, H = cv.height;
@@ -2059,6 +2162,8 @@ class App {
         document.getElementById('info-sonic').textContent = planet.biome.soundProfile;
         document.getElementById('info-freq').textContent = `${planet.rootFreq.toFixed(1)} Hz`;
         document.getElementById('info-scale').textContent = planet.scaleName;
+        const tuningEl = document.getElementById('info-tuning');
+        if (tuningEl) tuningEl.textContent = planet.tuningSystem + (planet.quarterToneProb > 0 ? ' · μTONE' : '') + (planet.octaveStretch > 1.001 ? ' · STRETCH' : '');
         document.getElementById('info-atmo').textContent = planet.biome.atmosphere;
         document.getElementById('info-reverb').textContent = planet.biome.reverbLabel;
         document.getElementById('planet-desc').textContent = planet.biome.desc;
@@ -2163,6 +2268,7 @@ class App {
     }
 
     _togglePlay() {
+        if (this._playPending) return; // Prevent double-click race
         const btn = document.getElementById('play-btn');
         const dot = document.getElementById('status-dot');
         const txt = document.getElementById('status-text');
@@ -2171,13 +2277,18 @@ class App {
             btn.textContent = '▶'; btn.classList.remove('playing');
             dot.className = 'status-dot'; txt.textContent = 'STANDBY';
         } else {
+            this._playPending = true;
             if (!this.planet) this._navigate();
+            // Update UI immediately, defer heavy audio work
+            btn.textContent = '■'; btn.classList.add('playing');
             dot.className = 'status-dot loading'; txt.textContent = 'INITIATING…';
             setTimeout(() => {
-                this.audio.start(this.planet);
-                this.waveViz.setAnalyser(this.audio.getAnalyser());
-                btn.textContent = '■'; btn.classList.add('playing');
-                dot.className = 'status-dot playing'; txt.textContent = 'TRANSMITTING';
+                requestAnimationFrame(() => {
+                    this.audio.start(this.planet);
+                    this.waveViz.setAnalyser(this.audio.getAnalyser());
+                    dot.className = 'status-dot playing'; txt.textContent = 'TRANSMITTING';
+                    this._playPending = false;
+                });
             }, 180);
         }
     }

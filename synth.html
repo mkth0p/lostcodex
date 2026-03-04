@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HARMONIC CODEX — Synth Mode</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #06060e;
+            --panel: #0b0b18;
+            --border: #1a1a30;
+            --text: #c8c8e0;
+            --text-dim: #6a6a8a;
+            --accent: #5b9dff;
+            --accent-glow: #5b9dff44;
+            --success: #00e676;
+            --danger: #ff5252;
+        }
+
+        body {
+            font-family: 'Space Mono', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            letter-spacing: 4px;
+            color: var(--accent);
+            text-align: center;
+            padding: 12px 0 4px;
+        }
+
+        .subtitle {
+            font-size: 9px;
+            letter-spacing: 3px;
+            color: var(--text-dim);
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        /* Panels */
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .panel-label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        /* Address */
+        .address-display {
+            background: #000;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px 14px;
+            font-size: 20px;
+            letter-spacing: 4px;
+            min-height: 44px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .address-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 22px;
+            background: var(--accent);
+            animation: blink 1s step-end infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            font-family: 'Space Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 1px;
+            padding: 7px 14px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--panel);
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.15s;
+            flex: 1;
+        }
+
+        .btn:hover {
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+            font-weight: 700;
+        }
+
+        .btn-primary:hover {
+            background: #7bb5ff;
+        }
+
+        .btn-danger {
+            color: var(--danger);
+            border-color: #ff525244;
+        }
+
+        .btn-danger:hover {
+            border-color: var(--danger);
+        }
+
+        /* Glyph keyboard */
+        .glyph-keyboard {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+
+        .glyph-key {
+            width: 34px;
+            height: 34px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text);
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.12s;
+        }
+
+        .glyph-key:hover {
+            border-color: var(--accent);
+            color: #fff;
+            background: var(--accent-glow);
+        }
+
+        /* Play button */
+        .play-btn {
+            width: 100%;
+            height: 48px;
+            border: 2px solid var(--accent);
+            border-radius: 6px;
+            background: transparent;
+            color: var(--accent);
+            font-size: 22px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 6px;
+        }
+
+        .play-btn:hover {
+            background: var(--accent-glow);
+        }
+
+        .play-btn.playing {
+            background: var(--accent);
+            color: #000;
+        }
+
+        /* Status */
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 10px;
+            letter-spacing: 2px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+
+        .status-dot.playing {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        .status-dot.loading {
+            background: #ffab40;
+            animation: pulse-dot 0.8s infinite;
+        }
+
+        @keyframes pulse-dot {
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* Planet info */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 16px;
+            font-size: 10px;
+            margin-bottom: 10px;
+        }
+
+        .info-key {
+            color: var(--text-dim);
+            letter-spacing: 1px;
+        }
+
+        .info-val {
+            color: var(--text);
+            text-align: right;
+        }
+
+        .planet-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            letter-spacing: 3px;
+            color: #fff;
+            margin-bottom: 2px;
+        }
+
+        .planet-designation {
+            font-size: 9px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .sonic-tag {
+            display: inline-block;
+            font-size: 9px;
+            letter-spacing: 2px;
+            padding: 3px 8px;
+            border: 1px solid var(--accent);
+            border-radius: 3px;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        /* Sliders */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 16px;
+        }
+
+        .ctrl-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ctrl-item label {
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            min-width: 48px;
+            flex-shrink: 0;
+        }
+
+        .ctrl-item input[type="range"] {
+            flex: 1;
+            height: 4px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(91, 157, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .ctrl-item input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+
+        /* Toggles */
+        .toggles-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+
+        .toggle-label input {
+            display: none;
+        }
+
+        .toggle-track {
+            width: 28px;
+            height: 14px;
+            border-radius: 7px;
+            background: #1a1a30;
+            border: 1px solid var(--border);
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        .toggle-track::after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            top: 1px;
+            left: 1px;
+            transition: all 0.2s;
+        }
+
+        .toggle-label input:checked+.toggle-track {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .toggle-label input:checked+.toggle-track::after {
+            left: 15px;
+            background: #fff;
+        }
+
+        /* Tension bar */
+        .tension-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .tension-bar {
+            flex: 1;
+            height: 6px;
+            background: #1a1a30;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .tension-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), #ff5252);
+            border-radius: 3px;
+            transition: width 0.5s;
+        }
+
+        .tension-icon {
+            font-size: 14px;
+        }
+
+        .tension-icon.tension-low {
+            color: var(--accent);
+        }
+
+        .tension-icon.tension-mid {
+            color: #ffab40;
+        }
+
+        .tension-icon.tension-high {
+            color: var(--danger);
+            animation: pulse-dot 0.5s infinite;
+        }
+
+        /* History / Bookmarks */
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 8px;
+            min-height: 20px;
+        }
+
+        .history-chip,
+        .bookmark-chip {
+            font-size: 12px;
+            letter-spacing: 2px;
+            padding: 3px 8px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            cursor: pointer;
+            color: var(--text-dim);
+            transition: all 0.15s;
+        }
+
+        .history-chip:hover,
+        .bookmark-chip:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .no-history {
+            font-size: 9px;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 10px 0;
+        }
+
+        /* Bookmark button */
+        .bookmark-btn.saved {
+            color: var(--success);
+            border-color: var(--success);
+        }
+
+        .chord-display {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 900;
+            color: var(--accent);
+            text-shadow: 0 0 15px rgba(91, 157, 255, 0.4);
+            margin: 10px 0;
+            text-align: center;
+            min-height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 8px;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .melody-info {
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+
+        .melody-label {
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .melody-val {
+            color: var(--accent);
+            text-align: right;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .melody-mode-tag {
+            grid-column: span 2;
+            text-align: center;
+            padding: 4px;
+            background: rgba(91, 157, 255, 0.1);
+            color: var(--accent);
+            border-radius: 2px;
+            margin-bottom: 5px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>✦ HARMONIC CODEX ✦</h1>
+    <div class="subtitle">SYNTH MODE — AUDIO ONLY</div>
+
+    <!-- Address Input -->
+    <div class="panel">
+        <div class="panel-label">✦ GLYPH ADDRESS</div>
+        <div class="address-display">
+            <span id="address-text"></span><span class="address-cursor"></span>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-danger" id="btn-clear">⌫ CLEAR</button>
+            <button class="btn" id="btn-random">⚄ RANDOM</button>
+            <button class="btn btn-primary" id="btn-navigate">➤ NAVIGATE</button>
+            <button class="btn bookmark-btn" id="btn-bookmark">☆ SAVE</button>
+        </div>
+        <div class="glyph-keyboard" id="glyph-keyboard"></div>
+
+        <div class="panel-label">✦ VISITED</div>
+        <div class="chips" id="history-chips"><span class="no-history">No planets visited yet.</span></div>
+
+        <div class="panel-label">✦ BOOKMARKS</div>
+        <div class="chips" id="bookmark-chips"><span class="no-history">No bookmarks yet.</span></div>
+    </div>
+
+    <!-- Planet Info -->
+    <div class="panel">
+        <div class="planet-name" id="planet-name">—</div>
+        <div class="planet-designation" id="planet-designation">—</div>
+        <span class="sonic-tag" id="info-sonic">—</span>
+        <div class="info-grid">
+            <span class="info-key">BIOME</span><span class="info-val" id="info-biome">—</span>
+            <span class="info-key">ROOT FREQ</span><span class="info-val" id="info-freq">—</span>
+            <span class="info-key">SCALE</span><span class="info-val" id="info-scale">—</span>
+            <span class="info-key">TUNING</span><span class="info-val" id="info-tuning">—</span>
+            <span class="info-key">REVERB</span><span class="info-val" id="info-reverb">—</span>
+            <span class="info-key">ATMOSPHERE</span><span class="info-val" id="info-atmo">—</span>
+            <span class="info-key">MOONS</span><span class="info-val" id="info-moons">—</span>
+            <span class="info-key">COORDINATES</span><span class="info-val" id="info-coords">—</span>
+            <span class="info-key">PROGRESSION</span><span class="info-val" id="info-progression">—</span>
+            <span class="info-key">RARITY</span><span class="info-val" id="info-rarity">—</span>
+        </div>
+
+        <div class="melody-info">
+            <div class="melody-mode-tag" id="mel-mode">GENERATIVE</div>
+            <div class="melody-label">Phrase Length</div>
+            <div class="melody-val" id="mel-len">0</div>
+            <div class="melody-label">Rest Prob</div>
+            <div class="melody-val" id="mel-rest">5%</div>
+        </div>
+    </div>
+
+    <!-- Transport & Controls -->
+    <div class="panel">
+        <div class="chord-display" id="chord-display"></div>
+        <button class="play-btn" id="play-btn" title="Play / Stop">▶</button>
+        <div class="status-row">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">STANDBY</span>
+        </div>
+
+        <hr class="divider">
+        <div class="panel-label">✦ MIXER</div>
+        <div class="controls-grid">
+            <div class="ctrl-item"><label>VOL</label><input type="range" id="ctrl-vol" min="0" max="1" step="0.01"
+                    value="0.7"></div>
+            <div class="ctrl-item"><label>REVERB</label><input type="range" id="ctrl-reverb" min="0" max="1" step="0.01"
+                    value="0.6"></div>
+            <div class="ctrl-item"><label>DRIFT</label><input type="range" id="ctrl-drift" min="0" max="1" step="0.01"
+                    value="0.4"></div>
+            <div class="ctrl-item"><label>DENSITY</label><input type="range" id="ctrl-density" min="0" max="1"
+                    step="0.01" value="0.5"></div>
+            <div class="ctrl-item"><label>PERC VOL</label><input type="range" id="ctrl-perc-vol" min="0" max="3"
+                    step="0.01" value="0.8"></div>
+        </div>
+
+        <hr class="divider">
+        <div class="panel-label">✦ EQ</div>
+        <div class="controls-grid">
+            <div class="ctrl-item"><label>LOW</label><input type="range" id="ctrl-eq-low" min="-12" max="12" step="0.1"
+                    value="0"></div>
+            <div class="ctrl-item"><label>MID</label><input type="range" id="ctrl-eq-mid" min="-12" max="12" step="0.1"
+                    value="0"></div>
+            <div class="ctrl-item"><label>HIGH</label><input type="range" id="ctrl-eq-high" min="-12" max="12"
+                    step="0.1" value="0"></div>
+        </div>
+
+        <hr class="divider">
+        <div class="panel-label">✦ LAYERS</div>
+        <div class="toggles-row">
+            <label class="toggle-label"><input type="checkbox" id="ctrl-granular" checked><span
+                    class="toggle-track"></span>GRANULAR</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-perc" checked><span
+                    class="toggle-track"></span>RHYTHM</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-chords" checked><span
+                    class="toggle-track"></span>CHORDS</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-arp"><span
+                    class="toggle-track"></span>ARP</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-bend" checked><span
+                    class="toggle-track"></span>BEND</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-motif" checked><span
+                    class="toggle-track"></span>MOTIF</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-ghost" checked><span
+                    class="toggle-track"></span>GHOST</label>
+            <label class="toggle-label"><input type="checkbox" id="ctrl-fills" checked><span
+                    class="toggle-track"></span>FILLS</label>
+        </div>
+
+        <div class="tension-row">
+            <label style="font-size:9px;letter-spacing:1px;color:var(--text-dim)">TENSION</label>
+            <div class="tension-bar">
+                <div class="tension-fill" id="tension-fill"></div>
+            </div>
+            <span class="tension-icon tension-low" id="tension-icon">♥</span>
+        </div>
+    </div>
+
+    <!-- Dummy elements that the app.js code references but we don't display -->
+    <div style="display:none">
+        <span id="addr-short"></span>
+        <div id="planet-overlay-name"></div>
+        <div id="planet-desc"></div>
+        <canvas id="planet-canvas" width="1" height="1"></canvas>
+        <canvas id="bg-canvas" width="1" height="1"></canvas>
+        <canvas id="warp-canvas" width="1" height="1"></canvas>
+        <canvas id="waveform-canvas" width="1" height="1"></canvas>
+        <canvas id="viz-mini" width="1" height="1"></canvas>
+    </div>
+
+    <script>
+        // Tell main.js to skip the visual App constructor (references index.html DOM)
+        window.__SYNTH_MODE = true;
+    </script>
+    <script type="module">
+        import { AudioEngine } from './src/audio.js';
+        import { generatePlanet } from './src/planet.js';
+        import { RNG } from './src/rng.js';
+        import { GLYPHS } from './src/data.js';
+
+        // Minimal synth-only controller
+        const audio = new AudioEngine();
+        let planet = null;
+        let address = '';
+        let history = [];
+        let playPending = false;
+
+        const $ = id => document.getElementById(id);
+
+        function syncAddress() { $('address-text').textContent = address; }
+
+        function fillSlider(el) {
+            const pct = ((el.value - el.min) / (el.max - el.min)) * 100;
+            if (el.min < 0 && el.max > 0) {
+                const center = 50;
+                if (pct > center)
+                    el.style.background = `linear-gradient(to right, rgba(91,157,255,0.2) 50%, var(--accent) 50%, var(--accent) ${pct}%, rgba(91,157,255,0.2) ${pct}%)`;
+                else
+                    el.style.background = `linear-gradient(to right, rgba(91,157,255,0.2) ${pct}%, var(--accent) ${pct}%, var(--accent) 50%, rgba(91,157,255,0.2) 50%)`;
+            } else {
+                el.style.background = `linear-gradient(to right,var(--accent) ${pct}%,rgba(91,157,255,0.2) ${pct}%)`;
+            }
+        }
+
+        function setAddress(a) { address = a; syncAddress(); }
+
+        function randomAddress() {
+            const rng = new RNG((Date.now() ^ (Math.random() * 0xFFFFFF | 0)) >>> 0);
+            let a = ''; for (let i = 0; i < rng.int(5, 18); i++) a += rng.pick(GLYPHS);
+            setAddress(a);
+        }
+
+        function navigate() {
+            if (!address) randomAddress();
+            planet = generatePlanet(address);
+
+            $('planet-name').textContent = planet.pname.toUpperCase();
+            $('planet-designation').textContent = planet.designation;
+            $('info-biome').textContent = planet.biome.name;
+            $('info-sonic').textContent = planet.biome.soundProfile;
+            $('info-sonic').style.borderColor = planet.biome.glowColor;
+            $('info-sonic').style.color = planet.biome.glowColor;
+            $('info-freq').textContent = `${planet.rootFreq.toFixed(1)} Hz`;
+            $('info-scale').textContent = planet.scaleName;
+            $('info-tuning').textContent = planet.tuningSystem + (planet.quarterToneProb > 0 ? ' · μTONE' : '') + (planet.octaveStretch > 1.001 ? ' · STRETCH' : '');
+            $('info-atmo').textContent = planet.biome.atmosphere;
+            $('info-reverb').textContent = planet.biome.reverbLabel;
+            $('info-moons').textContent = planet.numMoons === 0 ? 'NONE' : `${planet.numMoons} SATELLITE${planet.numMoons > 1 ? 'S' : ''}`;
+            $('info-progression').textContent = planet.progression.join(' - ');
+            const glyphs = [...address];
+            const third = Math.max(1, Math.floor(glyphs.length / 3));
+            $('info-coords').textContent =
+                `${glyphs.slice(0, third).join('') || '?'} · ${glyphs.slice(third, third * 2).join('') || '?'} · ${glyphs.slice(third * 2).join('') || '?'}`;
+
+            const len = glyphs.length;
+            const rarity = len <= 3 ? 'COMMON' : len <= 6 ? 'STANDARD' : len <= 10 ? 'UNCOMMON' : len <= 15 ? 'RARE' : 'ANOMALOUS';
+            $('info-rarity').textContent = rarity;
+
+            if (!history.includes(address)) {
+                history.unshift(address);
+                if (history.length > 9) history.pop();
+                renderHistory();
+            }
+
+            if (audio.playing) audio.crossfadeTo(planet);
+
+            syncBookmarkBtn();
+            window.location.hash = encodeURIComponent(address);
+        }
+
+        function renderHistory() {
+            const el = $('history-chips');
+            el.innerHTML = '';
+            if (!history.length) { el.innerHTML = '<span class="no-history">No planets visited yet.</span>'; return; }
+            history.forEach(addr => {
+                const chip = document.createElement('span');
+                chip.className = 'history-chip';
+                chip.title = addr;
+                chip.textContent = [...addr].slice(0, 7).join('') + (addr.length > 7 ? '…' : '');
+                chip.addEventListener('click', () => { setAddress(addr); navigate(); });
+                el.appendChild(chip);
+            });
+        }
+
+        function loadBookmarks() { try { return JSON.parse(localStorage.getItem('hc-bookmarks') || '[]'); } catch (e) { return []; } }
+        function saveBookmarks(bm) { localStorage.setItem('hc-bookmarks', JSON.stringify(bm)); }
+
+        function toggleBookmark() {
+            const bm = loadBookmarks();
+            const idx = bm.findIndex(b => b.address === address);
+            if (idx >= 0) bm.splice(idx, 1);
+            else {
+                bm.unshift({ address, name: planet ? planet.pname : '?', biomeId: planet ? planet.biome.id : '' });
+                if (bm.length > 20) bm.pop();
+            }
+            saveBookmarks(bm);
+            renderBookmarks();
+            syncBookmarkBtn();
+        }
+
+        function syncBookmarkBtn() {
+            const btn = $('btn-bookmark');
+            const saved = loadBookmarks().some(b => b.address === address);
+            btn.textContent = saved ? '★ SAVED' : '☆ SAVE';
+            if (saved) btn.classList.add('saved'); else btn.classList.remove('saved');
+        }
+
+        function renderBookmarks() {
+            const el = $('bookmark-chips');
+            const bm = loadBookmarks();
+            el.innerHTML = '';
+            if (!bm.length) { el.innerHTML = '<span class="no-history">No bookmarks yet.</span>'; return; }
+            bm.forEach(b => {
+                const chip = document.createElement('span');
+                chip.className = 'bookmark-chip';
+                chip.title = (b.name || '?') + ' — ' + b.address;
+                chip.textContent = [...b.address].slice(0, 7).join('') + (b.address.length > 7 ? '…' : '');
+                chip.addEventListener('click', () => { setAddress(b.address); navigate(); });
+                el.appendChild(chip);
+            });
+        }
+
+        function togglePlay() {
+            if (playPending) return;
+            const btn = $('play-btn'), dot = $('status-dot'), txt = $('status-text');
+            if (audio.playing) {
+                audio.stop();
+                btn.textContent = '▶'; btn.classList.remove('playing');
+                dot.className = 'status-dot'; txt.textContent = 'STANDBY';
+            } else {
+                playPending = true;
+                if (!planet) navigate();
+                btn.textContent = '■'; btn.classList.add('playing');
+                dot.className = 'status-dot loading'; txt.textContent = 'INITIATING…';
+                setTimeout(() => {
+                    requestAnimationFrame(() => {
+                        audio.start(planet);
+                        dot.className = 'status-dot playing'; txt.textContent = 'TRANSMITTING';
+                        playPending = false;
+                    });
+                }, 120);
+            }
+        }
+
+        // Glyph keyboard
+        const kb = $('glyph-keyboard');
+        GLYPHS.forEach(g => {
+            const btn = document.createElement('button');
+            btn.className = 'glyph-key'; btn.textContent = g;
+            btn.addEventListener('click', () => { address += g; syncAddress(); });
+            kb.appendChild(btn);
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Backspace') { e.preventDefault(); address = [...address].slice(0, -1).join(''); syncAddress(); return; }
+            if (e.key === 'Enter') { navigate(); return; }
+            if (e.key === ' ') { e.preventDefault(); togglePlay(); return; }
+            const gi = GLYPHS.indexOf(e.key);
+            if (gi >= 0) { address += e.key; syncAddress(); return; }
+            if (/^[a-z]$/i.test(e.key)) {
+                const ci = e.key.toLowerCase().charCodeAt(0) - 97;
+                if (ci < GLYPHS.length) { address += GLYPHS[ci]; syncAddress(); }
+            }
+        });
+
+        $('btn-clear').addEventListener('click', () => { address = ''; syncAddress(); });
+        $('btn-random').addEventListener('click', randomAddress);
+        $('btn-navigate').addEventListener('click', navigate);
+        $('btn-bookmark').addEventListener('click', toggleBookmark);
+        $('play-btn').addEventListener('click', togglePlay);
+
+        const sl = id => { const el = $(id); fillSlider(el); return el; };
+        sl('ctrl-vol').addEventListener('input', e => { audio.setVolume(+e.target.value); fillSlider(e.target); });
+        sl('ctrl-reverb').addEventListener('input', e => { audio.setReverb(+e.target.value); fillSlider(e.target); });
+        sl('ctrl-drift').addEventListener('input', e => { audio._drift = +e.target.value; fillSlider(e.target); });
+        sl('ctrl-density').addEventListener('input', e => { audio._density = +e.target.value; fillSlider(e.target); });
+        sl('ctrl-perc-vol').addEventListener('input', e => {
+            audio._percVol = +e.target.value;
+            if (audio._percussionEnabled && audio._percBus && audio.ctx) {
+                const g = audio._percBus.gain, now = audio.ctx.currentTime;
+                g.cancelScheduledValues(now); g.setValueAtTime(g.value, now);
+                g.linearRampToValueAtTime(audio._percVol, now + 0.1);
+            }
+            fillSlider(e.target);
+        });
+        sl('ctrl-eq-low').addEventListener('input', e => { if (audio.eqLow) audio.eqLow.gain.value = +e.target.value; fillSlider(e.target); });
+        sl('ctrl-eq-mid').addEventListener('input', e => { if (audio.eqMid) audio.eqMid.gain.value = +e.target.value; fillSlider(e.target); });
+        sl('ctrl-eq-high').addEventListener('input', e => { if (audio.eqHigh) audio.eqHigh.gain.value = +e.target.value; fillSlider(e.target); });
+
+        $('ctrl-granular').addEventListener('change', e => {
+            audio._granularEnabled = e.target.checked;
+            if (audio._granularBus && audio.ctx) {
+                const g = audio._granularBus.gain, now = audio.ctx.currentTime;
+                g.cancelScheduledValues(now); g.setValueAtTime(g.value, now);
+                g.linearRampToValueAtTime(e.target.checked ? 1 : 0, now + 1.5);
+            }
+        });
+        $('ctrl-perc').addEventListener('change', e => {
+            audio._percussionEnabled = e.target.checked;
+            if (audio._percBus && audio.ctx) {
+                const g = audio._percBus.gain, now = audio.ctx.currentTime;
+                g.cancelScheduledValues(now); g.setValueAtTime(g.value, now);
+                g.linearRampToValueAtTime(e.target.checked ? audio._percVol : 0, now + 0.2);
+            }
+        });
+        $('ctrl-chords').addEventListener('change', e => { audio._chordEnabled = e.target.checked; });
+        $('ctrl-arp').addEventListener('change', e => { audio._arpEnabled = e.target.checked; });
+        $('ctrl-bend').addEventListener('change', e => { audio._pitchBendEnabled = e.target.checked; });
+        $('ctrl-motif').addEventListener('change', e => { audio._motifEnabled = e.target.checked; });
+        $('ctrl-ghost').addEventListener('change', e => { audio._ghostEnabled = e.target.checked; });
+        $('ctrl-fills').addEventListener('change', e => { audio._fillsEnabled = e.target.checked; });
+
+        // Init
+        const hash = window.location.hash.slice(1);
+        setAddress(hash ? decodeURIComponent(hash) : 'ᚠᚢᚦᚨᚱᚲ');
+        navigate();
+        renderBookmarks();
+
+        // Polling for chord and melody intelligence display
+        const chordEl = $('chord-display');
+        const melModeEl = $('mel-mode');
+        const melLenEl = $('mel-len');
+        const melRestEl = $('mel-rest');
+
+        setInterval(() => {
+            if (audio.playing) {
+                // Chord update
+                const c = audio.getChord();
+                if (chordEl.textContent !== c) {
+                    chordEl.textContent = c;
+                    chordEl.style.transform = 'scale(1.1)';
+                    setTimeout(() => chordEl.style.transform = 'scale(1)', 100);
+                }
+
+                // Melody Intelligence update
+                const m = audio.getMelodyState();
+                melModeEl.textContent = m.mode;
+                melLenEl.textContent = m.phraseLength;
+                melRestEl.textContent = Math.round(m.restProb * 100) + '%';
+
+                // Visual feedback for modes
+                if (m.mode === 'RESPONSE') {
+                    melModeEl.style.background = 'rgba(255, 157, 91, 0.2)';
+                    melModeEl.style.color = '#ff9d5b';
+                } else if (m.mode === 'MOTIF') {
+                    melModeEl.style.background = 'rgba(157, 255, 91, 0.2)';
+                    melModeEl.style.color = '#9dff5b';
+                } else {
+                    melModeEl.style.background = 'rgba(91, 157, 255, 0.2)';
+                    melModeEl.style.color = 'var(--accent)';
+                }
+            } else {
+                chordEl.textContent = '';
+                melLenEl.textContent = '0';
+                melRestEl.textContent = '5%';
+                melModeEl.textContent = 'STANDBY';
+                melModeEl.style.background = 'rgba(255, 255, 255, 0.05)';
+                melModeEl.style.color = 'var(--text-dim)';
+            }
+        }, 100);
+    </script>
+</body>
+
+</html>
