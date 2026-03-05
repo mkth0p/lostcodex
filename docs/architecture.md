@@ -13,6 +13,10 @@
   - `src/audio/core/node-registry.js`
   - `src/audio/core/transport.js`
   - `src/audio/core/scheduler.js`
+- Extracted config banks:
+  - `src/audio/config/tension-profiles.js`
+  - `src/audio/config/drum-profiles.js`
+  - `src/audio/config/pattern-banks.js`
 - Worklets:
   - `src/audio/worklets/bitcrusher-processor.js`
 

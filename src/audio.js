@@ -4,6 +4,9 @@ import { CHORD_TEMPLATES } from './data.js';
 import { NodeRegistry as CoreNodeRegistry } from './audio/core/node-registry.js';
 import { buildTransport } from './audio/core/transport.js';
 import { LookaheadScheduler } from './audio/core/scheduler.js';
+import { DEFAULT_TENSION_PROFILE, BIOME_TENSION_PROFILES } from './audio/config/tension-profiles.js';
+import { DEFAULT_DRUM_TONE, BIOME_DRUM_TONES } from './audio/config/drum-profiles.js';
+import { BASE_BIOME_PATTERN_BANKS, AMBIENT_PATTERN_BANK } from './audio/config/pattern-banks.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -46,885 +49,6 @@ const MELODY_VOICE_COOLDOWNS = {
     strings: 0.7,
     subpad: 1.0,
     vowel_morph: 0.9,
-};
-
-const DEFAULT_TENSION_PROFILE = {
-    riseRate: 0.028,
-    riseVariance: 0.008,
-    drainRate: 0.055,
-    floor: 0.08,
-    reset: 0.42,
-    climaxThreshold: 0.87,
-    pulseDepth: 0.05,
-    pulseRate: 0.85,
-    pulseLift: 0.012,
-    surgeChance: 0.08,
-    surgeAmount: 0.04,
-    surgeDecay: 0.58,
-    filterMul: 2.5,
-    fmMul: 5.0,
-    ghostBias: 1.0,
-    fillBias: 1.0,
-    chaosBias: 1.0,
-    accentBias: 1.0,
-    kickBias: 1.0,
-    snareBias: 1.0,
-    hatBias: 1.0,
-    openHatBias: 1.0,
-    extraBias: 1.0,
-    fillEvery: 4,
-    fillStart: 0.72,
-    fillVoices: ['tom', 'shaker'],
-    polyVoices: ['clave', 'cowbell', 'conga'],
-    phaseOffset: 0,
-    lowPoint: 0.22,
-    buildPoint: 0.48,
-    surgePoint: 0.74,
-    climaxRatios: [1, 5 / 4, 3 / 2, 2, 5 / 2],
-    climaxSpacing: 0.08,
-    climaxGain: 0.085,
-    climaxHold: 10,
-    climaxRelease: 16,
-    climaxMasterBoost: 1.35,
-};
-
-const BIOME_TENSION_PROFILES = {
-    abyssal: {
-        riseRate: 0.02,
-        riseVariance: 0.004,
-        drainRate: 0.035,
-        pulseDepth: 0.035,
-        pulseRate: 0.45,
-        pulseLift: 0.006,
-        surgeChance: 0.03,
-        surgeAmount: 0.025,
-        filterMul: 1.4,
-        fmMul: 2.4,
-        fillBias: 0.35,
-        accentBias: 0.55,
-        kickBias: 0.65,
-        snareBias: 0.55,
-        hatBias: 0.18,
-        openHatBias: 0.35,
-        extraBias: 0.4,
-        fillEvery: 6,
-        fillStart: 0.84,
-        fillVoices: ['tom', 'taiko'],
-        polyVoices: ['taiko', 'tom'],
-        surgePoint: 0.8,
-        climaxRatios: [1, 4 / 3, 3 / 2, 2, 8 / 3],
-        climaxSpacing: 0.14,
-        climaxGain: 0.07,
-        climaxHold: 12,
-        climaxRelease: 18,
-        climaxMasterBoost: 1.22,
-    },
-    arctic: {
-        riseRate: 0.017,
-        riseVariance: 0.003,
-        drainRate: 0.03,
-        pulseDepth: 0.06,
-        pulseRate: 0.5,
-        pulseLift: 0.01,
-        surgeChance: 0.02,
-        surgeAmount: 0.018,
-        filterMul: 1.2,
-        fmMul: 2.1,
-        ghostBias: 0.45,
-        fillBias: 0.08,
-        chaosBias: 0.05,
-        accentBias: 0.35,
-        kickBias: 0.25,
-        snareBias: 0.2,
-        hatBias: 0.15,
-        openHatBias: 0.2,
-        extraBias: 0.15,
-        fillEvery: 8,
-        fillStart: 0.88,
-        fillVoices: ['woodblock'],
-        polyVoices: ['woodblock'],
-        surgePoint: 0.82,
-        climaxRatios: [1, 9 / 8, 3 / 2, 2, 9 / 4],
-        climaxSpacing: 0.16,
-        climaxGain: 0.06,
-        climaxHold: 13,
-        climaxRelease: 19,
-        climaxMasterBoost: 1.16,
-    },
-    barren: {
-        riseRate: 0.016,
-        riseVariance: 0.002,
-        drainRate: 0.028,
-        pulseDepth: 0.04,
-        pulseRate: 0.42,
-        pulseLift: 0.007,
-        surgeChance: 0.015,
-        surgeAmount: 0.012,
-        filterMul: 1.1,
-        fmMul: 1.8,
-        ghostBias: 0.4,
-        fillBias: 0.05,
-        chaosBias: 0.04,
-        accentBias: 0.28,
-        kickBias: 0.22,
-        snareBias: 0.18,
-        hatBias: 0.12,
-        openHatBias: 0.16,
-        extraBias: 0.12,
-        fillEvery: 8,
-        fillStart: 0.9,
-        fillVoices: [],
-        polyVoices: [],
-        surgePoint: 0.82,
-        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
-        climaxSpacing: 0.18,
-        climaxGain: 0.055,
-        climaxHold: 12,
-        climaxRelease: 19,
-        climaxMasterBoost: 1.14,
-    },
-    corrupted: {
-        riseRate: 0.038,
-        riseVariance: 0.018,
-        drainRate: 0.07,
-        pulseDepth: 0.03,
-        pulseRate: 1.45,
-        pulseLift: 0.02,
-        surgeChance: 0.24,
-        surgeAmount: 0.085,
-        surgeDecay: 0.72,
-        filterMul: 4.8,
-        fmMul: 8.5,
-        ghostBias: 0.65,
-        fillBias: 1.45,
-        chaosBias: 1.55,
-        accentBias: 1.35,
-        kickBias: 1.45,
-        snareBias: 1.25,
-        hatBias: 1.55,
-        openHatBias: 1.35,
-        extraBias: 1.35,
-        fillEvery: 2,
-        fillStart: 0.58,
-        fillVoices: ['tom', 'shaker', 'cowbell'],
-        polyVoices: ['cowbell', 'clave', 'shaker'],
-        lowPoint: 0.18,
-        buildPoint: 0.38,
-        surgePoint: 0.62,
-        climaxThreshold: 0.82,
-        climaxRatios: [1, 16 / 15, 45 / 32, 2, 64 / 45],
-        climaxSpacing: 0.05,
-        climaxGain: 0.09,
-        climaxHold: 8,
-        climaxRelease: 13,
-        climaxMasterBoost: 1.38,
-    },
-    crystalline: {
-        riseRate: 0.022,
-        riseVariance: 0.004,
-        drainRate: 0.04,
-        pulseDepth: 0.02,
-        pulseRate: 0.62,
-        pulseLift: 0.008,
-        surgeChance: 0.03,
-        surgeAmount: 0.02,
-        filterMul: 1.8,
-        fmMul: 3.1,
-        ghostBias: 0.55,
-        fillBias: 0.5,
-        chaosBias: 0.18,
-        accentBias: 0.95,
-        kickBias: 0.5,
-        snareBias: 0.65,
-        hatBias: 0.6,
-        openHatBias: 0.75,
-        extraBias: 0.75,
-        fillEvery: 5,
-        fillStart: 0.78,
-        fillVoices: ['cowbell', 'shaker'],
-        polyVoices: ['cowbell', 'clave'],
-        climaxRatios: [1, 9 / 8, 3 / 2, 2, 9 / 4],
-        climaxSpacing: 0.1,
-        climaxGain: 0.075,
-        climaxHold: 10,
-        climaxRelease: 15,
-    },
-    crystalloid: {
-        riseRate: 0.024,
-        riseVariance: 0.005,
-        drainRate: 0.042,
-        pulseDepth: 0.024,
-        pulseRate: 0.78,
-        pulseLift: 0.01,
-        surgeChance: 0.05,
-        surgeAmount: 0.028,
-        filterMul: 2.0,
-        fmMul: 3.6,
-        ghostBias: 0.65,
-        fillBias: 0.62,
-        chaosBias: 0.25,
-        accentBias: 1.05,
-        kickBias: 0.72,
-        snareBias: 0.82,
-        hatBias: 0.72,
-        openHatBias: 0.82,
-        extraBias: 0.88,
-        fillEvery: 4,
-        fillStart: 0.76,
-        fillVoices: ['cowbell', 'clave'],
-        polyVoices: ['cowbell', 'clave'],
-        climaxRatios: [1, 10 / 9, 3 / 2, 2, 5 / 2],
-        climaxSpacing: 0.09,
-        climaxGain: 0.078,
-        climaxHold: 9,
-        climaxRelease: 14,
-    },
-    desert: {
-        riseRate: 0.021,
-        riseVariance: 0.006,
-        drainRate: 0.04,
-        pulseDepth: 0.07,
-        pulseRate: 0.78,
-        pulseLift: 0.012,
-        surgeChance: 0.05,
-        surgeAmount: 0.03,
-        filterMul: 1.8,
-        fmMul: 3.2,
-        ghostBias: 1.1,
-        fillBias: 0.72,
-        chaosBias: 0.22,
-        accentBias: 0.9,
-        kickBias: 0.8,
-        snareBias: 0.72,
-        hatBias: 0.55,
-        openHatBias: 0.55,
-        extraBias: 0.85,
-        fillEvery: 5,
-        fillStart: 0.8,
-        fillVoices: ['shaker', 'clave'],
-        polyVoices: ['clave', 'shaker'],
-        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
-        climaxSpacing: 0.12,
-        climaxGain: 0.072,
-        climaxHold: 10,
-        climaxRelease: 15,
-    },
-    ethereal: {
-        riseRate: 0.019,
-        riseVariance: 0.004,
-        drainRate: 0.032,
-        pulseDepth: 0.09,
-        pulseRate: 0.52,
-        pulseLift: 0.014,
-        surgeChance: 0.02,
-        surgeAmount: 0.016,
-        filterMul: 1.55,
-        fmMul: 2.2,
-        ghostBias: 0.6,
-        fillBias: 0.12,
-        chaosBias: 0.05,
-        accentBias: 0.42,
-        kickBias: 0.25,
-        snareBias: 0.22,
-        hatBias: 0.18,
-        openHatBias: 0.25,
-        extraBias: 0.18,
-        fillEvery: 8,
-        fillStart: 0.88,
-        fillVoices: ['shaker'],
-        polyVoices: ['shaker'],
-        surgePoint: 0.8,
-        climaxRatios: [1, 5 / 4, 3 / 2, 2, 3],
-        climaxSpacing: 0.14,
-        climaxGain: 0.068,
-        climaxHold: 12,
-        climaxRelease: 18,
-        climaxMasterBoost: 1.18,
-    },
-    fungal: {
-        riseRate: 0.027,
-        riseVariance: 0.01,
-        drainRate: 0.05,
-        pulseDepth: 0.08,
-        pulseRate: 1.18,
-        pulseLift: 0.014,
-        surgeChance: 0.08,
-        surgeAmount: 0.045,
-        filterMul: 2.4,
-        fmMul: 4.2,
-        ghostBias: 1.55,
-        fillBias: 0.74,
-        chaosBias: 0.28,
-        accentBias: 1.05,
-        kickBias: 0.88,
-        snareBias: 0.92,
-        hatBias: 1.15,
-        openHatBias: 0.72,
-        extraBias: 1.08,
-        fillEvery: 3,
-        fillStart: 0.68,
-        fillVoices: ['woodblock', 'clave', 'bongo', 'rimshot', 'shaker'],
-        polyVoices: ['clave', 'bongo', 'woodblock'],
-        lowPoint: 0.2,
-        buildPoint: 0.42,
-        surgePoint: 0.68,
-        climaxRatios: [1, 7 / 6, 3 / 2, 2, 7 / 3],
-        climaxSpacing: 0.09,
-        climaxGain: 0.08,
-        climaxHold: 9,
-        climaxRelease: 15,
-    },
-    glacial: {
-        riseRate: 0.016,
-        riseVariance: 0.003,
-        drainRate: 0.03,
-        pulseDepth: 0.085,
-        pulseRate: 0.38,
-        pulseLift: 0.012,
-        surgeChance: 0.015,
-        surgeAmount: 0.014,
-        filterMul: 1.05,
-        fmMul: 1.8,
-        ghostBias: 0.25,
-        fillBias: 0.04,
-        chaosBias: 0.03,
-        accentBias: 0.25,
-        kickBias: 0.18,
-        snareBias: 0.15,
-        hatBias: 0.08,
-        openHatBias: 0.12,
-        extraBias: 0.08,
-        fillEvery: 8,
-        fillStart: 0.92,
-        fillVoices: [],
-        polyVoices: [],
-        surgePoint: 0.84,
-        climaxRatios: [1, 9 / 8, 3 / 2, 2, 27 / 16],
-        climaxSpacing: 0.18,
-        climaxGain: 0.052,
-        climaxHold: 14,
-        climaxRelease: 22,
-        climaxMasterBoost: 1.12,
-    },
-    nebula: {
-        riseRate: 0.018,
-        riseVariance: 0.004,
-        drainRate: 0.032,
-        pulseDepth: 0.1,
-        pulseRate: 0.48,
-        pulseLift: 0.014,
-        surgeChance: 0.03,
-        surgeAmount: 0.02,
-        filterMul: 1.45,
-        fmMul: 2.0,
-        ghostBias: 0.55,
-        fillBias: 0.1,
-        chaosBias: 0.07,
-        accentBias: 0.36,
-        kickBias: 0.2,
-        snareBias: 0.18,
-        hatBias: 0.12,
-        openHatBias: 0.18,
-        extraBias: 0.14,
-        fillEvery: 8,
-        fillStart: 0.88,
-        fillVoices: [],
-        polyVoices: [],
-        surgePoint: 0.8,
-        climaxRatios: [1, 5 / 4, 3 / 2, 2, 15 / 4],
-        climaxSpacing: 0.15,
-        climaxGain: 0.064,
-        climaxHold: 12,
-        climaxRelease: 19,
-        climaxMasterBoost: 1.17,
-    },
-    oceanic: {
-        riseRate: 0.022,
-        riseVariance: 0.005,
-        drainRate: 0.038,
-        pulseDepth: 0.1,
-        pulseRate: 0.6,
-        pulseLift: 0.016,
-        surgeChance: 0.04,
-        surgeAmount: 0.022,
-        filterMul: 1.7,
-        fmMul: 2.6,
-        ghostBias: 1.15,
-        fillBias: 0.42,
-        chaosBias: 0.12,
-        accentBias: 0.62,
-        kickBias: 0.5,
-        snareBias: 0.4,
-        hatBias: 0.35,
-        openHatBias: 0.5,
-        extraBias: 0.55,
-        fillEvery: 6,
-        fillStart: 0.82,
-        fillVoices: ['conga', 'tom'],
-        polyVoices: ['conga', 'shaker'],
-        climaxRatios: [1, 4 / 3, 3 / 2, 2, 3],
-        climaxSpacing: 0.13,
-        climaxGain: 0.072,
-        climaxHold: 11,
-        climaxRelease: 17,
-        climaxMasterBoost: 1.2,
-    },
-    organic: {
-        riseRate: 0.026,
-        riseVariance: 0.009,
-        drainRate: 0.048,
-        pulseDepth: 0.075,
-        pulseRate: 1.05,
-        pulseLift: 0.014,
-        surgeChance: 0.07,
-        surgeAmount: 0.038,
-        filterMul: 2.1,
-        fmMul: 3.8,
-        ghostBias: 1.25,
-        fillBias: 0.92,
-        chaosBias: 0.35,
-        accentBias: 1.05,
-        kickBias: 0.95,
-        snareBias: 0.9,
-        hatBias: 0.78,
-        openHatBias: 0.72,
-        extraBias: 1.15,
-        fillEvery: 3,
-        fillStart: 0.7,
-        fillVoices: ['conga', 'clave', 'woodblock'],
-        polyVoices: ['conga', 'clave', 'bongo'],
-        lowPoint: 0.2,
-        buildPoint: 0.43,
-        surgePoint: 0.7,
-        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
-        climaxSpacing: 0.1,
-        climaxGain: 0.078,
-        climaxHold: 9,
-        climaxRelease: 15,
-    },
-    psychedelic: {
-        riseRate: 0.03,
-        riseVariance: 0.012,
-        drainRate: 0.055,
-        pulseDepth: 0.075,
-        pulseRate: 1.38,
-        pulseLift: 0.018,
-        surgeChance: 0.12,
-        surgeAmount: 0.05,
-        surgeDecay: 0.65,
-        filterMul: 3.2,
-        fmMul: 6.0,
-        ghostBias: 0.9,
-        fillBias: 1.1,
-        chaosBias: 0.7,
-        accentBias: 1.2,
-        kickBias: 1.0,
-        snareBias: 0.95,
-        hatBias: 1.1,
-        openHatBias: 1.25,
-        extraBias: 1.05,
-        fillEvery: 3,
-        fillStart: 0.66,
-        fillVoices: ['cowbell', 'shaker', 'conga'],
-        polyVoices: ['cowbell', 'conga', 'clave'],
-        lowPoint: 0.18,
-        buildPoint: 0.4,
-        surgePoint: 0.66,
-        climaxRatios: [1, 7 / 6, 3 / 2, 2, 21 / 8],
-        climaxSpacing: 0.07,
-        climaxGain: 0.086,
-        climaxHold: 8,
-        climaxRelease: 14,
-        climaxMasterBoost: 1.32,
-    },
-    quantum: {
-        riseRate: 0.04,
-        riseVariance: 0.02,
-        drainRate: 0.075,
-        pulseDepth: 0.035,
-        pulseRate: 1.7,
-        pulseLift: 0.022,
-        surgeChance: 0.26,
-        surgeAmount: 0.095,
-        surgeDecay: 0.74,
-        filterMul: 5.2,
-        fmMul: 9.5,
-        ghostBias: 0.75,
-        fillBias: 1.5,
-        chaosBias: 1.65,
-        accentBias: 1.45,
-        kickBias: 1.5,
-        snareBias: 1.35,
-        hatBias: 1.65,
-        openHatBias: 1.5,
-        extraBias: 1.45,
-        fillEvery: 2,
-        fillStart: 0.55,
-        fillVoices: ['cowbell', 'clave', 'shaker'],
-        polyVoices: ['cowbell', 'clave', 'conga'],
-        lowPoint: 0.16,
-        buildPoint: 0.34,
-        surgePoint: 0.58,
-        climaxThreshold: 0.8,
-        climaxRatios: [1, 17 / 16, 45 / 32, 2, 51 / 32],
-        climaxSpacing: 0.045,
-        climaxGain: 0.094,
-        climaxHold: 7,
-        climaxRelease: 12,
-        climaxMasterBoost: 1.4,
-    },
-    storm: {
-        riseRate: 0.036,
-        riseVariance: 0.016,
-        drainRate: 0.068,
-        pulseDepth: 0.028,
-        pulseRate: 1.25,
-        pulseLift: 0.018,
-        surgeChance: 0.21,
-        surgeAmount: 0.08,
-        surgeDecay: 0.7,
-        filterMul: 4.5,
-        fmMul: 7.8,
-        ghostBias: 0.7,
-        fillBias: 1.38,
-        chaosBias: 1.35,
-        accentBias: 1.3,
-        kickBias: 1.35,
-        snareBias: 1.2,
-        hatBias: 1.55,
-        openHatBias: 1.28,
-        extraBias: 1.3,
-        fillEvery: 2,
-        fillStart: 0.6,
-        fillVoices: ['tom', 'conga', 'shaker'],
-        polyVoices: ['cowbell', 'conga', 'clave'],
-        lowPoint: 0.18,
-        buildPoint: 0.38,
-        surgePoint: 0.62,
-        climaxThreshold: 0.82,
-        climaxRatios: [1, 6 / 5, 3 / 2, 2, 12 / 5],
-        climaxSpacing: 0.055,
-        climaxGain: 0.09,
-        climaxHold: 8,
-        climaxRelease: 13,
-        climaxMasterBoost: 1.36,
-    },
-    volcanic: {
-        riseRate: 0.034,
-        riseVariance: 0.012,
-        drainRate: 0.058,
-        pulseDepth: 0.045,
-        pulseRate: 0.95,
-        pulseLift: 0.016,
-        surgeChance: 0.14,
-        surgeAmount: 0.06,
-        surgeDecay: 0.66,
-        filterMul: 3.6,
-        fmMul: 6.5,
-        ghostBias: 0.6,
-        fillBias: 1.05,
-        chaosBias: 0.9,
-        accentBias: 1.2,
-        kickBias: 1.3,
-        snareBias: 0.92,
-        hatBias: 0.9,
-        openHatBias: 0.72,
-        extraBias: 1.0,
-        fillEvery: 3,
-        fillStart: 0.66,
-        fillVoices: ['tom', 'taiko', 'shaker'],
-        polyVoices: ['taiko', 'tom', 'cowbell'],
-        lowPoint: 0.2,
-        buildPoint: 0.4,
-        surgePoint: 0.68,
-        climaxRatios: [1, 6 / 5, 3 / 2, 2, 9 / 4],
-        climaxSpacing: 0.075,
-        climaxGain: 0.088,
-        climaxHold: 9,
-        climaxRelease: 14,
-        climaxMasterBoost: 1.34,
-    },
-};
-
-const DEFAULT_DRUM_TONE = {
-    kickPitch: 1.0,
-    kickDecay: 1.0,
-    kickPunch: 1.0,
-    kickClick: 1.0,
-    snarePitch: 1.0,
-    snareDecay: 1.0,
-    snareNoise: 1.0,
-    snareBody: 1.0,
-    hatPitch: 1.0,
-    hatDecay: 1.0,
-    hatBright: 1.0,
-    subWeight: 1.0,
-    extraTone: 1.0,
-    bodyShelf: 0,
-    airShelf: 0,
-    presenceFreq: 2000,
-    presenceGain: 0,
-};
-
-const BIOME_DRUM_TONES = {
-    abyssal: {
-        kickPitch: 0.72,
-        kickDecay: 1.35,
-        kickPunch: 1.15,
-        kickClick: 0.7,
-        snarePitch: 0.82,
-        snareNoise: 0.68,
-        hatBright: 0.6,
-        subWeight: 1.45,
-        extraTone: 0.78,
-        bodyShelf: 5.5,
-        airShelf: -4.5,
-        presenceFreq: 850,
-        presenceGain: 1.5,
-    },
-    arctic: {
-        kickPitch: 0.95,
-        kickDecay: 0.8,
-        snarePitch: 1.08,
-        snareNoise: 0.82,
-        hatBright: 1.25,
-        extraTone: 1.18,
-        bodyShelf: -1.5,
-        airShelf: 3.5,
-        presenceFreq: 4200,
-        presenceGain: 2.5,
-    },
-    barren: {
-        kickPitch: 0.9,
-        kickDecay: 0.85,
-        kickClick: 0.8,
-        snareNoise: 0.75,
-        hatBright: 0.9,
-        subWeight: 0.85,
-        extraTone: 0.88,
-        bodyShelf: -2.5,
-        airShelf: -2.5,
-        presenceFreq: 1500,
-        presenceGain: -1,
-    },
-    corrupted: {
-        kickPitch: 1.08,
-        kickDecay: 0.82,
-        kickPunch: 1.24,
-        kickClick: 1.25,
-        snarePitch: 1.12,
-        snareNoise: 1.45,
-        snareBody: 0.85,
-        hatPitch: 1.1,
-        hatDecay: 0.85,
-        hatBright: 1.45,
-        subWeight: 0.78,
-        extraTone: 1.18,
-        bodyShelf: 1.5,
-        airShelf: 5.5,
-        presenceFreq: 3600,
-        presenceGain: 4.5,
-    },
-    crystalline: {
-        kickPitch: 0.94,
-        kickDecay: 0.82,
-        snarePitch: 1.08,
-        snareNoise: 0.92,
-        hatPitch: 1.1,
-        hatBright: 1.25,
-        extraTone: 1.16,
-        bodyShelf: -1.2,
-        airShelf: 3.2,
-        presenceFreq: 3200,
-        presenceGain: 2.2,
-    },
-    crystalloid: {
-        kickPitch: 0.98,
-        kickDecay: 0.88,
-        snarePitch: 1.05,
-        snareNoise: 0.96,
-        hatPitch: 1.05,
-        hatBright: 1.18,
-        extraTone: 1.1,
-        bodyShelf: -0.5,
-        airShelf: 2.8,
-        presenceFreq: 3000,
-        presenceGain: 2.6,
-    },
-    desert: {
-        kickPitch: 0.92,
-        kickDecay: 0.94,
-        kickClick: 0.9,
-        snareNoise: 0.78,
-        snareBody: 1.08,
-        hatBright: 0.88,
-        subWeight: 0.92,
-        extraTone: 0.96,
-        bodyShelf: 1,
-        airShelf: -1.5,
-        presenceFreq: 1800,
-        presenceGain: 1.2,
-    },
-    ethereal: {
-        kickPitch: 0.98,
-        kickDecay: 0.88,
-        kickClick: 0.72,
-        snareNoise: 0.7,
-        snareBody: 0.8,
-        hatPitch: 1.05,
-        hatDecay: 1.2,
-        hatBright: 1.08,
-        subWeight: 0.85,
-        extraTone: 1.05,
-        bodyShelf: -2.2,
-        airShelf: 2,
-        presenceFreq: 2600,
-        presenceGain: 1.2,
-    },
-    fungal: {
-        kickPitch: 0.96,
-        kickDecay: 0.9,
-        kickPunch: 0.86,
-        kickClick: 0.66,
-        snarePitch: 1.02,
-        snareNoise: 0.92,
-        snareBody: 0.58,
-        hatPitch: 1.08,
-        hatDecay: 1.2,
-        hatBright: 1.02,
-        subWeight: 0.68,
-        extraTone: 1.08,
-        bodyShelf: -0.8,
-        airShelf: 2.4,
-        presenceFreq: 2800,
-        presenceGain: 1.6,
-    },
-    glacial: {
-        kickPitch: 0.95,
-        kickDecay: 0.78,
-        kickClick: 0.76,
-        snarePitch: 1.12,
-        snareNoise: 0.7,
-        hatPitch: 1.12,
-        hatBright: 1.35,
-        extraTone: 1.2,
-        bodyShelf: -2,
-        airShelf: 4.2,
-        presenceFreq: 4500,
-        presenceGain: 3.2,
-    },
-    nebula: {
-        kickPitch: 1.0,
-        kickDecay: 0.86,
-        kickClick: 0.74,
-        snarePitch: 1.05,
-        snareNoise: 0.72,
-        hatBright: 1.15,
-        extraTone: 1.12,
-        bodyShelf: -1.8,
-        airShelf: 3.8,
-        presenceFreq: 3800,
-        presenceGain: 2,
-    },
-    oceanic: {
-        kickPitch: 0.9,
-        kickDecay: 1.15,
-        kickClick: 0.72,
-        snareNoise: 0.68,
-        snareBody: 0.92,
-        hatPitch: 0.95,
-        hatDecay: 1.08,
-        hatBright: 0.76,
-        subWeight: 1.12,
-        extraTone: 0.9,
-        bodyShelf: 3.8,
-        airShelf: -2.5,
-        presenceFreq: 1400,
-        presenceGain: 1.8,
-    },
-    organic: {
-        kickPitch: 0.94,
-        kickDecay: 0.92,
-        kickClick: 0.88,
-        snareNoise: 0.82,
-        snareBody: 1.1,
-        hatPitch: 0.95,
-        hatDecay: 1.02,
-        hatBright: 0.84,
-        subWeight: 1.0,
-        extraTone: 0.92,
-        bodyShelf: 2.2,
-        airShelf: -1.2,
-        presenceFreq: 1700,
-        presenceGain: 1.6,
-    },
-    psychedelic: {
-        kickPitch: 1.02,
-        kickDecay: 0.94,
-        kickClick: 1.08,
-        snarePitch: 1.04,
-        snareNoise: 1.15,
-        hatPitch: 1.06,
-        hatDecay: 1.05,
-        hatBright: 1.18,
-        extraTone: 1.08,
-        bodyShelf: 0.5,
-        airShelf: 3.5,
-        presenceFreq: 2800,
-        presenceGain: 3.4,
-    },
-    quantum: {
-        kickPitch: 1.12,
-        kickDecay: 0.84,
-        kickPunch: 1.28,
-        kickClick: 1.28,
-        snarePitch: 1.18,
-        snareNoise: 1.52,
-        snareBody: 0.82,
-        hatPitch: 1.18,
-        hatDecay: 0.82,
-        hatBright: 1.5,
-        subWeight: 0.72,
-        extraTone: 1.24,
-        bodyShelf: 1.8,
-        airShelf: 6,
-        presenceFreq: 4200,
-        presenceGain: 5.4,
-    },
-    storm: {
-        kickPitch: 1.02,
-        kickDecay: 0.9,
-        kickPunch: 1.22,
-        kickClick: 1.16,
-        snarePitch: 1.08,
-        snareNoise: 1.34,
-        hatPitch: 1.05,
-        hatDecay: 0.92,
-        hatBright: 1.32,
-        subWeight: 0.88,
-        extraTone: 1.06,
-        bodyShelf: 1.2,
-        airShelf: 4.8,
-        presenceFreq: 3400,
-        presenceGain: 4.2,
-    },
-    volcanic: {
-        kickPitch: 0.9,
-        kickDecay: 1.18,
-        kickPunch: 1.26,
-        kickClick: 0.95,
-        snarePitch: 0.96,
-        snareNoise: 1.02,
-        hatPitch: 0.9,
-        hatDecay: 0.95,
-        hatBright: 0.9,
-        subWeight: 1.24,
-        extraTone: 0.92,
-        bodyShelf: 4.5,
-        airShelf: -1.5,
-        presenceFreq: 1100,
-        presenceGain: 2.6,
-    },
 };
 
 export class AudioEngine {
@@ -1128,7 +252,7 @@ export class AudioEngine {
             this.compressor.attack.value = 0.001; // Instant snap
             this.compressor.release.value = 0.1;  // Fast recovery
 
-            // 20Hz DC-Offset Filter — prevents pops and subsonic build-up
+            // 20Hz DC-Offset Filter â€” prevents pops and subsonic build-up
             this.dcFilter = this.ctx.createBiquadFilter();
             this.dcFilter.type = 'highpass'; this.dcFilter.frequency.value = 20;
 
@@ -2198,7 +1322,7 @@ export class AudioEngine {
     }
 
     _normalizeChordSymbol(symbol) {
-        return `${symbol || 'I'}`.replace(/Â/g, '').trim() || 'I';
+        return `${symbol || 'I'}`.replace(/Ã‚/g, '').trim() || 'I';
     }
 
     _getChordFunctionKey(symbol) {
@@ -2362,7 +1486,7 @@ export class AudioEngine {
 
         // Tier 4: Microtonal / Just Intonation / Pythagorean override
         let freq = this._getStepFrequency(planet, step, oct);
-        // Quarter-tone micro-detuning: probabilistic ±50 cents offset
+        // Quarter-tone micro-detuning: probabilistic Â±50 cents offset
         if ((planet.quarterToneProb || 0) > 0 && rng.next() < planet.quarterToneProb) {
             const centsOff = rng.range(-50, 50);
             freq *= Math.pow(2, centsOff / 1200);
@@ -2379,7 +1503,7 @@ export class AudioEngine {
         let atk = rng.range(0.8, 4.5);
         let dur = rng.range(3.5, 15);
 
-        // Custom PeriodicWave voices — each has hand-crafted harmonic content
+        // Custom PeriodicWave voices â€” each has hand-crafted harmonic content
         if (wType === 'bell') {
             const real = new Float32Array([0, 1, 0, 0, 0.2, 0, 0, 0.05, 0, 0, 0, 0, 0, 0.01]);
             const imag = new Float32Array(14);
@@ -2450,7 +1574,7 @@ export class AudioEngine {
             ({ atk, dur } = this._applyBiomeMelodyGesture(planet, wType, this._melodyMode, phrasePos, isPhraseEnd, atk, dur));
             ({ atk, dur } = this._shapeMelodyEnvelope(wType, atk, dur, planet));
             this._markMelodyVoiceUsage(wType, planet);
-            // ── Additive synthesis voice (self-contained, returns early)
+            // â”€â”€ Additive synthesis voice (self-contained, returns early)
             // Build a panner for spatial placement, same as normal notes
             const panner = ctx.createPanner();
             panner.panningModel = 'HRTF';
@@ -2527,7 +1651,7 @@ export class AudioEngine {
         // Auto-cleanup when note ends to prevent node accumulation
         osc.onended = () => { try { osc.disconnect(); env.disconnect(); panner.disconnect(); } catch (e) { } };
 
-        // ── Pitch bend vibrato (gated by flag)
+        // â”€â”€ Pitch bend vibrato (gated by flag)
         const bendScale = biomeId === 'fungal' ? 0.55 : 1;
         const bendCents = (this._pitchBendEnabled && ac && ac.pitchBend) ? ac.pitchBend * bendScale : 0;
         if (bendCents > 0) {
@@ -2535,7 +1659,7 @@ export class AudioEngine {
             this._lfoOnce(ctx, rng.range(3, 9), bendHz * rng.range(0.3, 1), osc.frequency, now, atk + dur);
         }
 
-        // ── Chord layer (gated by flag)
+        // â”€â”€ Chord layer (gated by flag)
         this._scheduleMoonCanons(planet, dest, step, {
             perf,
             mode: this._melodyMode,
@@ -2571,7 +1695,7 @@ export class AudioEngine {
             }
         }
 
-        // ── Arp run (gated by flag)
+        // â”€â”€ Arp run (gated by flag)
         const arpLoadScale = perf.activeNodes > 250 ? 0.15 : perf.scalar;
         const arpProb = ((this._arpEnabled && ac && ac.arpProb) ? ac.arpProb : 0) * arpLoadScale;
         if (arpProb > 0 && rng.next() < arpProb && planet.scale.length >= 4) {
@@ -2618,7 +1742,7 @@ export class AudioEngine {
         dry.connect(this.eqLow);
         this.nodes.push(conv, wet, dry);
 
-        // Delay — feedback & time vary per biome.
+        // Delay â€” feedback & time vary per biome.
         // IMPORTANT: clamp feedback gain to 0.75 to prevent runaway infinite echo.
         const del = ctx.createDelay(5);
         const safeFb = Math.min(ac.delayFb, 0.75); // hard ceiling prevents feedback explosion
@@ -2631,12 +1755,12 @@ export class AudioEngine {
         del.connect(delSend); delSend.connect(conv);
         this.nodes.push(del, fb, dlf, delSend);
 
-        // Master filter — controlled by biome base freq
+        // Master filter â€” controlled by biome base freq
         const filt = ctx.createBiquadFilter();
         filt.type = 'lowpass'; filt.frequency.value = p.filterFreq; filt.Q.value = 1.2;
         this.nodes.push(filt);
 
-        // ── NEW EFFECTS CHAIN (Tier 2) ──────────────────────────
+        // â”€â”€ NEW EFFECTS CHAIN (Tier 2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         let effectNode = filt;
 
         // Bitcrusher for Corrupted/Storm biomes
@@ -2664,7 +1788,7 @@ export class AudioEngine {
         const fLfo = this._lfo(p.lfoRate * 0.12, p.filterFreq * 0.20, filt.frequency);
         if (fLfo) this.tensionLfos.push(fLfo);
 
-        // ── Harmony & Phrasing Initialization ──
+        // â”€â”€ Harmony & Phrasing Initialization â”€â”€
         this._progression = p.progression;
         this._chordIndex = 0;
         // _updateChord() will be called once at the end of start() to kick off the recursive loop
@@ -2676,7 +1800,7 @@ export class AudioEngine {
         this._activeMotifIdx = 0;
         this._motifSwapCounter = 0;
 
-        // Drone — Tier 4: Custom Wavetable base + dynamic FM
+        // Drone â€” Tier 4: Custom Wavetable base + dynamic FM
         const base = p.rootFreq;
         this.harmonicNodes = { pads: [] };
 
@@ -2722,7 +1846,7 @@ export class AudioEngine {
         this._lfo(p.lfoRate * 0.3, base * 0.014, d1.osc.frequency);
         this._lfo(p.lfoRate * 0.55, base * 0.025, d2.osc.frequency, 'triangle');
 
-        // Pad — intro phase: pads fade in from silence over ~15s (was 45s)
+        // Pad â€” intro phase: pads fade in from silence over ~15s (was 45s)
         const padBus = ctx.createGain();
         padBus.gain.setValueAtTime(0, ctx.currentTime);
         const padTarget = 1.0 * (p.ac.chordAudibility !== undefined ? p.ac.chordAudibility : 0.5);
@@ -2738,7 +1862,7 @@ export class AudioEngine {
         });
         this.padBus = padBus;
 
-        // Noise texture — biome controls how noisy
+        // Noise texture â€” biome controls how noisy
         if (p.noiseLevel > 0.01) {
             const blen = ctx.sampleRate * 3;
             const buf = ctx.createBuffer(1, blen, ctx.sampleRate);
@@ -2755,7 +1879,7 @@ export class AudioEngine {
             this.nodes.push(ns, nf, ng);
         }
 
-        // Unified Melody Sequencer — phrase/rest/motif logic consolidated
+        // Unified Melody Sequencer â€” phrase/rest/motif logic consolidated
         const melodyBus = ctx.createGain();
         const melodyFilter = ctx.createBiquadFilter();
         const melodyFilterFreq = Math.max(180, Math.min(ac.melFiltFreq || p.filterFreq || 2400, ctx.sampleRate / 2 - 200));
@@ -2899,7 +2023,7 @@ export class AudioEngine {
             });
         }
         if (p.biome.id === 'storm') {
-            // Random chaotic filter bursts — electrical chaos
+            // Random chaotic filter bursts â€” electrical chaos
             startMacroFxLoop('macroFx-storm', 300, () => {
                 const rng = new RNG(p.seed + 60000 + this.stepFX++);
                 if (rng.range(0, 1) < 0.35) {
@@ -2920,22 +2044,22 @@ export class AudioEngine {
 
         // FM layer moved to Tier 4 custom wavetable block above.
 
-        // ── TIER 2: PERCUSSION SEQUENCER ──────────────────────────
+        // â”€â”€ TIER 2: PERCUSSION SEQUENCER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this._startPercussion(p, filt);
 
-        // ── Tier 2: Bass Line Generator ───────────────────────────
+        // â”€â”€ Tier 2: Bass Line Generator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this._startBass(p, filt);
 
-        // ── Tier 1: Granular cloud ─────────────────────────────────
+        // â”€â”€ Tier 1: Granular cloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this._startGranular(p, filt);
 
-        // ── Tier 1: Chorus / stereo widening ──────────────────────
+        // â”€â”€ Tier 1: Chorus / stereo widening â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this._addChorus(filt, this.masterGain, ac);
 
-        // ── Tier 1: Nature Ambiance ───────────────────────────────
+        // â”€â”€ Tier 1: Nature Ambiance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this._startNatureAmbiance(p, filt);
 
-        // ── Tier 2: Harmonic tension arc ──────────────────────────
+        // â”€â”€ Tier 2: Harmonic tension arc â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.tension = 0;
         this.tensionFilt = filt;
         this.tensionBase = { filtFreq: p.filterFreq, lfoRate: p.lfoRate };
@@ -2974,7 +2098,7 @@ export class AudioEngine {
         });
     }
 
-    // ── GRANULAR SYNTHESIS ─────────────────────────────────────────────
+    // â”€â”€ GRANULAR SYNTHESIS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _startGranular(p, dest) {
         if (!this._granularEnabled) return; // user toggle
         const ctx = this.ctx, ac = p.ac, sr = ctx.sampleRate;
@@ -2984,7 +2108,7 @@ export class AudioEngine {
         const effectiveDensity = Math.min(ac.grainDensity, densityCap);
         if (effectiveDensity < 0.05) return;
 
-        // A single bus gain for the whole cloud — toggle ramps this
+        // A single bus gain for the whole cloud â€” toggle ramps this
         const granularBus = ctx.createGain();
         granularBus.gain.setValueAtTime(0, ctx.currentTime);
         granularBus.gain.linearRampToValueAtTime(1, ctx.currentTime + 1.5); // fade in to stop clicks
@@ -3064,8 +2188,8 @@ export class AudioEngine {
         }, 500);
     }
 
-    // ── CHORUS / STEREO WIDENING ───────────────────────────────────────
-    // 3 voices, each: short delay + LFO wobble + stereo pan → into wet bus
+    // â”€â”€ CHORUS / STEREO WIDENING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // 3 voices, each: short delay + LFO wobble + stereo pan â†’ into wet bus
     _addChorus(source, dest, ac) {
         const ctx = this.ctx;
         if (!ac.chorusWet || ac.chorusWet < 0.02) return;
@@ -3083,7 +2207,7 @@ export class AudioEngine {
             const lfo = ctx.createOscillator();
             const lfoG = ctx.createGain();
             lfo.frequency.value = 0.28 + i * 0.13;
-            lfoG.gain.value = ac.chorusDepth * 0.0001; // ms → seconds
+            lfoG.gain.value = ac.chorusDepth * 0.0001; // ms â†’ seconds
             lfo.connect(lfoG); lfoG.connect(del.delayTime);
             lfo.start();
             // Pan: L, R, slightly R (spread)
@@ -3094,7 +2218,7 @@ export class AudioEngine {
         });
     }
 
-    // ── SIDECHAIN DUCK ─────────────────────────────────────────────────
+    // â”€â”€ SIDECHAIN DUCK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Called by rhythmic pulses to briefly dip the main filter gain
     _duck(amt, rel) {
         if (!amt || !this.masterGain) return;
@@ -3106,7 +2230,7 @@ export class AudioEngine {
         g.gain.linearRampToValueAtTime(this._vol, now + 0.04 + (rel || 0.35));
     }
 
-    // ── TIER 2: PERCUSSION SEQUENCER ──────────────────────────────────
+    // â”€â”€ TIER 2: PERCUSSION SEQUENCER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Euclidean rhythm helper: distributes k hits evenly over n steps
     _euclidean(k, n) {
         if (k >= n) return new Array(n).fill(1);
@@ -3173,7 +2297,7 @@ export class AudioEngine {
         this.nodes.push(percBody, percPresence, percAir, percBus);
         this._percBus = percBus;
 
-        // Kit variations per planet — tuned via seed
+        // Kit variations per planet â€” tuned via seed
         const kit = {
             kPitch: rng.range(0.85, 1.2) * drumTone.kickPitch,
             kDecay: rng.range(0.7, 1.3) * drumTone.kickDecay,
@@ -3308,7 +2432,7 @@ export class AudioEngine {
             this.nodes.push(osc, env);
         };
 
-        // ── Extra Percussion Voices ───────────────────────────────────────
+        // â”€â”€ Extra Percussion Voices â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const playClave = (vel) => {
             const t = ctx.currentTime;
             const osc = ctx.createOscillator(), env = ctx.createGain();
@@ -3467,60 +2591,14 @@ export class AudioEngine {
             this.nodes.push(osc, bpf, env);
         };
 
-        // Map voice name → function for biome-driven percVoices dispatch
+        // Map voice name â†’ function for biome-driven percVoices dispatch
         const extraVoices = { clave: playClave, cowbell: playCowbell, tom: playTom, shaker: playShaker, conga: playConga, rimshot: playRimshot, bongo: playBongo, taiko: playTaiko, woodblock: playWoodBlock };
 
 
-        // ── Biome Sequence Patterns (16 steps) ──
+        // â”€â”€ Biome Sequence Patterns (16 steps) â”€â”€
         // 1=hit, 2=accent/openhat, 0=rest. Multiple arrays = planet seed chooses variation.
-        const P = {
-            volcanic: {
-                k: [[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0]],
-                s: [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0]],
-                h: [[1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]],
-                b: [[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0]]
-            },
-            psychedelic: {
-                k: [[1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0], [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]],
-                s: [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1], [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]],
-                h: [[1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0], [1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0]],
-                b: [[1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]]
-            },
-            corrupted: {
-                // High-energy breakbeat / glitch / DnB feel
-                k: [[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0], [1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]],
-                s: [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1], [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0]],
-                h: [[1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1]], // fast 16ths
-                b: [[1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0]]
-            },
-            oceanic: {
-                k: [[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]],
-                s: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]], // sparse
-                h: [[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0]],
-                b: [[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]]
-            },
-            organic: {
-                // Latin/syncopated feel
-                k: [[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0], [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0]],
-                s: [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0]], // claves-ish
-                h: [[1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0], [1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 2, 0, 1, 1, 2, 0]],
-                b: [[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]]
-            },
-            desert: {
-                k: [[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]],
-                s: [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]],
-                h: [[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]],
-                b: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
-            },
-            crystalline: {
-                k: [[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]],
-                s: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
-                h: [[2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0], [2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]], // just bells/open hats
-                b: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
-            }
-        };
-        // Fallback for barren/ethereal which are ambient
-        const ambient = { k: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], s: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], h: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], b: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]] };
+        const P = { ...BASE_BIOME_PATTERN_BANKS };
+        const ambient = AMBIENT_PATTERN_BANK;
 
         // Euclidean patterns auto-generated for new exotic biomes
         const eu = (k, n) => this._euclidean(k, n);
@@ -3555,31 +2633,31 @@ export class AudioEngine {
             b: [eu(2, 16), eu(4, 16)]
         };
         P.glacial = ambient; // Pure silence
-        // ── New Biome Patterns ──
-        P.nebula = ambient; // Choral / ambient — no percussion
+        // â”€â”€ New Biome Patterns â”€â”€
+        P.nebula = ambient; // Choral / ambient â€” no percussion
         P.arctic = {
-            // Just rare single clicks — vast silence between them
+            // Just rare single clicks â€” vast silence between them
             k: [[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]],
             s: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
             h: [[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]],
             b: [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
         };
         P.storm = {
-            // Violent, irregular — dense and chaotic
+            // Violent, irregular â€” dense and chaotic
             k: [eu(7, 16), eu(9, 16)],
             s: [eu(5, 16), eu(7, 16)],
             h: [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], eu(13, 16)], // near-continuous
             b: [eu(5, 16), eu(7, 16)]
         };
         P.crystalloid = {
-            // Precise euclidean — geometric and alien
+            // Precise euclidean â€” geometric and alien
             k: [eu(5, 16), eu(3, 16)],
             s: [eu(7, 16), eu(5, 16)],
             h: [eu(11, 16), eu(9, 16)],
             b: [eu(4, 16), eu(6, 16)]
         };
 
-        // ── Tribal / Organic Rhythms ──
+        // â”€â”€ Tribal / Organic Rhythms â”€â”€
         const tribal = {
             k: [eu(2, 8), eu(3, 8)],
             s: [eu(3, 16), eu(5, 24)],
@@ -3646,13 +2724,13 @@ export class AudioEngine {
             // Velocity variance
             const velScale = 1 - (p.ac.velocityVar || 0) * seqRng.range(0, 1);
 
-            // ── Ghost notes: very quiet hat & snare on empty adjacent steps ──
+            // â”€â”€ Ghost notes: very quiet hat & snare on empty adjacent steps â”€â”€
             // Fires only when the pattern has no hit on this step (off-beats)
             const doGhost = this._ghostEnabled && !chaos
                 && phasePatterns.k[stepIndex] === 0 && phasePatterns.s[stepIndex] === 0
                 && seqRng.range(0, 1) < rhythmState.ghostChance;
 
-            // ── Fill detection: last 4 steps of a 16-step bar when fills on ──
+            // â”€â”€ Fill detection: last 4 steps of a 16-step bar when fills on â”€â”€
             const playStep = (s, state) => {
                 let kickHit = phasePatterns.k[s] === 1;
                 let snareHit = phasePatterns.s[s] === 1;
@@ -3772,7 +2850,7 @@ export class AudioEngine {
             this.intervals.push(setInterval(() => runPercussionStep(), stepTime * 1000));
         }
 
-        // ── Polyrhythm Layer (Hemiola / 3-against-4) ──
+        // â”€â”€ Polyrhythm Layer (Hemiola / 3-against-4) â”€â”€
         // Only on "complex" rhythmic biomes (fungal, crystalloid, quantum, psychedelic)
         const complexBiomes = ['fungal', 'crystalloid', 'quantum', 'psychedelic', 'corrupted'];
         if (complexBiomes.includes(p.biome.id) || rng.range(0, 1) < 0.25) {
@@ -3802,10 +2880,10 @@ export class AudioEngine {
         }
     }
 
-    // ── TIER 2: HARMONIC TENSION ARC ──────────────────────────────────
-    // Tension rises from 0 →1 over ~60 seconds while listening.
+    // â”€â”€ TIER 2: HARMONIC TENSION ARC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Tension rises from 0 â†’1 over ~60 seconds while listening.
     // It modulates filter, LFO, melody density, and dissonance.
-    // At tension ≥0.85 a climax chord fires then tension resets to 0.45.
+    // At tension â‰¥0.85 a climax chord fires then tension resets to 0.45.
     _startTensionArc(p, filt) {
         const ctx = this.ctx;
         const base = this.tensionBase;
@@ -3867,7 +2945,7 @@ export class AudioEngine {
                 }
             }
 
-            // ─ Filter & FM morphing as tension rises ────────────────────────
+            // â”€ Filter & FM morphing as tension rises â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const tSq = state.energy * state.energy;
             const lfoDepth = (base ? base.lfoRate : 0.1) * 1000 * state.energy; // Estimating depth
             const safeCeiling = nyquist - lfoDepth - 400; // Leave headroom for LFO peaks
@@ -3898,10 +2976,10 @@ export class AudioEngine {
                 );
             }
 
-            // ─ Update tension bar UI ──────────────────────────────────────
+            // â”€ Update tension bar UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             this._emitState();
 
-            // ─ Climax event at tension ≥ 0.85 ────────────────────────────
+            // â”€ Climax event at tension â‰¥ 0.85 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (state.energy >= profile.climaxThreshold && !this._climaxFired) {
                 this._climaxFired = true;
                 this._fireClimax(p, filt);
@@ -4196,9 +3274,9 @@ export class AudioEngine {
         });
     }
 
-    // ── TIER 3: DOPPLER WHOOSH ────────────────────────────────────────
+    // â”€â”€ TIER 3: DOPPLER WHOOSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Synthesises a descending-frequency noise burst suggesting spatial travel.
-    // Call on navigation — plays through the analyser so the scope reacts to it.
+    // Call on navigation â€” plays through the analyser so the scope reacts to it.
     _dopplerWhoosh() {
         if (!this.ctx) return;
         const ctx = this.ctx, sr = ctx.sampleRate;
@@ -4210,7 +3288,7 @@ export class AudioEngine {
             for (let i = 0; i < d.length; i++) {
                 const t = i / sr;
                 const env = t < 0.08 ? t / 0.08 : Math.exp(-(t - 0.08) * 4.5);
-                const fInst = 3200 * Math.exp(-t * 3); // sweeps 3200 → ~60 Hz
+                const fInst = 3200 * Math.exp(-t * 3); // sweeps 3200 â†’ ~60 Hz
                 const tone = Math.sin(2 * Math.PI * fInst * t + phase) * 0.5;
                 const noise = (this._random('doppler-noise') * 2 - 1) * 0.5;
                 d[i] = (tone + noise) * env * 0.14;
@@ -4359,7 +3437,7 @@ export class AudioEngine {
         }, fadeOut * 1000);
     }
 
-    // ── BASS LINE GENERATOR ───────────────────────────────────────────
+    // â”€â”€ BASS LINE GENERATOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _startBass(p, dest) {
         const ctx = this.ctx;
         const transport = this.transport || this._buildTransport(p);
@@ -4433,7 +3511,7 @@ export class AudioEngine {
         this.nodes.push(osc, sub, env);
     }
 
-    // ── EFFECTS CONSTRUCTION ──────────────────────────────────────────
+    // â”€â”€ EFFECTS CONSTRUCTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _buildBitcrusher(bits, normFreq) {
         const ctx = this.ctx;
         if (ctx.audioWorklet && this._worklets.bitcrusherReady) {
@@ -4494,7 +3572,7 @@ export class AudioEngine {
         return { input, output, nodes: [...filters, lfo, lfoDepth, input, output] };
     }
 
-    // ── HARMONIC PROGRESSION ──────────────────────────────────────────
+    // â”€â”€ HARMONIC PROGRESSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _updateChord() {
         if (!this.playing || !this._progression || !this._progression.length) return;
 
@@ -4526,7 +3604,7 @@ export class AudioEngine {
             }
         }
 
-        // ── MARKOV PROBABILISTIC SELECTION ──────────────────────────
+        // â”€â”€ MARKOV PROBABILISTIC SELECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const transitions = {
             'I': { 'IV': 4, 'V': 5, 'vi': 3, 'ii': 2 },
             'ii': { 'V': 6, 'vi': 2, 'IV': 2 },
@@ -4537,11 +3615,11 @@ export class AudioEngine {
             'vii': { 'I': 8, 'iii': 2 },
             // Minor scale transitions
             'i': { 'iv': 4, 'v': 4, 'VI': 3, 'VII': 3 },
-            'ii°': { 'v': 7, 'i': 3 },
+            'iiÂ°': { 'v': 7, 'i': 3 },
             'III': { 'VI': 5, 'iv': 3, 'i': 2 },
-            'iv': { 'i': 4, 'v': 4, 'ii°': 2 },
+            'iv': { 'i': 4, 'v': 4, 'iiÂ°': 2 },
             'v': { 'i': 6, 'VI': 3, 'III': 1 },
-            'VI': { 'iv': 4, 'ii°': 3, 'v': 3 },
+            'VI': { 'iv': 4, 'iiÂ°': 3, 'v': 3 },
             'VII': { 'III': 6, 'i': 4 }
         };
 
@@ -4558,9 +3636,9 @@ export class AudioEngine {
         this._chordIndex = this._progression.indexOf(nextTarget);
         if (this._chordIndex === -1) this._chordIndex = 0;
 
-        // ── VARIABLE CHORD DURATION BASED ON TENSION ────────────────
+        // â”€â”€ VARIABLE CHORD DURATION BASED ON TENSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // High tension chords (V, vii) might resolve faster, or hold for dramatic effect
-        const isTension = ['V', 'vii', 'v', 'ii°'].includes(c);
+        const isTension = ['V', 'vii', 'v', 'iiÂ°'].includes(c);
         const isRest = ['I', 'i', 'vi', 'VI'].includes(c);
 
         const transport = this.transport || this._buildTransport(this.planet);
@@ -4624,3 +3702,4 @@ export class AudioEngine {
         };
     }
 }
+
