@@ -38,6 +38,8 @@ import {
     startBassLine,
     updateChordProgression
 } from './audio/subsystems/harmony.js';
+import { updateChordProgressionLegacy } from './audio/legacy/chord-fallback.js';
+import { resolveLegacyAudioToggles } from './audio/legacy/toggles.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -101,12 +103,8 @@ export class AudioEngine {
         this._stateTimer = null;
         this._worklets = { bitcrusherReady: false, loadPromise: null };
         this._transportScheduler = null;
-        this._engineRefactorV2 = true;
-        if (typeof window !== 'undefined') {
-            const rawFlag = new URLSearchParams(window.location?.search || '').get('engine_refactor_v2');
-            if (rawFlag === '0' || rawFlag === 'false') this._engineRefactorV2 = false;
-            if (rawFlag === '1' || rawFlag === 'true') this._engineRefactorV2 = true;
-        }
+        this._legacyAudioToggles = resolveLegacyAudioToggles();
+        this._engineRefactorV2 = !this._legacyAudioToggles.chordProgressionFallback;
         this._noiseBuffer = null; // Cached noise buffer for percussion
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
@@ -1051,7 +1049,7 @@ export class AudioEngine {
             ({ atk, dur } = this._applyBiomeMelodyGesture(planet, wType, this._melodyMode, phrasePos, isPhraseEnd, atk, dur));
             ({ atk, dur } = this._shapeMelodyEnvelope(wType, atk, dur, planet));
             this._markMelodyVoiceUsage(wType, planet);
-            // â”€â”€ Additive synthesis voice (self-contained, returns early)
+            //    Additive synthesis voice (self-contained, returns early)
             // Build a panner for spatial placement, same as normal notes
             const panner = ctx.createPanner();
             panner.panningModel = 'HRTF';
@@ -1128,7 +1126,7 @@ export class AudioEngine {
         // Auto-cleanup when note ends to prevent node accumulation
         osc.onended = () => { try { osc.disconnect(); env.disconnect(); panner.disconnect(); } catch { } };
 
-        // â”€â”€ Pitch bend vibrato (gated by flag)
+        //    Pitch bend vibrato (gated by flag)
         const bendScale = biomeId === 'fungal' ? 0.55 : 1;
         const bendCents = (this._pitchBendEnabled && ac && ac.pitchBend) ? ac.pitchBend * bendScale : 0;
         if (bendCents > 0) {
@@ -1136,7 +1134,7 @@ export class AudioEngine {
             this._lfoOnce(ctx, rng.range(3, 9), bendHz * rng.range(0.3, 1), osc.frequency, now, atk + dur);
         }
 
-        // â”€â”€ Chord layer (gated by flag)
+        //    Chord layer (gated by flag)
         this._scheduleMoonCanons(planet, dest, step, {
             perf,
             mode: this._melodyMode,
@@ -1172,7 +1170,7 @@ export class AudioEngine {
             }
         }
 
-        // â”€â”€ Arp run (gated by flag)
+        //    Arp run (gated by flag)
         const arpLoadScale = perf.activeNodes > 250 ? 0.15 : perf.scalar;
         const arpProb = ((this._arpEnabled && ac && ac.arpProb) ? ac.arpProb : 0) * arpLoadScale;
         if (arpProb > 0 && rng.next() < arpProb && planet.scale.length >= 4) {
@@ -1237,7 +1235,7 @@ export class AudioEngine {
         filt.type = 'lowpass'; filt.frequency.value = p.filterFreq; filt.Q.value = 1.2;
         this.nodes.push(filt);
 
-        // â”€â”€ NEW EFFECTS CHAIN (Tier 2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    NEW EFFECTS CHAIN (Tier 2)                           
         let effectNode = filt;
 
         // Bitcrusher for Corrupted/Storm biomes
@@ -1265,7 +1263,7 @@ export class AudioEngine {
         const fLfo = this._lfo(p.lfoRate * 0.12, p.filterFreq * 0.20, filt.frequency);
         if (fLfo) this.tensionLfos.push(fLfo);
 
-        // â”€â”€ Harmony & Phrasing Initialization â”€â”€
+        //    Harmony & Phrasing Initialization   
         this._progression = p.progression;
         this._chordIndex = 0;
         // _updateChord() will be called once at the end of start() to kick off the recursive loop
@@ -1521,22 +1519,22 @@ export class AudioEngine {
 
         // FM layer moved to Tier 4 custom wavetable block above.
 
-        // â”€â”€ TIER 2: PERCUSSION SEQUENCER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    TIER 2: PERCUSSION SEQUENCER                           
         this._startPercussion(p, filt);
 
-        // â”€â”€ Tier 2: Bass Line Generator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    Tier 2: Bass Line Generator                            
         this._startBass(p, filt);
 
-        // â”€â”€ Tier 1: Granular cloud â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    Tier 1: Granular cloud                                  
         this._startGranular(p, filt);
 
-        // â”€â”€ Tier 1: Chorus / stereo widening â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    Tier 1: Chorus / stereo widening                       
         this._addChorus(filt, this.masterGain, ac);
 
-        // â”€â”€ Tier 1: Nature Ambiance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    Tier 1: Nature Ambiance                                
         this._startNatureAmbiance(p, filt);
 
-        // â”€â”€ Tier 2: Harmonic tension arc â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    Tier 2: Harmonic tension arc                           
         this.tension = 0;
         this.tensionFilt = filt;
         this.tensionBase = { filtFreq: p.filterFreq, lfoRate: p.lfoRate };
@@ -1575,7 +1573,7 @@ export class AudioEngine {
         });
     }
 
-    // â”€â”€ GRANULAR SYNTHESIS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    GRANULAR SYNTHESIS                                              
     _startGranular(p, dest) {
         if (!this._granularEnabled) return; // user toggle
         const ctx = this.ctx, ac = p.ac, sr = ctx.sampleRate;
@@ -1665,7 +1663,7 @@ export class AudioEngine {
         }, 500);
     }
 
-    // â”€â”€ CHORUS / STEREO WIDENING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    CHORUS / STEREO WIDENING                                        
     // 3 voices, each: short delay + LFO wobble + stereo pan â†’ into wet bus
     _addChorus(source, dest, ac) {
         const ctx = this.ctx;
@@ -1695,7 +1693,7 @@ export class AudioEngine {
         });
     }
 
-    // â”€â”€ SIDECHAIN DUCK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    SIDECHAIN DUCK                                                  
     // Called by rhythmic pulses to briefly dip the main filter gain
     _duck(amt, rel) {
         if (!amt || !this.masterGain) return;
@@ -1707,7 +1705,7 @@ export class AudioEngine {
         g.gain.linearRampToValueAtTime(this._vol, now + 0.04 + (rel || 0.35));
     }
 
-    // â”€â”€ TIER 2: PERCUSSION SEQUENCER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    TIER 2: PERCUSSION SEQUENCER                                   
     // Euclidean rhythm helper: distributes k hits evenly over n steps
     _euclidean(k, n) {
         if (k >= n) return new Array(n).fill(1);
@@ -1909,7 +1907,7 @@ export class AudioEngine {
             this.nodes.push(osc, env);
         };
 
-        // â”€â”€ Extra Percussion Voices â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //    Extra Percussion Voices                                        
         const playClave = (vel) => {
             const t = ctx.currentTime;
             const osc = ctx.createOscillator(), env = ctx.createGain();
@@ -2072,7 +2070,7 @@ export class AudioEngine {
         const extraVoices = { clave: playClave, cowbell: playCowbell, tom: playTom, shaker: playShaker, conga: playConga, rimshot: playRimshot, bongo: playBongo, taiko: playTaiko, woodblock: playWoodBlock };
 
 
-        // â”€â”€ Biome Sequence Patterns (16 steps) â”€â”€
+        //    Biome Sequence Patterns (16 steps)   
         // 1=hit, 2=accent/openhat, 0=rest. Multiple arrays = planet seed chooses variation.
         const P = { ...BASE_BIOME_PATTERN_BANKS };
         const ambient = AMBIENT_PATTERN_BANK;
@@ -2110,7 +2108,7 @@ export class AudioEngine {
             b: [eu(2, 16), eu(4, 16)]
         };
         P.glacial = ambient; // Pure silence
-        // â”€â”€ New Biome Patterns â”€â”€
+        //    New Biome Patterns   
         P.nebula = ambient; // Choral / ambient â€” no percussion
         P.arctic = {
             // Just rare single clicks â€” vast silence between them
@@ -2134,7 +2132,7 @@ export class AudioEngine {
             b: [eu(4, 16), eu(6, 16)]
         };
 
-        // â”€â”€ Tribal / Organic Rhythms â”€â”€
+        //    Tribal / Organic Rhythms   
         const tribal = {
             k: [eu(2, 8), eu(3, 8)],
             s: [eu(3, 16), eu(5, 24)],
@@ -2201,13 +2199,13 @@ export class AudioEngine {
             // Velocity variance
             const velScale = 1 - (p.ac.velocityVar || 0) * seqRng.range(0, 1);
 
-            // â”€â”€ Ghost notes: very quiet hat & snare on empty adjacent steps â”€â”€
+            //    Ghost notes: very quiet hat & snare on empty adjacent steps   
             // Fires only when the pattern has no hit on this step (off-beats)
             const doGhost = this._ghostEnabled && !chaos
                 && phasePatterns.k[stepIndex] === 0 && phasePatterns.s[stepIndex] === 0
                 && seqRng.range(0, 1) < rhythmState.ghostChance;
 
-            // â”€â”€ Fill detection: last 4 steps of a 16-step bar when fills on â”€â”€
+            //    Fill detection: last 4 steps of a 16-step bar when fills on   
             const playStep = (s, state) => {
                 let kickHit = phasePatterns.k[s] === 1;
                 let snareHit = phasePatterns.s[s] === 1;
@@ -2327,7 +2325,7 @@ export class AudioEngine {
             this.intervals.push(setInterval(() => runPercussionStep(), stepTime * 1000));
         }
 
-        // â”€â”€ Polyrhythm Layer (Hemiola / 3-against-4) â”€â”€
+        //    Polyrhythm Layer (Hemiola / 3-against-4)   
         // Only on "complex" rhythmic biomes (fungal, crystalloid, quantum, psychedelic)
         const complexBiomes = ['fungal', 'crystalloid', 'quantum', 'psychedelic', 'corrupted'];
         if (complexBiomes.includes(p.biome.id) || rng.range(0, 1) < 0.25) {
@@ -2357,7 +2355,7 @@ export class AudioEngine {
         }
     }
 
-    // â”€â”€ TIER 2: HARMONIC TENSION ARC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    TIER 2: HARMONIC TENSION ARC                                   
     // Tension rises from 0 â†’1 over ~60 seconds while listening.
     // It modulates filter, LFO, melody density, and dissonance.
     // At tension â‰¥0.85 a climax chord fires then tension resets to 0.45.
@@ -2422,7 +2420,7 @@ export class AudioEngine {
                 }
             }
 
-            // â”€ Filter & FM morphing as tension rises â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            //   Filter & FM morphing as tension rises                         
             const tSq = state.energy * state.energy;
             const lfoDepth = (base ? base.lfoRate : 0.1) * 1000 * state.energy; // Estimating depth
             const safeCeiling = nyquist - lfoDepth - 400; // Leave headroom for LFO peaks
@@ -2453,10 +2451,10 @@ export class AudioEngine {
                 );
             }
 
-            // â”€ Update tension bar UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            //   Update tension bar UI                                       
             this._emitState();
 
-            // â”€ Climax event at tension â‰¥ 0.85 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            //   Climax event at tension â‰¥ 0.85                             
             if (state.energy >= profile.climaxThreshold && !this._climaxFired) {
                 this._climaxFired = true;
                 this._fireClimax(p, filt);
@@ -2512,7 +2510,7 @@ export class AudioEngine {
         startNatureAmbience(this, p, dest);
     }
 
-    // â”€â”€ TIER 3: DOPPLER WHOOSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    TIER 3: DOPPLER WHOOSH                                         
     // Synthesises a descending-frequency noise burst suggesting spatial travel.
     // Call on navigation â€” plays through the analyser so the scope reacts to it.
     _dopplerWhoosh() {
@@ -2675,7 +2673,7 @@ export class AudioEngine {
         }, fadeOut * 1000);
     }
 
-    // â”€â”€ BASS LINE GENERATOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    BASS LINE GENERATOR                                            
     _startBass(p, dest) {
         startBassLine(this, p, dest);
     }
@@ -2684,7 +2682,7 @@ export class AudioEngine {
         scheduleBassNote(this, p, dest, octScale, gateSeconds, scheduledTime);
     }
 
-    // â”€â”€ EFFECTS CONSTRUCTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    EFFECTS CONSTRUCTION                                           
     _buildBitcrusher(bits, normFreq) {
         const ctx = this.ctx;
         if (ctx.audioWorklet && this._worklets.bitcrusherReady) {
@@ -2745,92 +2743,14 @@ export class AudioEngine {
         return { input, output, nodes: [...filters, lfo, lfoDepth, input, output] };
     }
 
-    // â”€â”€ HARMONIC PROGRESSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //    HARMONIC PROGRESSION                                           
     _updateChord() {
-        if (this._engineRefactorV2) {
-            updateChordProgression(this);
+        if (this._legacyAudioToggles.chordProgressionFallback) {
+            updateChordProgressionLegacy(this);
             return;
         }
-        if (!this.playing || !this._progression || !this._progression.length) return;
-
-        this._chordName = this._normalizeChordSymbol(this._progression[this._chordIndex]);
-        const c = this._chordName || 'I';
-        const cKey = this._getChordFunctionKey(c);
-        const intervals = this._buildScaleChord(c, this.planet);
-        this._currentChordIntervals = intervals;
-
-        // Dynamic Drone/Pad frequency ramping
-        const now = this.ctx ? this.ctx.currentTime : 0;
-        const ramp = 2.5; // seconds to smoothly glide
-
-        if (this.harmonicNodes && this.ctx) {
-            const rootPitch = this._getStepFrequency(this.planet, intervals[0], 1);
-            if (this.harmonicNodes.baseOsc) this.harmonicNodes.baseOsc.frequency.linearRampToValueAtTime(rootPitch * 0.5, now + ramp);
-            if (this.harmonicNodes.d1) this.harmonicNodes.d1.frequency.linearRampToValueAtTime(rootPitch, now + ramp);
-            if (this.harmonicNodes.d2) this.harmonicNodes.d2.frequency.linearRampToValueAtTime(rootPitch * 2 + (this.planet?.droneDetune || 0), now + ramp);
-            if (this.harmonicNodes.fmCarrier) this.harmonicNodes.fmCarrier.frequency.linearRampToValueAtTime(rootPitch, now + ramp);
-            if (this.harmonicNodes.fmMod) this.harmonicNodes.fmMod.frequency.linearRampToValueAtTime(rootPitch * (this.planet?.ac?.fmRatio || 1), now + ramp);
-
-            if (this.harmonicNodes.pads) {
-                this.harmonicNodes.pads.forEach(pad => {
-                    const interval = intervals[pad.stepIndex % intervals.length];
-                    const oct = pad.stepIndex > 2 ? 2 : 1;
-                    const targetFreq = this._getStepFrequency(this.planet, interval, (this.planet?.ac?.octScale || 1) * oct);
-                    pad.osc.frequency.linearRampToValueAtTime(targetFreq + (targetFreq * pad.detuneRatio), now + ramp);
-                });
-            }
-        }
-
-        // â”€â”€ MARKOV PROBABILISTIC SELECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        const transitions = {
-            'I': { 'IV': 4, 'V': 5, 'vi': 3, 'ii': 2 },
-            'ii': { 'V': 6, 'vi': 2, 'IV': 2 },
-            'iii': { 'vi': 5, 'IV': 3, 'I': 2 },
-            'IV': { 'I': 3, 'V': 5, 'ii': 2 },
-            'V': { 'I': 7, 'vi': 2, 'iii': 1 },
-            'vi': { 'IV': 4, 'ii': 3, 'V': 3 },
-            'vii': { 'I': 8, 'iii': 2 },
-            // Minor scale transitions
-            'i': { 'iv': 4, 'v': 4, 'VI': 3, 'VII': 3 },
-            'iiÂ°': { 'v': 7, 'i': 3 },
-            'III': { 'VI': 5, 'iv': 3, 'i': 2 },
-            'iv': { 'i': 4, 'v': 4, 'iiÂ°': 2 },
-            'v': { 'i': 6, 'VI': 3, 'III': 1 },
-            'VI': { 'iv': 4, 'iiÂ°': 3, 'v': 3 },
-            'VII': { 'III': 6, 'i': 4 }
-        };
-
-        const tMap = transitions[cKey] || {};
-        let pool = [];
-        this._progression.forEach((cand) => {
-            const weight = tMap[this._getChordFunctionKey(cand)] || 1; // 1 represents a fallback equal likelihood if no rules exist
-            for (let i = 0; i < weight; i++) pool.push(cand);
-        });
-
-        // Pick next chord from the Markov weighted pool
-        const rng = new RNG((this.planet?.seed || 0) + 90000 + this.stepChord++);
-        const nextTarget = pool.length ? rng.pick(pool) : this._progression[0];
-        this._chordIndex = this._progression.indexOf(nextTarget);
-        if (this._chordIndex === -1) this._chordIndex = 0;
-
-        // â”€â”€ VARIABLE CHORD DURATION BASED ON TENSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // High tension chords (V, vii) might resolve faster, or hold for dramatic effect
-
-        const transport = this.transport || this._buildTransport(this.planet);
-        let minCycles = 2, maxCycles = 3;
-        if (['V', 'vii', 'v', 'ii'].includes(cKey)) { minCycles = 1; maxCycles = 2; }
-        if (['I', 'i', 'vi', 'VI'].includes(cKey)) { minCycles = 2; maxCycles = 4; }
-        if (transport.cycleSteps <= 8 && !['V', 'vii', 'v', 'ii'].includes(cKey)) {
-            minCycles += 1;
-            maxCycles += 1;
-        }
-
-        const chordCycles = rng.int(minCycles, maxCycles + 1);
-        const durMs = transport.cycleMs * chordCycles;
-
-        this._setManagedTimeout(() => this._updateChord(), durMs);
+        updateChordProgression(this);
     }
-
     getChord() {
         return this._chordName || 'I';
     }
