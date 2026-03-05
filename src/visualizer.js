@@ -43,7 +43,6 @@ export class AudioReactiveEcosystem {
 
         // Split frequencies into Low (kick/sub), Mid (chords/melody), High (hats/grains)
         let low = 0, mid = 0, high = 0;
-        const len = freqBuf.length;
         for (let i = 0; i < 4; i++) low += freqBuf[i];
         for (let i = 4; i < 20; i++) mid += freqBuf[i];
         for (let i = 40; i < 100; i++) high += freqBuf[i];

@@ -41,6 +41,13 @@ function getNodeLoad(nodes) {
     return typeof nodes?.size === 'number' ? nodes.size : 0;
 }
 
+let fallbackNoiseSeed = 0x9e3779b9;
+function nextVoiceRandom(rng) {
+    if (rng?.next) return rng.next();
+    fallbackNoiseSeed = (Math.imul(fallbackNoiseSeed, 1664525) + 1013904223) >>> 0;
+    return fallbackNoiseSeed / 0x100000000;
+}
+
 // ── STRINGS ──────────────────────────────────────────────────
 // 8 partials at natural harmonic ratios, pairs detuned ±cents for ensemble width.
 // Slow bow-attack, long sustain, gradual fade.
@@ -253,7 +260,7 @@ function _crystal_chimes(ctx, freq, dest, rng, atk, dur, nodes) {
     const baseFreq = freq < 1000 ? freq * 4 : freq;
     const ringDur = rng.range(6, 15);
 
-    partials.forEach((p, i) => {
+    partials.forEach((p) => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         const pan = ctx.createStereoPanner();
@@ -341,7 +348,7 @@ function _hollow_pipe(ctx, freq, dest, rng, atk, dur, nodes) {
         const bufSize = ctx.sampleRate * 0.5;
         const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
         const d = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) d[i] = ((rng?.next ? rng.next() : Math.random()) * 2) - 1;
+        for (let i = 0; i < bufSize; i++) d[i] = (nextVoiceRandom(rng) * 2) - 1;
 
         const noiseSrc = ctx.createBufferSource();
         noiseSrc.buffer = buf;
@@ -458,7 +465,7 @@ function _bowed_metal(ctx, freq, dest, rng, atk, dur, nodes) {
     const bufSize = ctx.sampleRate * 0.1; // Short burst buffer
     const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) d[i] = ((rng?.next ? rng.next() : Math.random()) * 2) - 1;
+    for (let i = 0; i < bufSize; i++) d[i] = (nextVoiceRandom(rng) * 2) - 1;
     noise.buffer = buf;
     noise.loop = true;
 

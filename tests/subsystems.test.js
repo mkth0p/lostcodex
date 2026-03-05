@@ -6,9 +6,20 @@ import {
     fitPatternToCycle,
     getPhasePatternProfile
 } from '../src/audio/subsystems/percussion.js';
-import { getMelodyStride } from '../src/audio/subsystems/melody.js';
+import {
+    getAdditiveVoiceLifetime,
+    getMelodyStride,
+    getPerformanceProfile
+} from '../src/audio/subsystems/melody.js';
 import { getMacroEventChance, getMacroEventCooldown } from '../src/audio/subsystems/fx.js';
 import { startNatureAmbience } from '../src/audio/subsystems/ambience.js';
+import {
+    buildScaleChord,
+    getChordFunctionKey,
+    normalizeChordSymbol,
+    resolveBassPattern,
+    selectNextChord
+} from '../src/audio/subsystems/harmony.js';
 import { DEFAULT_TENSION_PROFILE, BIOME_TENSION_PROFILES } from '../src/audio/config/tension-profiles.js';
 import { DEFAULT_DRUM_TONE, BIOME_DRUM_TONES } from '../src/audio/config/drum-profiles.js';
 
@@ -125,5 +136,54 @@ describe('audio subsystem helpers', () => {
             biome: { id: 'barren' },
         };
         expect(() => startNatureAmbience(engine, planet, null)).not.toThrow();
+    });
+
+    it('derives deterministic bass pattern projection from seed', () => {
+        const fit = (pattern, targetLength) => {
+            const projected = new Array(targetLength).fill(0);
+            pattern.forEach((value, index) => {
+                if (!value) return;
+                const mappedIndex = Math.min(targetLength - 1, Math.floor((index / pattern.length) * targetLength));
+                projected[mappedIndex] = Math.max(projected[mappedIndex], value);
+            });
+            return projected;
+        };
+        const a = resolveBassPattern(12345, 16, fit);
+        const b = resolveBassPattern(12345, 16, fit);
+
+        expect(a).toEqual(b);
+        expect(a.length).toBe(16);
+        expect(a.every((step) => step === 0 || step === 1)).toBe(true);
+    });
+
+    it('computes melody performance profile and additive lifetime helpers', () => {
+        const perf = getPerformanceProfile({
+            melodyDensity: 0.22,
+            stepSeconds: 0.09,
+            activeNodes: 260,
+            clamp,
+        });
+        const gongLife = getAdditiveVoiceLifetime('gong', 0.2, 0.8);
+        const defaultLife = getAdditiveVoiceLifetime('triangle', 0.2, 0.8);
+
+        expect(perf.pressure).toBeGreaterThanOrEqual(0);
+        expect(perf.pressure).toBeLessThanOrEqual(1);
+        expect(perf.scalar).toBeGreaterThan(0);
+        expect(gongLife).toBe(20.8);
+        expect(defaultLife).toBeGreaterThan(0.8);
+    });
+
+    it('normalizes chord symbols and selects weighted next chord', () => {
+        expect(normalizeChordSymbol(' ii° ')).toBe('ii');
+        expect(getChordFunctionKey('ii°')).toBe('ii');
+        expect(buildScaleChord('IV', { scale: [0, 2, 4, 5, 7, 9, 11] })).toEqual([5, 9, 12]);
+
+        const next = selectNextChord({
+            currentChordKey: 'V',
+            progression: ['I', 'ii', 'V'],
+            getChordFunctionKey,
+            rng: { pick: (values) => values[0] },
+        });
+        expect(next.nextChordIndex).toBe(0);
     });
 });

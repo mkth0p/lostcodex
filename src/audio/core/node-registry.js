@@ -60,7 +60,7 @@ export class NodeRegistry {
         if (group.timeoutId) clearTimeout(group.timeoutId);
         group.nodes.forEach((node) => {
             this._nodes.delete(node);
-            try { node.disconnect(); } catch (e) { }
+            try { node.disconnect(); } catch { }
         });
     }
 
@@ -80,4 +80,3 @@ export class NodeRegistry {
         return this._nodes.size;
     }
 }
-

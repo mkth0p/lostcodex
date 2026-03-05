@@ -179,7 +179,6 @@ export class PlanetRenderer {
 
         // ── Auroras (Ethereal/Quantum/Abyssal) ───────────────────────────
         if (p.hasAuroras) {
-            const auRng = new RNG(p.seed + 99);
             for (let i = 0; i < 2; i++) {
                 const ay = cy - r * 0.4 + (i * r * 0.45);
                 const drift = Math.sin(this.angle * 0.02 + i) * 10;

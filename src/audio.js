@@ -1,6 +1,5 @@
 import { RNG } from './rng.js';
 import { buildVoice, ADDITIVE_VOICE_NAMES } from './voices.js';
-import { CHORD_TEMPLATES } from './data.js';
 import { NodeRegistry as CoreNodeRegistry } from './audio/core/node-registry.js';
 import { buildTransport } from './audio/core/transport.js';
 import { LookaheadScheduler } from './audio/core/scheduler.js';
@@ -15,7 +14,11 @@ import {
     getPhasePatternProfile,
     transformPhasePattern
 } from './audio/subsystems/percussion.js';
-import { getMelodyStride } from './audio/subsystems/melody.js';
+import {
+    getAdditiveVoiceLifetime as resolveAdditiveVoiceLifetime,
+    getMelodyStride,
+    getPerformanceProfile as resolvePerformanceProfile
+} from './audio/subsystems/melody.js';
 import {
     firePhaseTransitionEvent as emitPhaseTransitionEvent,
     fireSignatureMacroEvent as emitSignatureMacroEvent,
@@ -26,6 +29,15 @@ import {
     spawnFxTone
 } from './audio/subsystems/fx.js';
 import { startNatureAmbience } from './audio/subsystems/ambience.js';
+import {
+    buildScaleChord,
+    getChordDegreeIndex,
+    getChordFunctionKey,
+    normalizeChordSymbol,
+    scheduleBassNote,
+    startBassLine,
+    updateChordProgression
+} from './audio/subsystems/harmony.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -448,7 +460,7 @@ export class AudioEngine {
         });
     }
 
-    _getRhythmState(planet, stepIndex, barCount, rng) {
+    _getRhythmState(planet, stepIndex, barCount, _rng) {
         return resolveRhythmState({
             planet,
             stepIndex,
@@ -515,32 +527,16 @@ export class AudioEngine {
     }
 
     _getAdditiveVoiceLifetime(name, atk, dur) {
-        const baseLifetime = Math.max(0.4, (atk || 0) + (dur || 0));
-        switch (name) {
-            case 'marimba': return Math.min(baseLifetime, 2.6) + 0.3;
-            case 'metallic': return 10.5;
-            case 'crystal_chimes': return 15.8;
-            case 'gong': return 20.8;
-            case 'brass_pad': return Math.max(atk || 0, 1.5) + (dur || 0) + 0.9;
-            default: return baseLifetime + 0.8;
-        }
+        return resolveAdditiveVoiceLifetime(name, atk, dur);
     }
 
     _getPerformanceProfile(planet) {
-        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
-        const stepSeconds = this.transport?.stepSeconds || 0.125;
-        const activeNodes = this.nodes?.size || 0;
-        const nodePressure = this._clamp((activeNodes - 170) / 220, 0, 1);
-        const speedPressure = this._clamp((0.14 - stepSeconds) / 0.07, 0, 1);
-        const densityPressure = this._clamp((density - 0.1) / 0.18, 0, 1);
-        const pressure = this._clamp(nodePressure * 0.55 + speedPressure * 0.2 + densityPressure * 0.25, 0, 1);
-        return {
-            density,
-            stepSeconds,
-            activeNodes,
-            pressure,
-            scalar: 1 - pressure * 0.7,
-        };
+        return resolvePerformanceProfile({
+            melodyDensity: planet?.melodyDensity || 0.05,
+            stepSeconds: this.transport?.stepSeconds || 0.125,
+            activeNodes: this.nodes?.size || 0,
+            clamp: (value, min, max) => this._clamp(value, min, max),
+        });
     }
 
     _pickMelodyWave(planet, ac, rng) {
@@ -823,39 +819,19 @@ export class AudioEngine {
     }
 
     _normalizeChordSymbol(symbol) {
-        return `${symbol || 'I'}`.replace(/Ã‚/g, '').trim() || 'I';
+        return normalizeChordSymbol(symbol);
     }
 
     _getChordFunctionKey(symbol) {
-        return this._normalizeChordSymbol(symbol).replace(/[^ivIV]/g, '') || 'I';
+        return getChordFunctionKey(symbol);
     }
 
     _getChordDegreeIndex(symbol, scaleLength) {
-        const roman = this._getChordFunctionKey(symbol).toUpperCase();
-        const degreeOrder = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-        const rawIndex = Math.max(0, degreeOrder.indexOf(roman));
-        if (!scaleLength || scaleLength >= degreeOrder.length) return rawIndex;
-        return Math.min(rawIndex, scaleLength - 1);
+        return getChordDegreeIndex(symbol, scaleLength);
     }
 
     _buildScaleChord(symbol, planet) {
-        const normalized = this._normalizeChordSymbol(symbol);
-        const scale = Array.isArray(planet?.scale) && planet.scale.length ? planet.scale : null;
-        if (!scale || scale.length < 3) return CHORD_TEMPLATES[normalized] || [0, 4, 7];
-
-        const rootIndex = this._getChordDegreeIndex(normalized, scale.length);
-        const chord = [];
-        for (let i = 0; i < 3; i++) {
-            const absIndex = rootIndex + i * 2;
-            const scaleIndex = absIndex % scale.length;
-            const octave = Math.floor(absIndex / scale.length);
-            chord.push(scale[scaleIndex] + octave * 12);
-        }
-
-        for (let i = 1; i < chord.length; i++) {
-            while (chord[i] <= chord[i - 1]) chord[i] += 12;
-        }
-        return chord;
+        return buildScaleChord(symbol, planet);
     }
 
     _osc(type, freq, gain, dest) {
@@ -1150,7 +1126,7 @@ export class AudioEngine {
         osc.start(now); osc.stop(now + atk + dur + 0.1);
         this.nodes.push(osc, env, panner);
         // Auto-cleanup when note ends to prevent node accumulation
-        osc.onended = () => { try { osc.disconnect(); env.disconnect(); panner.disconnect(); } catch (e) { } };
+        osc.onended = () => { try { osc.disconnect(); env.disconnect(); panner.disconnect(); } catch { } };
 
         // â”€â”€ Pitch bend vibrato (gated by flag)
         const bendScale = biomeId === 'fungal' ? 0.55 : 1;
@@ -2561,7 +2537,7 @@ export class AudioEngine {
         const g = ctx.createGain(); g.gain.value = this._vol;
         src.connect(g); g.connect(this.analyser);
         src.start();
-        src.onended = () => { try { src.disconnect(); g.disconnect(); } catch (e) { } };
+        src.onended = () => { try { src.disconnect(); g.disconnect(); } catch { } };
     }
 
     stop() {
@@ -2575,7 +2551,7 @@ export class AudioEngine {
             try {
                 if (n.stop) n.stop(t + 0.01);
                 n.disconnect();
-            } catch (e) { }
+            } catch { }
         });
         this.nodes.clear();
         this.melodyBus = null;
@@ -2671,7 +2647,7 @@ export class AudioEngine {
     subscribeState(listener) {
         if (typeof listener !== 'function') return () => { };
         this._listeners.add(listener);
-        try { listener(this._snapshotState()); } catch (e) { }
+        try { listener(this._snapshotState()); } catch { }
         return () => this._listeners.delete(listener);
     }
     triggerNavigationFx() {
@@ -2701,76 +2677,11 @@ export class AudioEngine {
 
     // â”€â”€ BASS LINE GENERATOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _startBass(p, dest) {
-        const ctx = this.ctx;
-        const transport = this.transport || this._buildTransport(p);
-        const bassBus = ctx.createGain();
-        bassBus.gain.value = 0.55;
-        bassBus.connect(dest);
-        this.nodes.push(bassBus);
-
-        // Bass pattern: 1=note, 0=rest. 8-step patterns (half-bar)
-        const patterns = [
-            [1, 0, 0, 0, 1, 0, 0, 0], // Steady 1/4s
-            [1, 0, 0, 1, 0, 0, 1, 0], // Syncopated
-            [0, 0, 1, 0, 0, 0, 1, 0], // Off-beat
-            [1, 1, 1, 1, 1, 1, 1, 1], // Driving 1/8ths
-            [1, 0, 1, 0, 1, 0, 1, 0], // Simple 1/8ths
-        ];
-        const rng = new RNG(p.seed + 777);
-        const activePattern = this._fitPatternToCycle(rng.pick(patterns), transport.cycleSteps);
-        const bassOctave = p.biome.id === 'abyssal' ? 0.5 : 1.0;
-        const bassStepMs = transport.stepMs;
-        let bassStep = 0;
-        const bassScheduled = this._scheduleRecurringChannel(
-            'bass',
-            transport.stepSeconds,
-            ({ scheduleTime }) => {
-                if (!this.playing) return;
-                if (activePattern[bassStep]) {
-                    this._scheduleBassNote(p, bassBus, bassOctave, transport.stepSeconds * 1.9, scheduleTime);
-                }
-                bassStep = (bassStep + 1) % transport.cycleSteps;
-            }
-        );
-
-        if (!bassScheduled) {
-            this.intervals.push(setInterval(() => {
-                if (!this.playing) return;
-                if (activePattern[bassStep]) {
-                    this._scheduleBassNote(p, bassBus, bassOctave, transport.stepSeconds * 1.9);
-                }
-                bassStep = (bassStep + 1) % transport.cycleSteps;
-            }, bassStepMs));
-        }
+        startBassLine(this, p, dest);
     }
 
     _scheduleBassNote(p, dest, octScale, gateSeconds = 0.4, scheduledTime = null) {
-        const ctx = this.ctx;
-        // Bass always stays on the ROOT of the current chord for stability
-        const chordBase = this._currentChordIntervals[0];
-        const freq = this._getStepFrequency(p, chordBase, octScale);
-
-        const osc = ctx.createOscillator();
-        const sub = ctx.createOscillator();
-        const env = ctx.createGain();
-
-        // Sub-bass voice: Sine + Triangle for weight
-        osc.type = 'triangle';
-        sub.type = 'sine';
-        osc.frequency.value = freq;
-        sub.frequency.value = freq * 0.5;
-
-        const now = Number.isFinite(scheduledTime) ? Math.max(ctx.currentTime, scheduledTime) : ctx.currentTime;
-        const noteDur = Math.max(0.22, gateSeconds || 0.4);
-        env.gain.setValueAtTime(0, now);
-        env.gain.linearRampToValueAtTime(0.4, now + Math.min(0.03, noteDur * 0.18));
-        env.gain.exponentialRampToValueAtTime(0.001, now + noteDur * 0.85);
-
-        osc.connect(env); sub.connect(env);
-        env.connect(dest);
-        osc.start(now); sub.start(now);
-        osc.stop(now + noteDur); sub.stop(now + noteDur);
-        this.nodes.push(osc, sub, env);
+        scheduleBassNote(this, p, dest, octScale, gateSeconds, scheduledTime);
     }
 
     // â”€â”€ EFFECTS CONSTRUCTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2836,6 +2747,10 @@ export class AudioEngine {
 
     // â”€â”€ HARMONIC PROGRESSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     _updateChord() {
+        if (this._engineRefactorV2) {
+            updateChordProgression(this);
+            return;
+        }
         if (!this.playing || !this._progression || !this._progression.length) return;
 
         this._chordName = this._normalizeChordSymbol(this._progression[this._chordIndex]);
@@ -2900,8 +2815,6 @@ export class AudioEngine {
 
         // â”€â”€ VARIABLE CHORD DURATION BASED ON TENSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // High tension chords (V, vii) might resolve faster, or hold for dramatic effect
-        const isTension = ['V', 'vii', 'v', 'iiÂ°'].includes(c);
-        const isRest = ['I', 'i', 'vi', 'VI'].includes(c);
 
         const transport = this.transport || this._buildTransport(this.planet);
         let minCycles = 2, maxCycles = 3;
