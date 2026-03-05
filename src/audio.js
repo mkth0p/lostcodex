@@ -16,6 +16,16 @@ import {
     transformPhasePattern
 } from './audio/subsystems/percussion.js';
 import { getMelodyStride } from './audio/subsystems/melody.js';
+import {
+    firePhaseTransitionEvent as emitPhaseTransitionEvent,
+    fireSignatureMacroEvent as emitSignatureMacroEvent,
+    getMacroEventChance,
+    getMacroEventCooldown,
+    spawnFxCluster,
+    spawnFxNoise,
+    spawnFxTone
+} from './audio/subsystems/fx.js';
+import { startNatureAmbience } from './audio/subsystems/ambience.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -393,317 +403,35 @@ export class AudioEngine {
     }
 
     _getMacroEventChance(biomeId, state) {
-        const phaseMul = {
-            DORMANT: 0,
-            STIR: 0.22,
-            BUILD: 0.58,
-            SURGE: 1.0,
-            CLIMAX: 0.82,
-            FALLOUT: 0.34,
-        }[state?.phase || 'STIR'] || 0.25;
-
-        let base = 0.045;
-        if (['storm', 'quantum', 'corrupted'].includes(biomeId)) base = 0.14;
-        else if (['volcanic', 'psychedelic', 'organic'].includes(biomeId)) base = 0.1;
-        else if (biomeId === 'fungal') base = 0.082;
-        else if (['oceanic', 'abyssal', 'crystalline', 'crystalloid', 'desert'].includes(biomeId)) base = 0.075;
-
-        return this._clamp(base * phaseMul * (0.62 + (state?.energy || 0) * 0.78), 0, 0.24);
+        return getMacroEventChance(
+            biomeId,
+            state,
+            (value, min, max) => this._clamp(value, min, max)
+        );
     }
 
     _getMacroEventCooldown(biomeId, phase, rng) {
-        let min = 8, max = 15;
-        if (['storm', 'quantum', 'corrupted'].includes(biomeId)) { min = 6; max = 11; }
-        else if (['volcanic', 'organic', 'psychedelic'].includes(biomeId)) { min = 7; max = 13; }
-        else if (biomeId === 'fungal') { min = 9; max = 15; }
-        else if (['barren', 'glacial', 'arctic', 'nebula', 'ethereal'].includes(biomeId)) { min = 12; max = 20; }
-        if (phase === 'SURGE' || phase === 'CLIMAX') min *= 0.8;
-        return rng.range(min, max);
+        return getMacroEventCooldown(biomeId, phase, rng);
     }
 
     _spawnFxNoise(dest, opts = {}) {
-        if (!this.ctx || !this._noiseBuffer || !dest) return;
-        const ctx = this.ctx;
-        const t = ctx.currentTime + (opts.delay || 0);
-        const dur = Math.max(0.06, opts.dur || 0.4);
-        const src = ctx.createBufferSource();
-        const filt = ctx.createBiquadFilter();
-        const env = ctx.createGain();
-        const pan = ctx.createStereoPanner();
-
-        src.buffer = this._noiseBuffer;
-        src.playbackRate.value = opts.playbackRate || 1;
-        filt.type = opts.filterType || 'bandpass';
-        filt.Q.value = opts.q || 0.9;
-
-        const startFreq = Math.max(40, opts.startFreq || 1600);
-        const endFreq = Math.max(40, opts.endFreq || startFreq);
-        filt.frequency.setValueAtTime(startFreq, t);
-        if (opts.curve === 'linear' || endFreq >= startFreq) {
-            filt.frequency.linearRampToValueAtTime(endFreq, t + dur);
-        } else {
-            filt.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
-        }
-
-        pan.pan.value = opts.pan || 0;
-        env.gain.setValueAtTime(0, t);
-        env.gain.linearRampToValueAtTime(opts.gain || 0.05, t + Math.min(0.05, dur * 0.25));
-        env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-
-        src.connect(filt);
-        filt.connect(env);
-        env.connect(pan);
-        pan.connect(dest);
-        src.start(t);
-        src.stop(t + dur + 0.05);
-        this.nodes.push(src, filt, env, pan);
+        spawnFxNoise(this, dest, opts);
     }
 
     _spawnFxTone(dest, opts = {}) {
-        if (!this.ctx || !dest) return;
-        const ctx = this.ctx;
-        const t = ctx.currentTime + (opts.delay || 0);
-        const dur = Math.max(0.05, opts.dur || 0.35);
-        const osc = ctx.createOscillator();
-        const env = ctx.createGain();
-        const pan = ctx.createStereoPanner();
-        const filter = opts.filterType ? ctx.createBiquadFilter() : null;
-
-        osc.type = this._resolveOscType(opts.wave || 'sine');
-        const startFreq = Math.max(20, opts.startFreq || opts.freq || 440);
-        const endFreq = Math.max(20, opts.endFreq || startFreq);
-        osc.frequency.setValueAtTime(startFreq, t);
-        if (opts.curve === 'linear' || endFreq >= startFreq) {
-            osc.frequency.linearRampToValueAtTime(endFreq, t + dur);
-        } else {
-            osc.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
-        }
-
-        pan.pan.value = opts.pan || 0;
-        env.gain.setValueAtTime(0, t);
-        env.gain.linearRampToValueAtTime(opts.gain || 0.04, t + Math.min(0.04, dur * 0.22));
-        env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-
-        if (filter) {
-            filter.type = opts.filterType;
-            filter.frequency.value = opts.filterFreq || Math.max(startFreq * 2.5, 300);
-            filter.Q.value = opts.filterQ || 0.8;
-            osc.connect(filter);
-            filter.connect(env);
-        } else {
-            osc.connect(env);
-        }
-        env.connect(pan);
-        pan.connect(dest);
-
-        osc.start(t);
-        osc.stop(t + dur + 0.05);
-        if (filter) this.nodes.push(osc, filter, env, pan);
-        else this.nodes.push(osc, env, pan);
+        spawnFxTone(this, dest, opts);
     }
 
     _spawnFxCluster(dest, opts = {}) {
-        const baseFreq = opts.baseFreq || 220;
-        const ratios = opts.ratios || [1, 5 / 4, 3 / 2];
-        ratios.forEach((ratio, i) => {
-            this._spawnFxTone(dest, {
-                wave: opts.wave || 'sine',
-                startFreq: baseFreq * ratio,
-                endFreq: (opts.endMul || 0.96) * baseFreq * ratio,
-                dur: opts.dur || 0.35,
-                gain: (opts.gain || 0.028) * (1 - i * 0.08),
-                pan: ratios.length > 1 ? ((i / (ratios.length - 1)) * 0.8) - 0.4 : 0,
-                delay: (opts.delay || 0) + i * (opts.spacing || 0.03),
-                curve: opts.curve || 'exp',
-                filterType: opts.filterType,
-                filterFreq: opts.filterFreq,
-                filterQ: opts.filterQ,
-            });
-        });
+        spawnFxCluster(this, dest, opts);
     }
 
     _firePhaseTransitionEvent(p, dest, fromPhase, toPhase) {
-        if (!this.playing || !this.ctx) return;
-        const biomeId = p?.biome?.id;
-        const root = p?.rootFreq || 220;
-        const upward = ['BUILD', 'SURGE', 'CLIMAX'].includes(toPhase) && toPhase !== fromPhase;
-        const rng = new RNG((p.seed || 0) + 130000 + this.stepFX++);
-        const pan = rng.range(-0.55, 0.55);
-
-        switch (biomeId) {
-            case 'storm':
-                this._spawnFxNoise(dest, { dur: upward ? 0.34 : 0.7, gain: 0.065, startFreq: upward ? 9000 : 1800, endFreq: upward ? 1400 : 220, q: 0.8, pan });
-                if (upward) this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 3.2, endFreq: root * 1.4, dur: 0.45, gain: 0.04, pan: -pan });
-                break;
-            case 'quantum':
-            case 'corrupted':
-                for (let i = 0; i < 3; i++) {
-                    this._spawnFxTone(dest, {
-                        wave: biomeId === 'quantum' ? 'square' : 'sawtooth',
-                        startFreq: root * rng.range(6, 11),
-                        endFreq: root * rng.range(2, 4),
-                        dur: 0.08 + i * 0.02,
-                        gain: 0.024,
-                        pan: (i % 2 === 0 ? -0.45 : 0.45),
-                        delay: i * 0.035,
-                    });
-                }
-                break;
-            case 'fungal':
-                this._spawnFxNoise(dest, { dur: 0.24, gain: 0.018, startFreq: 2600, endFreq: 720, filterType: 'bandpass', q: 1.3, pan });
-                for (let i = 0; i < 3; i++) {
-                    this._spawnFxTone(dest, {
-                        wave: i === 1 ? 'triangle' : 'sine',
-                        startFreq: root * (3.3 + i * 0.42),
-                        endFreq: root * (2.15 + i * 0.25),
-                        dur: 0.11 + i * 0.03,
-                        gain: 0.014,
-                        pan: pan * (i === 1 ? -0.35 : 0.45),
-                        delay: i * 0.045,
-                    });
-                }
-                break;
-            case 'organic':
-            case 'desert':
-                this._spawnFxNoise(dest, { dur: 0.42, gain: 0.03, startFreq: 1800, endFreq: 500, filterType: 'bandpass', q: 1.1, pan });
-                this._spawnFxCluster(dest, {
-                    baseFreq: root * (biomeId === 'desert' ? 3.2 : 2.4),
-                    ratios: [1, 6 / 5, 3 / 2],
-                    wave: biomeId === 'desert' ? 'triangle' : 'sine',
-                    gain: 0.026,
-                    dur: 0.22,
-                    spacing: 0.04,
-                    endMul: 0.92,
-                });
-                break;
-            case 'oceanic':
-                this._spawnFxNoise(dest, { dur: 1.0, gain: 0.038, startFreq: 1200, endFreq: 180, filterType: 'lowpass', q: 0.6, pan });
-                this._spawnFxCluster(dest, { baseFreq: root * 4.5, ratios: [1, 4 / 3], wave: 'sine', gain: 0.018, dur: 0.18, spacing: 0.09, endMul: 1.04 });
-                break;
-            case 'crystalline':
-            case 'crystalloid':
-            case 'glacial':
-            case 'arctic':
-                this._spawnFxCluster(dest, {
-                    baseFreq: root * 6,
-                    ratios: biomeId === 'crystalloid' ? [1, 9 / 8, 3 / 2, 2] : [1, 5 / 4, 3 / 2],
-                    wave: 'sine',
-                    gain: 0.022,
-                    dur: 0.3,
-                    spacing: 0.035,
-                    endMul: 0.98,
-                });
-                break;
-            case 'volcanic':
-            case 'abyssal':
-                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 1.5, endFreq: root * 0.8, dur: 0.6, gain: 0.05, pan, filterType: 'lowpass', filterFreq: root * 7 });
-                this._spawnFxNoise(dest, { dur: 0.45, gain: 0.03, startFreq: 800, endFreq: 120, filterType: 'lowpass', q: 0.7, pan: -pan });
-                break;
-            default:
-                this._spawnFxNoise(dest, { dur: upward ? 0.35 : 0.55, gain: 0.026, startFreq: upward ? 2600 : 1400, endFreq: upward ? 700 : 220, q: 0.8, pan });
-                this._spawnFxTone(dest, { wave: 'sine', startFreq: root * 4, endFreq: root * 2.8, dur: 0.25, gain: 0.018, pan: -pan });
-                break;
-        }
+        emitPhaseTransitionEvent(this, p, dest, fromPhase, toPhase);
     }
 
     _fireSignatureMacroEvent(p, dest, state) {
-        if (!this.playing || !this.ctx) return;
-        const biomeId = p?.biome?.id;
-        const root = p?.rootFreq || 220;
-        const rng = new RNG((p.seed || 0) + 140000 + this.stepFX++);
-        const energy = state?.energy || 0;
-
-        switch (biomeId) {
-            case 'storm':
-                for (let i = 0; i < 3 + Math.round(energy * 2); i++) {
-                    this._spawnFxNoise(dest, {
-                        dur: 0.12 + rng.range(0, 0.08),
-                        gain: 0.04 + energy * 0.025,
-                        startFreq: rng.range(6500, 11000),
-                        endFreq: rng.range(800, 1800),
-                        q: 0.9,
-                        pan: rng.range(-0.8, 0.8),
-                        delay: i * 0.07
-                    });
-                }
-                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 2.2, endFreq: root * 0.65, dur: 1.1, gain: 0.055, pan: 0, filterType: 'lowpass', filterFreq: root * 8 });
-                break;
-            case 'quantum':
-                for (let i = 0; i < 4 + Math.round(energy * 3); i++) {
-                    this._spawnFxTone(dest, {
-                        wave: i % 2 === 0 ? 'square' : 'triangle',
-                        startFreq: root * rng.range(7, 13),
-                        endFreq: root * rng.range(1.5, 4),
-                        dur: 0.05 + rng.range(0, 0.05),
-                        gain: 0.02 + energy * 0.01,
-                        pan: i % 2 === 0 ? -0.75 : 0.75,
-                        delay: i * 0.045
-                    });
-                }
-                break;
-            case 'corrupted':
-                for (let i = 0; i < 3; i++) {
-                    this._spawnFxNoise(dest, { dur: 0.18, gain: 0.032, startFreq: rng.range(2400, 6000), endFreq: rng.range(400, 1200), q: 1.2, pan: rng.range(-0.7, 0.7), delay: i * 0.06 });
-                }
-                this._spawnFxCluster(dest, { baseFreq: root * 5.5, ratios: [1, 16 / 15, 45 / 32], wave: 'sawtooth', gain: 0.02, dur: 0.16, spacing: 0.03 });
-                break;
-            case 'fungal':
-                for (let i = 0; i < 4 + Math.round(energy * 2); i++) {
-                    this._spawnFxTone(dest, {
-                        wave: i % 3 === 0 ? 'triangle' : 'sine',
-                        startFreq: root * (3.1 + rng.range(0, 2.4)),
-                        endFreq: root * (2.0 + rng.range(0, 1.2)),
-                        dur: 0.08 + rng.range(0, 0.05),
-                        gain: 0.012 + energy * 0.006,
-                        pan: rng.range(-0.7, 0.7),
-                        delay: i * 0.055,
-                    });
-                }
-                this._spawnFxNoise(dest, { dur: 0.36, gain: 0.018, startFreq: 1800, endFreq: 520, filterType: 'bandpass', q: 1.1 });
-                this._spawnFxCluster(dest, { baseFreq: root * 3.0, ratios: [1, 9 / 8, 4 / 3, 3 / 2], wave: 'triangle', gain: 0.016, dur: 0.12, spacing: 0.045, endMul: 0.97 });
-                break;
-            case 'organic':
-                this._spawnFxNoise(dest, { dur: 0.9, gain: 0.03, startFreq: 1800, endFreq: 300, filterType: 'bandpass', q: 0.8 });
-                this._spawnFxCluster(dest, { baseFreq: root * 2.8, ratios: [1, 6 / 5, 3 / 2], wave: 'triangle', gain: 0.022, dur: 0.2, spacing: 0.07, endMul: 0.88 });
-                break;
-            case 'oceanic':
-                this._spawnFxNoise(dest, { dur: 1.8, gain: 0.038, startFreq: 900, endFreq: 140, filterType: 'lowpass', q: 0.55 });
-                this._spawnFxCluster(dest, { baseFreq: root * 4.2, ratios: [1, 4 / 3, 2], wave: 'sine', gain: 0.016, dur: 0.22, spacing: 0.12, endMul: 1.06 });
-                break;
-            case 'abyssal':
-                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 1.15, endFreq: root * 0.42, dur: 1.8, gain: 0.07, filterType: 'lowpass', filterFreq: root * 6 });
-                this._spawnFxNoise(dest, { dur: 0.9, gain: 0.025, startFreq: 500, endFreq: 80, filterType: 'lowpass', q: 0.7 });
-                break;
-            case 'volcanic':
-                this._spawnFxTone(dest, { wave: 'triangle', startFreq: root * 2.4, endFreq: root * 0.8, dur: 1.2, gain: 0.06, filterType: 'lowpass', filterFreq: root * 8 });
-                this._spawnFxNoise(dest, { dur: 0.7, gain: 0.03, startFreq: 1600, endFreq: 180, filterType: 'lowpass', q: 0.7 });
-                break;
-            case 'crystalline':
-            case 'crystalloid':
-            case 'glacial':
-            case 'arctic':
-                this._spawnFxCluster(dest, {
-                    baseFreq: root * 6.5,
-                    ratios: biomeId === 'crystalloid' ? [1, 9 / 8, 3 / 2, 2, 5 / 2] : [1, 5 / 4, 3 / 2, 2],
-                    wave: 'sine',
-                    gain: 0.02,
-                    dur: 0.28,
-                    spacing: 0.045,
-                    endMul: 0.98
-                });
-                break;
-            case 'desert':
-                this._spawnFxNoise(dest, { dur: 1.1, gain: 0.03, startFreq: 2600, endFreq: 400, filterType: 'bandpass', q: 0.7 });
-                this._spawnFxCluster(dest, { baseFreq: root * 3.6, ratios: [1, 6 / 5, 3 / 2], wave: 'triangle', gain: 0.018, dur: 0.16, spacing: 0.09, endMul: 0.92 });
-                break;
-            case 'nebula':
-            case 'ethereal':
-                this._spawnFxCluster(dest, { baseFreq: root * 4.8, ratios: [1, 5 / 4, 3 / 2, 2], wave: 'sine', gain: 0.02, dur: 0.65, spacing: 0.08, endMul: 1.01 });
-                break;
-            default:
-                this._spawnFxTone(dest, { wave: 'sine', startFreq: root * 4, endFreq: root * 2.6, dur: 0.4, gain: 0.022 });
-                break;
-        }
+        emitSignatureMacroEvent(this, p, dest, state);
     }
 
     _getTensionState(planet, stepIndex = 0) {
@@ -2805,246 +2533,7 @@ export class AudioEngine {
     }
 
     _startNatureAmbiance(p, dest) {
-        const ctx = this.ctx, ac = p.ac, bid = p.biome.id;
-        const features = ac.ambianceFeatures || [];
-        if (features.length === 0) return;
-
-        const ambBus = ctx.createGain();
-        const ambTarget = bid === 'fungal' ? 0.58 : 0.5;
-        ambBus.gain.setValueAtTime(0, ctx.currentTime);
-        ambBus.gain.linearRampToValueAtTime(ambTarget, ctx.currentTime + 2);
-        ambBus.connect(dest);
-        this.nodes.push(ambBus);
-
-        const startAmbienceLoop = (name, intervalMs, callback) => {
-            const scheduled = this._scheduleRecurringChannel(
-                `ambience-${name}`,
-                intervalMs / 1000,
-                () => {
-                    if (!this.playing) return;
-                    callback();
-                }
-            );
-            if (!scheduled) {
-                this.intervals.push(setInterval(() => {
-                    if (!this.playing) return;
-                    callback();
-                }, intervalMs));
-            }
-        };
-
-        features.forEach(feat => {
-            if (feat === 'birds') {
-                startAmbienceLoop('birds', 1500, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 70000);
-                    if (rng.range(0, 1) < 0.2) {
-                        const t = ctx.currentTime;
-                        const o = ctx.createOscillator(), g = ctx.createGain();
-                        const f0 = 2000 + rng.range(0, 3000);
-                        o.frequency.setValueAtTime(f0, t);
-                        o.frequency.exponentialRampToValueAtTime(f0 * rng.range(0.5, 1.5), t + 0.1);
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime(0.04, t + 0.01);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-                        o.connect(g); g.connect(ambBus);
-                        o.start(t); o.stop(t + 0.2);
-                        this.nodes.push(o, g);
-                    }
-                });
-            }
-            if (feat === 'rain') {
-                startAmbienceLoop('rain', 100, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 80000);
-                    if (rng.range(0, 1) < 0.6) {
-                        const t = ctx.currentTime;
-                        const n = ctx.createBufferSource();
-                        n.buffer = this._noiseBuffer;
-                        const f = ctx.createBiquadFilter();
-                        f.type = 'highpass'; f.frequency.value = 4000 + rng.range(0, 4000);
-                        const g = ctx.createGain();
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime(0.08, t + 0.005);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
-                        n.connect(f); f.connect(g); g.connect(ambBus);
-                        n.start(t); n.stop(t + 0.05);
-                        this.nodes.push(n, f, g);
-                    }
-                });
-            }
-            if (feat === 'bubbles') {
-                startAmbienceLoop('bubbles', 240, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 81000);
-                    if (rng.range(0, 1) < 0.42) {
-                        const t = ctx.currentTime;
-                        const dur = rng.range(0.18, 0.55);
-                        const f0 = 180 + rng.range(0, 260);
-                        const o = ctx.createOscillator();
-                        const f = ctx.createBiquadFilter();
-                        const g = ctx.createGain();
-                        const pan = ctx.createStereoPanner();
-                        o.type = 'sine';
-                        o.frequency.setValueAtTime(f0, t);
-                        o.frequency.exponentialRampToValueAtTime(f0 * rng.range(1.4, 2.6), t + dur);
-                        f.type = 'bandpass'; f.frequency.value = f0 * 4; f.Q.value = 1.2;
-                        pan.pan.value = rng.range(-0.7, 0.7);
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime(0.018 + rng.range(0, 0.018), t + 0.03);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-                        o.connect(f); f.connect(g); g.connect(pan); pan.connect(ambBus);
-                        o.start(t); o.stop(t + dur + 0.05);
-                        this.nodes.push(o, f, g, pan);
-                    }
-                });
-            }
-            if (feat === 'dew') {
-                startAmbienceLoop('dew', 650, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 81250);
-                    if (rng.range(0, 1) < 0.22) {
-                        const t = ctx.currentTime;
-                        const dur = rng.range(0.16, 0.42);
-                        const baseFreq = 620 + rng.range(0, 980);
-                        const o = ctx.createOscillator();
-                        const bp = ctx.createBiquadFilter();
-                        const g = ctx.createGain();
-                        const pan = ctx.createStereoPanner();
-                        o.type = rng.range(0, 1) < 0.6 ? 'sine' : 'triangle';
-                        o.frequency.setValueAtTime(baseFreq * rng.range(1.08, 1.35), t);
-                        o.frequency.exponentialRampToValueAtTime(baseFreq, t + dur * 0.85);
-                        bp.type = 'bandpass'; bp.frequency.value = baseFreq * 1.8; bp.Q.value = 1.5;
-                        pan.pan.value = rng.range(-0.75, 0.75);
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime(0.012 + rng.range(0, 0.01), t + 0.02);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-                        o.connect(bp); bp.connect(g); g.connect(pan); pan.connect(ambBus);
-                        o.start(t); o.stop(t + dur + 0.03);
-                        this.nodes.push(o, bp, g, pan);
-                    }
-                });
-            }
-            if (feat === 'thunder' && bid === 'storm') {
-                startAmbienceLoop('thunder', 5000, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 90000);
-                    if (rng.range(0, 1) < 0.05) {
-                        const t = ctx.currentTime;
-                        const n = ctx.createBufferSource();
-                        n.buffer = this._noiseBuffer;
-                        const f = ctx.createBiquadFilter();
-                        f.type = 'lowpass'; f.frequency.value = 100 + rng.range(0, 200);
-                        const g = ctx.createGain();
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime(0.4, t + 0.1);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + 3.0);
-                        n.connect(f); f.connect(g); g.connect(ambBus);
-                        n.start(t); n.stop(t + 3.1);
-                        this.nodes.push(n, f, g);
-                    }
-                });
-            }
-            if (feat === 'lightning' && bid === 'storm' && this._noiseBuffer) {
-                startAmbienceLoop('lightning', 1800, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 90500);
-                    if (rng.range(0, 1) < 0.08) {
-                        const t = ctx.currentTime;
-                        const n = ctx.createBufferSource();
-                        const hp = ctx.createBiquadFilter();
-                        const bp = ctx.createBiquadFilter();
-                        const g = ctx.createGain();
-                        const baseFreq = 3800 + rng.range(0, 4200);
-                        n.buffer = this._noiseBuffer;
-                        hp.type = 'highpass'; hp.frequency.value = baseFreq;
-                        bp.type = 'bandpass'; bp.frequency.value = baseFreq * 0.85; bp.Q.value = 2.2;
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime(0.16 + rng.range(0, 0.05), t + 0.004);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-                        n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(ambBus);
-                        n.start(t); n.stop(t + 0.16);
-                        if (dest?.frequency) {
-                            const flashFreq = Math.min(ctx.sampleRate / 2 - 200, Math.max(dest.frequency.value * 1.7, 5000));
-                            dest.frequency.setValueAtTime(dest.frequency.value, t);
-                            dest.frequency.linearRampToValueAtTime(flashFreq, t + 0.01);
-                            dest.frequency.exponentialRampToValueAtTime(Math.max(80, p.filterFreq), t + 0.18);
-                        }
-                        this.nodes.push(n, hp, bp, g);
-                    }
-                });
-            }
-            if (feat === 'wind') {
-                const n = ctx.createBufferSource();
-                if (this._noiseBuffer) {
-                    n.buffer = this._noiseBuffer; n.loop = true;
-                    const f = ctx.createBiquadFilter();
-                    f.type = 'bandpass'; f.frequency.value = 800; f.Q.value = 0.5;
-                    const g = ctx.createGain(); g.gain.value = 0.05;
-                    n.connect(f); f.connect(g); g.connect(ambBus);
-                    n.start();
-                    this._lfo(0.05, 400, f.frequency);
-                    this.nodes.push(n, f, g);
-                }
-            }
-            if (feat === 'rustle' && this._noiseBuffer) {
-                const n = ctx.createBufferSource();
-                const hp = ctx.createBiquadFilter();
-                const bp = ctx.createBiquadFilter();
-                const g = ctx.createGain();
-                const pan = ctx.createStereoPanner();
-                n.buffer = this._noiseBuffer; n.loop = true;
-                hp.type = 'highpass'; hp.frequency.value = bid === 'fungal' ? 240 : 650;
-                bp.type = 'bandpass'; bp.frequency.value = bid === 'fungal' ? 920 : 1800; bp.Q.value = bid === 'fungal' ? 0.72 : 0.9;
-                g.gain.value = bid === 'fungal' ? 0.024 : 0.018;
-                pan.pan.value = 0;
-                n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(pan); pan.connect(ambBus);
-                n.start();
-                this._lfo(0.07, bid === 'fungal' ? 250 : 520, bp.frequency, 'triangle');
-                this._lfo(0.11, g.gain.value * 0.55, g.gain, 'sine');
-                if (bid === 'fungal') this._lfo(0.035, 0.45, pan.pan, 'sine');
-                this.nodes.push(n, hp, bp, g, pan);
-            }
-            if (feat === 'spores' && this._noiseBuffer) {
-                startAmbienceLoop('spores', 1200, () => {
-                    if (!this.playing) return;
-                    const rng = new RNG(p.seed + (this.stepFX++ || 0) + 91500);
-                    if (rng.range(0, 1) < 0.28) {
-                        const t = ctx.currentTime;
-                        const dur = rng.range(0.45, 1.1);
-                        const n = ctx.createBufferSource();
-                        const f = ctx.createBiquadFilter();
-                        const g = ctx.createGain();
-                        const pan = ctx.createStereoPanner();
-                        n.buffer = this._noiseBuffer;
-                        n.playbackRate.value = bid === 'fungal' ? rng.range(0.55, 1.1) : rng.range(0.4, 0.9);
-                        f.type = 'bandpass'; f.frequency.value = (bid === 'fungal' ? 800 : 1200) + rng.range(0, bid === 'fungal' ? 1800 : 2800); f.Q.value = 0.7 + rng.range(0, 1.2);
-                        pan.pan.value = rng.range(-0.6, 0.6);
-                        g.gain.setValueAtTime(0, t);
-                        g.gain.linearRampToValueAtTime((bid === 'fungal' ? 0.016 : 0.022) + rng.range(0, 0.02), t + dur * 0.35);
-                        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-                        n.connect(f); f.connect(g); g.connect(pan); pan.connect(ambBus);
-                        n.start(t); n.stop(t + dur + 0.05);
-                        this.nodes.push(n, f, g, pan);
-                        if (bid === 'fungal') {
-                            const o = ctx.createOscillator();
-                            const og = ctx.createGain();
-                            const of = ctx.createBiquadFilter();
-                            o.type = rng.range(0, 1) < 0.5 ? 'sine' : 'triangle';
-                            o.frequency.setValueAtTime(420 + rng.range(0, 520), t);
-                            o.frequency.exponentialRampToValueAtTime((680 + rng.range(0, 680)) * rng.range(0.95, 1.08), t + dur * 0.7);
-                            of.type = 'bandpass'; of.frequency.value = 1200 + rng.range(0, 900); of.Q.value = 1.1;
-                            og.gain.setValueAtTime(0, t);
-                            og.gain.linearRampToValueAtTime(0.006 + rng.range(0, 0.008), t + dur * 0.18);
-                            og.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.82);
-                            o.connect(of); of.connect(og); og.connect(pan);
-                            o.start(t); o.stop(t + dur + 0.04);
-                            this.nodes.push(o, og, of);
-                        }
-                    }
-                });
-            }
-        });
+        startNatureAmbience(this, p, dest);
     }
 
     // â”€â”€ TIER 3: DOPPLER WHOOSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

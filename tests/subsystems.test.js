@@ -7,6 +7,8 @@ import {
     getPhasePatternProfile
 } from '../src/audio/subsystems/percussion.js';
 import { getMelodyStride } from '../src/audio/subsystems/melody.js';
+import { getMacroEventChance, getMacroEventCooldown } from '../src/audio/subsystems/fx.js';
+import { startNatureAmbience } from '../src/audio/subsystems/ambience.js';
 import { DEFAULT_TENSION_PROFILE, BIOME_TENSION_PROFILES } from '../src/audio/config/tension-profiles.js';
 import { DEFAULT_DRUM_TONE, BIOME_DRUM_TONES } from '../src/audio/config/drum-profiles.js';
 
@@ -103,5 +105,25 @@ describe('audio subsystem helpers', () => {
         expect(banks).toHaveProperty('CLIMAX');
         expect(banks.CLIMAX.k.length).toBe(8);
         expect(banks.SURGE.h.length).toBe(8);
+    });
+
+    it('computes macro event chance and cooldown bounds', () => {
+        const chance = getMacroEventChance('storm', { phase: 'SURGE', energy: 0.8 }, clamp);
+        const cooldown = getMacroEventCooldown('storm', 'SURGE', {
+            range(min, max) { return (min + max) / 2; },
+        });
+
+        expect(chance).toBeGreaterThanOrEqual(0);
+        expect(chance).toBeLessThanOrEqual(0.24);
+        expect(cooldown).toBeGreaterThan(0);
+    });
+
+    it('returns early for ambience when no features are configured', () => {
+        const engine = { ctx: null };
+        const planet = {
+            ac: { ambianceFeatures: [] },
+            biome: { id: 'barren' },
+        };
+        expect(() => startNatureAmbience(engine, planet, null)).not.toThrow();
     });
 });
