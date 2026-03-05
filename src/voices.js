@@ -341,7 +341,7 @@ function _hollow_pipe(ctx, freq, dest, rng, atk, dur, nodes) {
         const bufSize = ctx.sampleRate * 0.5;
         const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
         const d = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+        for (let i = 0; i < bufSize; i++) d[i] = ((rng?.next ? rng.next() : Math.random()) * 2) - 1;
 
         const noiseSrc = ctx.createBufferSource();
         noiseSrc.buffer = buf;
@@ -458,7 +458,7 @@ function _bowed_metal(ctx, freq, dest, rng, atk, dur, nodes) {
     const bufSize = ctx.sampleRate * 0.1; // Short burst buffer
     const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+    for (let i = 0; i < bufSize; i++) d[i] = ((rng?.next ? rng.next() : Math.random()) * 2) - 1;
     noise.buffer = buf;
     noise.loop = true;
 

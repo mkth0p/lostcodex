@@ -1,39 +1,14 @@
 import { GLYPHS } from './data.js';
-import { RNG } from './rng.js';
 import { generatePlanet } from './planet.js';
-import { AudioEngine } from './audio.js';
+import { AudioEngine } from './audio/engine.js';
 import { PlanetRenderer } from './renderer.js';
 import { Starfield } from './starfield.js';
 import { AudioReactiveEcosystem } from './visualizer.js';
 import { WarpRenderer } from './warp.js';
-
-// URL-friendly address encoding/decoding
-function encodeAddress(address) {
-    // Convert glyphs to indices, then to base36 string
-    const indices = [...address].map(g => {
-        const idx = GLYPHS.indexOf(g);
-        return idx === -1 ? 0 : idx;
-    });
-    // Join with dashes for readability: e.g., "0-1-2-3-4-5"
-    return indices.map(i => i.toString(36)).join('');
-}
-
-function decodeAddress(encoded) {
-    if (!encoded) return '';
-    try {
-        // Parse compact base36 string back to indices
-        const indices = [];
-        for (let i = 0; i < encoded.length; i++) {
-            const idx = parseInt(encoded[i], 36);
-            if (!isNaN(idx) && idx >= 0 && idx < GLYPHS.length) {
-                indices.push(idx);
-            }
-        }
-        return indices.map(i => GLYPHS[i]).join('');
-    } catch (e) {
-        return '';
-    }
-}
+import { encodeAddress, decodeAddress } from './ui/shared/address-codec.js';
+import { fillSlider } from './ui/shared/slider-fill.js';
+import { randomAddress } from './ui/shared/address-utils.js';
+import { isBookmarked, loadBookmarks, saveBookmarks, toggleBookmark } from './ui/shared/bookmarks.js';
 
 export class App {
     constructor() {
@@ -44,6 +19,8 @@ export class App {
         this.chordEl = null;
         this.melodyEls = null;
         this.debugEls = null;
+        this.tensionEls = null;
+        this._unsubscribeState = null;
     }
 
     init() {
@@ -99,87 +76,63 @@ export class App {
             this._fillSlider(el);
             return el;
         };
-        sl('ctrl-vol').addEventListener('input', e => { this.audio.setVolume(+e.target.value); this._fillSlider(e.target); });
-        sl('ctrl-reverb').addEventListener('input', e => { this.audio.setReverb(+e.target.value); this._fillSlider(e.target); });
-        sl('ctrl-drift').addEventListener('input', e => { this.audio._drift = +e.target.value; this._fillSlider(e.target); });
-        sl('ctrl-density').addEventListener('input', e => { this.audio._density = +e.target.value; this._fillSlider(e.target); });
+        sl('ctrl-vol').addEventListener('input', e => { this.audio.setMix({ volume: +e.target.value }); this._fillSlider(e.target); });
+        sl('ctrl-reverb').addEventListener('input', e => { this.audio.setMix({ reverb: +e.target.value }); this._fillSlider(e.target); });
+        sl('ctrl-drift').addEventListener('input', e => { this.audio.setPerformance({ drift: +e.target.value }); this._fillSlider(e.target); });
+        sl('ctrl-density').addEventListener('input', e => { this.audio.setPerformance({ density: +e.target.value }); this._fillSlider(e.target); });
         sl('ctrl-eq-low').addEventListener('input', e => {
-            if (this.audio.eqLow) this.audio.eqLow.gain.value = +e.target.value;
+            this.audio.setMix({ eqLow: +e.target.value });
             this._fillSlider(e.target);
         });
         sl('ctrl-eq-mid').addEventListener('input', e => {
-            if (this.audio.eqMid) this.audio.eqMid.gain.value = +e.target.value;
+            this.audio.setMix({ eqMid: +e.target.value });
             this._fillSlider(e.target);
         });
         sl('ctrl-eq-high').addEventListener('input', e => {
-            if (this.audio.eqHigh) this.audio.eqHigh.gain.value = +e.target.value;
+            this.audio.setMix({ eqHigh: +e.target.value });
             this._fillSlider(e.target);
         });
         document.getElementById('ctrl-granular').addEventListener('change', e => {
-            this.audio._granularEnabled = e.target.checked;
-            // Live toggle: ramp the dedicated granular bus smoothly —
-            // grains keep running silently when off, unmuting is instant
-            if (this.audio._granularBus && this.audio.ctx) {
-                const g = this.audio._granularBus.gain;
-                const now = this.audio.ctx.currentTime;
-                g.cancelScheduledValues(now);
-                g.setValueAtTime(g.value, now);
-                g.linearRampToValueAtTime(e.target.checked ? 1 : 0, now + 1.5);
-            }
+            this.audio.setFeatureFlags({ granular: e.target.checked });
         });
         document.getElementById('ctrl-perc').addEventListener('change', e => {
-            this.audio._percussionEnabled = e.target.checked;
-            // Live toggle: ramp the percBus gain to mute/unmute without restarting
-            if (this.audio._percBus && this.audio.ctx) {
-                const g = this.audio._percBus.gain;
-                const now = this.audio.ctx.currentTime;
-                g.cancelScheduledValues(now);
-                g.setValueAtTime(g.value, now);
-                g.linearRampToValueAtTime(e.target.checked ? this.audio._percVol : 0, now + 0.2);
-            }
+            this.audio.setFeatureFlags({ percussion: e.target.checked });
         });
 
         sl('ctrl-perc-vol').addEventListener('input', e => {
-            this.audio._percVol = +e.target.value;
-            if (this.audio._percussionEnabled && this.audio._percBus && this.audio.ctx) {
-                const g = this.audio._percBus.gain;
-                const now = this.audio.ctx.currentTime;
-                g.cancelScheduledValues(now);
-                g.setValueAtTime(g.value, now);
-                g.linearRampToValueAtTime(this.audio._percVol, now + 0.1);
-            }
+            this.audio.setMix({ percussionVolume: +e.target.value });
             this._fillSlider(e.target);
         });
 
         // ── Melody feature toggles ──────────────────────────────────────────
         document.getElementById('ctrl-chords').addEventListener('change', e => {
-            this.audio._chordEnabled = e.target.checked;
+            this.audio.setFeatureFlags({ chords: e.target.checked });
         });
         document.getElementById('ctrl-arp').addEventListener('change', e => {
-            this.audio._arpEnabled = e.target.checked;
+            this.audio.setFeatureFlags({ arp: e.target.checked });
         });
         document.getElementById('ctrl-bend').addEventListener('change', e => {
-            this.audio._pitchBendEnabled = e.target.checked;
+            this.audio.setFeatureFlags({ pitchBend: e.target.checked });
         });
         document.getElementById('ctrl-motif').addEventListener('change', e => {
-            this.audio._motifEnabled = e.target.checked;
+            this.audio.setFeatureFlags({ motif: e.target.checked });
         });
 
         // ── Rhythm feature toggles ──────────────────────────────────────────
         document.getElementById('ctrl-ghost').addEventListener('change', e => {
-            this.audio._ghostEnabled = e.target.checked;
+            this.audio.setFeatureFlags({ ghost: e.target.checked });
         });
         document.getElementById('ctrl-fills').addEventListener('change', e => {
-            this.audio._fillsEnabled = e.target.checked;
+            this.audio.setFeatureFlags({ fills: e.target.checked });
         });
-        document.getElementById('ctrl-arp').checked = this.audio._arpEnabled;
+        document.getElementById('ctrl-arp').checked = true;
 
         this.warpR = new WarpRenderer(document.getElementById('warp-canvas'));
         this.warpR.isMobile = this.isMobile;
 
         // Parse URL hash for sharable planet address
         const hash = window.location.hash.slice(1);
-        let initAddr = 'ᚠᚢᚦᚨᚱᚲ';
+        let initAddr = GLYPHS.slice(0, 6).join('');
         if (hash) {
             // Try decoding as new format first
             const decoded = decodeAddress(hash);
@@ -211,10 +164,17 @@ export class App {
             load: document.getElementById('dbg-load'),
             step: document.getElementById('dbg-step'),
         };
-        setInterval(() => this._updateAudioUI(), 100);
+        this.tensionEls = {
+            fill: document.getElementById('tension-fill'),
+            icon: document.getElementById('tension-icon'),
+        };
+        this._unsubscribeState = this.audio.subscribeState((state) => this._updateAudioUI(state));
+        window.addEventListener('beforeunload', () => {
+            if (this._unsubscribeState) this._unsubscribeState();
+        });
     }
 
-    _updateAudioUI() {
+    _updateAudioUI(state = null) {
         const melDisplay = this.melodyEls?.display;
         const melModeEl = this.melodyEls?.mode;
         const melLenEl = this.melodyEls?.len;
@@ -223,18 +183,32 @@ export class App {
         const dbgNodesEl = this.debugEls?.nodes;
         const dbgLoadEl = this.debugEls?.load;
         const dbgStepEl = this.debugEls?.step;
+        const tensionFillEl = this.tensionEls?.fill;
+        const tensionIconEl = this.tensionEls?.icon;
 
-        if (this.audio.playing) {
-            const chord = this.audio.getChord();
+        const playing = state?.playing ?? this.audio.playing;
+        const chord = state?.chord ?? this.audio.getChord();
+        const melody = state?.melody ?? this.audio.getMelodyState();
+        const debug = state?.debug ?? this.audio.getDebugState();
+        const tension = state?.tension || { energy: 0, phase: 'DORMANT' };
+
+        if (tensionFillEl) tensionFillEl.style.width = `${Math.round((tension.energy || 0) * 100)}%`;
+        if (tensionIconEl) {
+            const iconPhase = (tension.phase === 'SURGE' || tension.phase === 'CLIMAX' || tension.phase === 'FALLOUT')
+                ? 'high'
+                : tension.phase === 'BUILD'
+                    ? 'mid'
+                    : 'low';
+            tensionIconEl.className = `tension-icon tension-${iconPhase}`;
+        }
+
+        if (playing) {
             if (this.chordEl && this.chordEl.textContent !== chord) {
                 this.chordEl.textContent = chord;
                 this.chordEl.style.transform = 'scale(1.2)';
                 setTimeout(() => this.chordEl.style.transform = 'scale(1)', 100);
             }
             if (this.chordEl) this.chordEl.style.opacity = '0.6';
-
-            const melody = this.audio.getMelodyState();
-            const debug = this.audio.getDebugState();
             if (melDisplay) melDisplay.style.opacity = '1';
             if (melLenEl) melLenEl.textContent = `${melody.phraseLength}`;
             if (melRestEl) melRestEl.textContent = `${Math.round(melody.restProb * 100)}%`;
@@ -287,20 +261,7 @@ export class App {
     }
 
     _fillSlider(el) {
-        const pct = ((el.value - el.min) / (el.max - el.min)) * 100;
-
-        // Bipolar sliders (EQ) fill from center
-        if (el.min < 0 && el.max > 0) {
-            const center = 50;
-            if (pct > center) {
-                el.style.background = `linear-gradient(to right, rgba(91,157,255,0.2) 50%, var(--accent) 50%, var(--accent) ${pct}%, rgba(91,157,255,0.2) ${pct}%)`;
-            } else {
-                el.style.background = `linear-gradient(to right, rgba(91,157,255,0.2) ${pct}%, var(--accent) ${pct}%, var(--accent) 50%, rgba(91,157,255,0.2) 50%)`;
-            }
-        } else {
-            // Unipolar sliders fill from left
-            el.style.background = `linear-gradient(to right,var(--accent) ${pct}%,rgba(91,157,255,0.2) ${pct}%)`;
-        }
+        fillSlider(el);
     }
 
     _addGlyph(g) { this.address += g; this._syncAddress(); }
@@ -314,9 +275,7 @@ export class App {
     }
 
     _randomAddress() {
-        const rng = new RNG((Date.now() ^ (Math.random() * 0xFFFFFF | 0)) >>> 0);
-        let a = ''; for (let i = 0; i < rng.int(5, 18); i++) a += rng.pick(GLYPHS);
-        this._setAddress(a);
+        this._setAddress(randomAddress());
     }
 
     _navigate() {
@@ -326,8 +285,10 @@ export class App {
 
         // Warp animation tied to biome color
         if (this.warpR) this.warpR.trigger(planet.biome.glowColor);
-        // Doppler whoosh on navigation (Tier 3)
-        if (this.audio.playing) this.audio._dopplerWhoosh();
+        // Navigation transition effect through public engine API.
+        if (this.audio.playing && typeof this.audio.triggerNavigationFx === 'function') {
+            this.audio.triggerNavigationFx();
+        }
 
         // Update header location (only on confirmed navigation)
         const s = [...this.address].slice(0, 22).join('') + (this.address.length > 22 ? '…' : '');
@@ -426,18 +387,17 @@ export class App {
         });
     }
 
-    _loadBookmarks() { try { return JSON.parse(localStorage.getItem('hc-bookmarks') || '[]'); } catch (e) { return []; } }
-    _saveBookmarks(bm) { localStorage.setItem('hc-bookmarks', JSON.stringify(bm)); }
+    _loadBookmarks() { return loadBookmarks(); }
+    _saveBookmarks(bm) { saveBookmarks(bm); }
 
     _toggleBookmark() {
         const bm = this._loadBookmarks();
-        const idx = bm.findIndex(b => b.address === this.address);
-        if (idx >= 0) bm.splice(idx, 1);
-        else {
-            bm.unshift({ address: this.address, name: this.planet ? this.planet.pname : '?', biomeId: this.planet ? this.planet.biome.id : '' });
-            if (bm.length > 20) bm.pop();
-        }
-        this._saveBookmarks(bm);
+        const next = toggleBookmark(bm, {
+            address: this.address,
+            name: this.planet ? this.planet.pname : '?',
+            biomeId: this.planet ? this.planet.biome.id : '',
+        });
+        this._saveBookmarks(next);
         this._renderBookmarks();
         this._syncBookmarkBtn();
     }
@@ -445,7 +405,7 @@ export class App {
     _syncBookmarkBtn() {
         const btn = document.getElementById('btn-bookmark');
         if (!btn) return;
-        const saved = this._loadBookmarks().some(b => b.address === this.address);
+        const saved = isBookmarked(this._loadBookmarks(), this.address);
         btn.textContent = saved ? '★ SAVED' : '☆ SAVE';
         btn.classList.toggle('saved', saved);
     }
@@ -539,3 +499,7 @@ export class App {
         }
     }
 }
+
+
+
+

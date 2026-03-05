@@ -14,6 +14,23 @@ If you do not care about the planet renderer, navigation, UI chrome, or the fict
 
 This README is written like an operating manual for the engine itself.
 
+## Architecture + Contracts
+
+- Architecture map: `docs/architecture.md`
+- Engine API contract: `docs/engine-api-contract.md`
+- Baseline + smoke harness notes: `docs/engine-baseline.md`
+- Legacy `app.js` status: `docs/legacy-appjs.md`
+
+Contributor rule: UI/controller code must use public `AudioEngine` methods and must not mutate underscored engine fields.
+
+## Quality Gate
+
+- Install deps: `npm install`
+- Lint: `npm run lint`
+- Test: `npm run test`
+- Baseline metadata report: `npm run baseline:report`
+- Browser smoke harness (requires `playwright`): `npm run smoke:engine -- http://127.0.0.1:8080/synth.html 3000 5`
+
 ## 1. Instrument Overview
 
 At runtime, the engine is not one synth. It is a small ensemble:

@@ -1,0 +1,36 @@
+import { decodeAddress } from '../src/ui/shared/address-codec.js';
+
+export const PLANET_CORPUS_CODES = [
+    '01234',
+    '56789',
+    'abcde',
+    'fghij',
+    'klmno',
+    'pqrst',
+    '00000',
+    'ttttt',
+    '02468ace',
+    '13579bdf',
+    '0a1b2c3d4e',
+    '9h8g7f6e5d',
+    '0123456789ab',
+    'bcdefghijklm',
+    'mnopqrstabcd',
+    'tttt0000aaaa',
+    '0t0t0t0t0t0t',
+    '123456789abcde',
+    'edcba987654321',
+    'abcdef012345678',
+    '9876543210fedcb',
+    '0123456789abcdef',
+    'fedcba9876543210',
+    'aaaabbbbccccdddd',
+    '0123abcd4567efgh',
+    '0f1g2h3i4j5k6l7m',
+    'mnopqrstmnopqrst',
+    '0000aaaabbbbtttt',
+    '1234abcd5678efghij',
+    't9876543210abcdefgh',
+];
+
+export const PLANET_CORPUS = PLANET_CORPUS_CODES.map((code) => decodeAddress(code));

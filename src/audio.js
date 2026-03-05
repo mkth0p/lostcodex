@@ -1,6 +1,10 @@
 import { RNG } from './rng.js';
 import { buildVoice, ADDITIVE_VOICE_NAMES } from './voices.js';
 import { CHORD_TEMPLATES } from './data.js';
+import { NodeRegistry as CoreNodeRegistry } from './audio/core/node-registry.js';
+import { buildTransport } from './audio/core/transport.js';
+
+const STATE_UPDATE_INTERVAL_MS = 100;
 
 const NATIVE_OSC_TYPES = new Set(['sine', 'square', 'sawtooth', 'triangle']);
 const OSC_TYPE_FALLBACKS = {
@@ -920,89 +924,6 @@ const BIOME_DRUM_TONES = {
     },
 };
 
-class NodeRegistry {
-    constructor() {
-        this._nodes = new Set();
-        this._groups = new Set();
-    }
-
-    _registerGroup(nodes) {
-        const groupNodes = [...new Set(nodes.filter(Boolean))];
-        if (!groupNodes.length) return null;
-
-        const group = { nodes: groupNodes, released: false, pendingStops: 0 };
-        this._groups.add(group);
-
-        groupNodes.forEach((node) => {
-            this._nodes.add(node);
-
-            if (typeof node.stop === 'function' && (typeof node.addEventListener === 'function' || 'onended' in node)) {
-                group.pendingStops++;
-                const handleEnded = () => {
-                    if (group.released) return;
-                    group.pendingStops = Math.max(0, group.pendingStops - 1);
-                    if (group.pendingStops === 0) this.releaseGroup(group);
-                };
-
-                if (typeof node.addEventListener === 'function') {
-                    node.addEventListener('ended', handleEnded, { once: true });
-                } else {
-                    const prevOnEnded = node.onended;
-                    node.onended = (...args) => {
-                        try {
-                            if (typeof prevOnEnded === 'function') prevOnEnded.apply(node, args);
-                        } finally {
-                            handleEnded();
-                        }
-                    };
-                }
-            }
-        });
-
-        return group;
-    }
-
-    push(...nodes) {
-        this._registerGroup(nodes);
-        return this._nodes.size;
-    }
-
-    pushTransient(durationSeconds, ...nodes) {
-        const group = this._registerGroup(nodes);
-        if (!group) return this._nodes.size;
-        const ttlMs = Math.max(100, (durationSeconds || 0) * 1000);
-        group.timeoutId = setTimeout(() => this.releaseGroup(group), ttlMs);
-        return this._nodes.size;
-    }
-
-    releaseGroup(group) {
-        if (!group || group.released) return;
-        group.released = true;
-        this._groups.delete(group);
-        if (group.timeoutId) clearTimeout(group.timeoutId);
-        group.nodes.forEach((node) => {
-            this._nodes.delete(node);
-            try { node.disconnect(); } catch (e) { }
-        });
-    }
-
-    forEach(cb) {
-        Array.from(this._nodes).forEach(cb);
-    }
-
-    clear() {
-        this._groups.forEach((group) => {
-            if (group.timeoutId) clearTimeout(group.timeoutId);
-        });
-        this._groups.clear();
-        this._nodes.clear();
-    }
-
-    get size() {
-        return this._nodes.size;
-    }
-}
-
 export class AudioEngine {
     constructor() {
         this.ctx = null; this.masterGain = null;
@@ -1010,12 +931,23 @@ export class AudioEngine {
         this.melodyBus = null; this.melodyFilter = null;
         this.transport = null;
         this.recordDest = null;
-        this.analyser = null; this.nodes = new NodeRegistry(); this.intervals = [];
+        this.analyser = null; this.nodes = new CoreNodeRegistry(); this.intervals = [];
         this.playing = false; this.planet = null; this.lastStep = undefined;
         this._vol = 0.7; this._reverb = 0.6; this._drift = 0.4; this._density = 0.5;
         this._granularEnabled = true;
         this._percussionEnabled = true;
         this._percVol = 0.8;
+        this._determinismMode = 'identity';
+        this._strictRngs = Object.create(null);
+        this._listeners = new Set();
+        this._stateTimer = null;
+        this._worklets = { bitcrusherReady: false, loadPromise: null };
+        this._engineRefactorV2 = true;
+        if (typeof window !== 'undefined') {
+            const rawFlag = new URLSearchParams(window.location?.search || '').get('engine_refactor_v2');
+            if (rawFlag === '0' || rawFlag === 'false') this._engineRefactorV2 = false;
+            if (rawFlag === '1' || rawFlag === 'true') this._engineRefactorV2 = true;
+        }
         this._noiseBuffer = null; // Cached noise buffer for percussion
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
@@ -1063,6 +995,83 @@ export class AudioEngine {
         this.stepNote = 0; this.stepGrain = 0; this.stepPerc = 0; this.stepFX = 0; this.stepChord = 0;
     }
 
+    _seedFromLabel(label = 'default') {
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < label.length; i++) {
+            h ^= label.charCodeAt(i);
+            h = Math.imul(h, 16777619) >>> 0;
+        }
+        return h || 1;
+    }
+
+    _random(label = 'default') {
+        if (this._determinismMode !== 'strict') return Math.random();
+        if (!this._strictRngs[label]) {
+            const base = (this.planet?.seed || 1) ^ this._seedFromLabel(label);
+            this._strictRngs[label] = new RNG(base >>> 0);
+        }
+        return this._strictRngs[label].next();
+    }
+
+    _snapshotState() {
+        const transport = this.transport
+            ? {
+                bpm: this.transport.bpm,
+                cycleSteps: this.transport.cycleSteps,
+                stepMs: Math.round(this.transport.stepMs),
+                cycleMs: Math.round(this.transport.cycleMs),
+            }
+            : null;
+
+        return {
+            transport,
+            tension: {
+                phase: this._tensionState?.phase || 'DORMANT',
+                energy: this._tensionState?.energy || 0,
+            },
+            melody: this.getMelodyState(),
+            debug: this.getDebugState(),
+            chord: this.getChord(),
+            playing: this.playing,
+        };
+    }
+
+    _emitState() {
+        if (!this._listeners.size) return;
+        const state = this._snapshotState();
+        this._listeners.forEach((listener) => {
+            try {
+                listener(state);
+            } catch (e) {
+                console.warn('AudioEngine state listener failed:', e);
+            }
+        });
+    }
+
+    _startStateStream() {
+        if (this._stateTimer) clearInterval(this._stateTimer);
+        this._stateTimer = setInterval(() => this._emitState(), STATE_UPDATE_INTERVAL_MS);
+    }
+
+    _stopStateStream() {
+        if (this._stateTimer) {
+            clearInterval(this._stateTimer);
+            this._stateTimer = null;
+        }
+    }
+
+    _ensureAudioWorklets() {
+        if (!this.ctx?.audioWorklet || this._worklets.loadPromise) return;
+        const bitcrusherModuleUrl = new URL('./audio/worklets/bitcrusher-processor.js', import.meta.url);
+        this._worklets.loadPromise = this.ctx.audioWorklet
+            .addModule(bitcrusherModuleUrl)
+            .then(() => { this._worklets.bitcrusherReady = true; })
+            .catch((err) => {
+                this._worklets.bitcrusherReady = false;
+                console.warn('Bitcrusher worklet unavailable, using fallback:', err);
+            });
+    }
+
     _boot() {
         if (!this.ctx) {
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1108,7 +1117,7 @@ export class AudioEngine {
             const nLen = this.ctx.sampleRate;
             const nBuf = this.ctx.createBuffer(1, nLen, this.ctx.sampleRate);
             const nd = nBuf.getChannelData(0);
-            for (let i = 0; i < nLen; i++) nd[i] = Math.random() * 2 - 1;
+            for (let i = 0; i < nLen; i++) nd[i] = this._random('boot-noise') * 2 - 1;
             this._noiseBuffer = nBuf;
             // Set up AudioListener for HRTF spatial audio (Tier 3)
             const L = this.ctx.listener;
@@ -1120,6 +1129,7 @@ export class AudioEngine {
                 L.setPosition(0, 1.6, 0);
                 L.setOrientation(0, 0, -1, 0, 1, 0);
             }
+            this._ensureAudioWorklets();
         }
         if (this.ctx.state === 'suspended') this.ctx.resume();
     }
@@ -1796,16 +1806,7 @@ export class AudioEngine {
     }
 
     _buildTransport(planet) {
-        const bpm = planet?.bpm || 120;
-        const cycleSteps = this._clamp(Math.round(planet?.ac?.stepCount || 16), 4, 32);
-        const stepSeconds = 15 / bpm; // 16th-note grid shared across sequencers
-        return {
-            bpm,
-            cycleSteps,
-            stepSeconds,
-            stepMs: stepSeconds * 1000,
-            cycleMs: stepSeconds * 1000 * cycleSteps,
-        };
+        return buildTransport(planet?.ac?.stepCount || 16, planet?.bpm || 120);
     }
 
     _fitPatternToCycle(pattern, targetLength) {
@@ -2569,6 +2570,7 @@ export class AudioEngine {
         this._boot();
         this.stop();
         this.planet = planet;
+        this._strictRngs = Object.create(null);
         this._voiceCooldowns = Object.create(null);
         this._resetSteps();
         const ctx = this.ctx, p = planet, ac = p.ac;
@@ -2709,7 +2711,7 @@ export class AudioEngine {
             const blen = ctx.sampleRate * 3;
             const buf = ctx.createBuffer(1, blen, ctx.sampleRate);
             const nd = buf.getChannelData(0);
-            for (let i = 0; i < blen; i++) nd[i] = Math.random() * 2 - 1;
+            for (let i = 0; i < blen; i++) nd[i] = this._random('bed-noise') * 2 - 1;
             const ns = ctx.createBufferSource(); ns.buffer = buf; ns.loop = true;
             const nf = ctx.createBiquadFilter();
             // volcanic: low rumble; crystaline: high shimmer; desert: mid wind
@@ -2747,6 +2749,8 @@ export class AudioEngine {
             this._moonBus = null;
         }
         this.playing = true;
+        this._startStateStream();
+        this._emitState();
 
         const baseMelodyStride = this._getMelodyStride(p, transport.cycleSteps);
         let melodyTransportStep = 0;
@@ -2937,7 +2941,7 @@ export class AudioEngine {
                 let s = Math.sin(2 * Math.PI * base * t) * 0.38
                     + Math.sin(2 * Math.PI * base * 2 * t) * 0.16
                     + Math.sin(2 * Math.PI * base * 3 * t) * 0.07;
-                s += (Math.random() * 2 - 1) * ac.noiseMul * 0.12;
+                s += (this._random('granular-seed-noise') * 2 - 1) * ac.noiseMul * 0.12;
                 d[i] = s * (ch === 0 ? 1 : (0.88 + rng.range(0, 0.24)));
             }
         }
@@ -3815,17 +3819,7 @@ export class AudioEngine {
             }
 
             // ─ Update tension bar UI ──────────────────────────────────────
-            const bar = document.getElementById('tension-fill');
-            const icon = document.getElementById('tension-icon');
-            if (bar) bar.style.width = `${state.energy * 100}%`;
-            if (icon) {
-                const iconPhase = (state.phase === 'SURGE' || state.phase === 'CLIMAX' || state.phase === 'FALLOUT')
-                    ? 'high'
-                    : state.phase === 'BUILD'
-                        ? 'mid'
-                        : 'low';
-                icon.className = `tension-icon tension-${iconPhase}`;
-            }
+            this._emitState();
 
             // ─ Climax event at tension ≥ 0.85 ────────────────────────────
             if (state.energy >= profile.climaxThreshold && !this._climaxFired) {
@@ -4112,7 +4106,7 @@ export class AudioEngine {
                 const env = t < 0.08 ? t / 0.08 : Math.exp(-(t - 0.08) * 4.5);
                 const fInst = 3200 * Math.exp(-t * 3); // sweeps 3200 → ~60 Hz
                 const tone = Math.sin(2 * Math.PI * fInst * t + phase) * 0.5;
-                const noise = (Math.random() * 2 - 1) * 0.5;
+                const noise = (this._random('doppler-noise') * 2 - 1) * 0.5;
                 d[i] = (tone + noise) * env * 0.14;
             }
         }
@@ -4127,9 +4121,8 @@ export class AudioEngine {
     stop() {
         this.intervals.forEach(clearInterval);
         this.intervals = [];
+        this._stopStateStream();
         this.tension = 0;
-        const bar = document.getElementById('tension-fill');
-        if (bar) bar.style.width = '0%';
         const t = this.ctx ? this.ctx.currentTime : 0;
         this.nodes.forEach(n => {
             try {
@@ -4157,10 +4150,87 @@ export class AudioEngine {
         this._lastPhaseEventTime = 0;
         this._macroEventCooldownUntil = 0;
         this.playing = false;
+        this._emitState();
     }
 
-    setVolume(v) { this._vol = v; if (this.masterGain) this.masterGain.gain.linearRampToValueAtTime(v, this.ctx.currentTime + 0.1); }
-    setReverb(v) { this._reverb = v; if (this.reverbGain) { this.reverbGain.gain.linearRampToValueAtTime(v, this.ctx.currentTime + 0.2); this.dryGain.gain.linearRampToValueAtTime(1 - v * 0.5, this.ctx.currentTime + 0.2); } }
+    setVolume(v) {
+        this._vol = v;
+        if (this.masterGain) this.masterGain.gain.linearRampToValueAtTime(v, this.ctx.currentTime + 0.1);
+        this._emitState();
+    }
+    setReverb(v) {
+        this._reverb = v;
+        if (this.reverbGain) {
+            this.reverbGain.gain.linearRampToValueAtTime(v, this.ctx.currentTime + 0.2);
+            this.dryGain.gain.linearRampToValueAtTime(1 - v * 0.5, this.ctx.currentTime + 0.2);
+        }
+        this._emitState();
+    }
+    setMix({ volume, reverb, eqLow, eqMid, eqHigh, percussionVolume } = {}) {
+        if (Number.isFinite(volume)) this.setVolume(volume);
+        if (Number.isFinite(reverb)) this.setReverb(reverb);
+        if (Number.isFinite(eqLow) && this.eqLow) this.eqLow.gain.value = eqLow;
+        if (Number.isFinite(eqMid) && this.eqMid) this.eqMid.gain.value = eqMid;
+        if (Number.isFinite(eqHigh) && this.eqHigh) this.eqHigh.gain.value = eqHigh;
+        if (Number.isFinite(percussionVolume)) {
+            this._percVol = percussionVolume;
+            if (this._percussionEnabled && this._percBus && this.ctx) {
+                const now = this.ctx.currentTime;
+                this._percBus.gain.cancelScheduledValues(now);
+                this._percBus.gain.setValueAtTime(this._percBus.gain.value, now);
+                this._percBus.gain.linearRampToValueAtTime(this._percVol, now + 0.1);
+            }
+        }
+        this._emitState();
+    }
+    setPerformance({ drift, density } = {}) {
+        if (Number.isFinite(drift)) this._drift = this._clamp(drift, 0, 1);
+        if (Number.isFinite(density)) this._density = this._clamp(density, 0, 1);
+        this._emitState();
+    }
+    setFeatureFlags({ granular, percussion, chords, arp, pitchBend, motif, ghost, fills } = {}) {
+        if (typeof granular === 'boolean') {
+            this._granularEnabled = granular;
+            if (this._granularBus && this.ctx) {
+                const now = this.ctx.currentTime;
+                this._granularBus.gain.cancelScheduledValues(now);
+                this._granularBus.gain.setValueAtTime(this._granularBus.gain.value, now);
+                this._granularBus.gain.linearRampToValueAtTime(granular ? 1 : 0, now + 1.5);
+            }
+        }
+        if (typeof percussion === 'boolean') {
+            this._percussionEnabled = percussion;
+            if (this._percBus && this.ctx) {
+                const now = this.ctx.currentTime;
+                this._percBus.gain.cancelScheduledValues(now);
+                this._percBus.gain.setValueAtTime(this._percBus.gain.value, now);
+                this._percBus.gain.linearRampToValueAtTime(percussion ? this._percVol : 0, now + 0.2);
+            }
+        }
+        if (typeof chords === 'boolean') this._chordEnabled = chords;
+        if (typeof arp === 'boolean') this._arpEnabled = arp;
+        if (typeof pitchBend === 'boolean') this._pitchBendEnabled = pitchBend;
+        if (typeof motif === 'boolean') this._motifEnabled = motif;
+        if (typeof ghost === 'boolean') this._ghostEnabled = ghost;
+        if (typeof fills === 'boolean') this._fillsEnabled = fills;
+        this._emitState();
+    }
+    setDeterminismMode(mode = 'identity') {
+        const nextMode = mode === 'strict' ? 'strict' : 'identity';
+        this._determinismMode = nextMode;
+        this._strictRngs = Object.create(null);
+        this._emitState();
+    }
+    subscribeState(listener) {
+        if (typeof listener !== 'function') return () => { };
+        this._listeners.add(listener);
+        try { listener(this._snapshotState()); } catch (e) { }
+        return () => this._listeners.delete(listener);
+    }
+    triggerNavigationFx() {
+        if (!this.playing) return;
+        this._dopplerWhoosh();
+    }
     getAnalyser() { return this.analyser; }
     getRecordingStream() { return this.recordDest?.stream || null; }
 
@@ -4246,25 +4316,27 @@ export class AudioEngine {
     // ── EFFECTS CONSTRUCTION ──────────────────────────────────────────
     _buildBitcrusher(bits, normFreq) {
         const ctx = this.ctx;
-        const bufferSize = 4096;
-        const node = ctx.createScriptProcessor(bufferSize, 1, 1);
-        let ph = 0;
-        let lastValue = 0;
+        if (ctx.audioWorklet && this._worklets.bitcrusherReady) {
+            return new AudioWorkletNode(ctx, 'bitcrusher-processor', {
+                numberOfInputs: 1,
+                numberOfOutputs: 1,
+                outputChannelCount: [2],
+                parameterData: { bits, normFreq },
+            });
+        }
 
-        node.onaudioprocess = (e) => {
-            const input = e.inputBuffer.getChannelData(0);
-            const output = e.outputBuffer.getChannelData(0);
-            const step = Math.pow(0.5, bits);
-            for (let i = 0; i < bufferSize; i++) {
-                ph += normFreq;
-                if (ph >= 1) {
-                    ph -= 1;
-                    lastValue = step * Math.floor(input[i] / step + 0.5);
-                }
-                output[i] = lastValue;
-            }
-        };
-        return node;
+        // Fallback quantizer when worklets are unavailable.
+        const shaper = ctx.createWaveShaper();
+        const samples = 2048;
+        const curve = new Float32Array(samples);
+        const levels = Math.max(2, Math.pow(2, Math.max(1, bits)));
+        for (let i = 0; i < samples; i++) {
+            const x = (i * 2) / (samples - 1) - 1;
+            curve[i] = Math.round(x * levels) / levels;
+        }
+        shaper.curve = curve;
+        shaper.oversample = 'none';
+        return shaper;
     }
 
     _buildPhaser() {
@@ -4412,6 +4484,8 @@ export class AudioEngine {
         return {
             activeNodes: this.nodes?.size || 0,
             load: perf?.pressure || 0,
+            determinismMode: this._determinismMode,
+            engineRefactorV2: this._engineRefactorV2,
             tensionPhase: this._tensionState?.phase || 'DORMANT',
             tensionEnergy: this._tensionState?.energy || 0,
             cycleSteps: transport?.cycleSteps || 0,
