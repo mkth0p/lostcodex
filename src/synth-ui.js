@@ -4,6 +4,8 @@ import { GLYPHS } from './data.js';
 import { decodeAddress, encodeAddress } from './ui/shared/address-codec.js';
 import { randomAddress as buildRandomAddress } from './ui/shared/address-utils.js';
 import { isBookmarked, loadBookmarks, saveBookmarks, toggleBookmark } from './ui/shared/bookmarks.js';
+import { bindAudioEngineControls } from './ui/shared/audio-controls.js';
+import { createAudioStateRenderer } from './ui/shared/audio-state-ui.js';
 import { fillSlider } from './ui/shared/slider-fill.js';
 
 const DEFAULT_ADDRESS = GLYPHS.slice(0, 6).join('');
@@ -15,6 +17,7 @@ let history = [];
 let playPending = false;
 let exportJob = null;
 let unsubscribeState = null;
+let renderAudioState = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -366,161 +369,17 @@ function togglePlay() {
     }, 120);
 }
 
-function applyMelodyModeStyle(el, mode) {
-    if (!el) return;
-    if (mode === 'RESPONSE') {
-        el.style.background = 'rgba(255, 157, 91, 0.2)';
-        el.style.color = '#ff9d5b';
-        el.style.borderColor = 'rgba(255, 157, 91, 0.45)';
-    } else if (mode === 'MOTIF') {
-        el.style.background = 'rgba(157, 255, 91, 0.2)';
-        el.style.color = '#9dff5b';
-        el.style.borderColor = 'rgba(157, 255, 91, 0.45)';
-    } else {
-        el.style.background = 'rgba(91, 157, 255, 0.2)';
-        el.style.color = 'var(--accent)';
-        el.style.borderColor = 'rgba(91, 157, 255, 0.35)';
-    }
-}
-
 function updateAudioUI(state) {
-    const chordEl = $('chord-display');
-    const melModeEl = $('mel-mode');
-    const melLenEl = $('mel-len');
-    const melRestEl = $('mel-rest');
-    const melBankEl = $('mel-bank');
-    const dbgNodesEl = $('dbg-nodes');
-    const dbgLoadEl = $('dbg-load');
-    const dbgStepEl = $('dbg-step');
-    const dbgMoonEl = $('dbg-moon');
-    const tensionFillEl = $('tension-fill');
-    const tensionIconEl = $('tension-icon');
-
-    const playing = !!state?.playing;
-    const chord = state?.chord ?? audio.getChord();
-    const melody = state?.melody ?? audio.getMelodyState();
-    const debug = state?.debug ?? audio.getDebugState();
-    const tension = state?.tension || { energy: 0, phase: 'DORMANT' };
-
-    if (tensionFillEl) tensionFillEl.style.width = `${Math.round((tension.energy || 0) * 100)}%`;
-    if (tensionIconEl) {
-        const iconPhase = (tension.phase === 'SURGE' || tension.phase === 'CLIMAX' || tension.phase === 'FALLOUT')
-            ? 'high'
-            : tension.phase === 'BUILD'
-                ? 'mid'
-                : 'low';
-        tensionIconEl.className = `tension-icon tension-${iconPhase}`;
-    }
-
-    if (playing) {
-        if (chordEl && chordEl.textContent !== chord) {
-            chordEl.textContent = chord;
-            chordEl.style.transform = 'scale(1.1)';
-            setTimeout(() => {
-                if (chordEl) chordEl.style.transform = 'scale(1)';
-            }, 100);
-        }
-        if (melModeEl) melModeEl.textContent = melody.mode;
-        if (melLenEl) melLenEl.textContent = `${melody.phraseLength}`;
-        if (melRestEl) melRestEl.textContent = `${Math.round(melody.restProb * 100)}%`;
-        if (dbgNodesEl) dbgNodesEl.textContent = `${debug.activeNodes}`;
-        if (dbgLoadEl) dbgLoadEl.textContent = `${Math.round(debug.load * 100)}%`;
-        if (dbgStepEl) dbgStepEl.textContent = debug.stepMs ? `${debug.tensionPhase} | ${debug.cycleSteps}/${debug.stepMs}ms` : '--';
-        if (dbgMoonEl) {
-            if (!debug.moonCount) {
-                dbgMoonEl.textContent = 'NONE';
-                dbgMoonEl.style.color = 'var(--text-dim)';
-            } else if (debug.moonProcActive) {
-                dbgMoonEl.textContent = `${debug.moonLastBurst || 1}x NOW`;
-                dbgMoonEl.style.color = '#9dff5b';
-            } else if (debug.moonLastProcAgoMs !== null) {
-                dbgMoonEl.textContent = `${debug.moonCount} SAT | ${debug.moonLastProcAgoMs}ms`;
-                dbgMoonEl.style.color = 'var(--accent)';
-            } else {
-                dbgMoonEl.textContent = `${debug.moonCount} SAT | IDLE`;
-                dbgMoonEl.style.color = 'var(--text-dim)';
-            }
-        }
-        if (melBankEl) {
-            melBankEl.textContent = melody.motifEnabled
-                ? (melody.motifCount ? `${melody.motifIndex}/${melody.motifCount}` : '--')
-                : 'OFF';
-            melBankEl.style.color = melody.motifEnabled ? 'var(--accent)' : 'var(--text-dim)';
-        }
-        applyMelodyModeStyle(melModeEl, melody.mode);
-    } else {
-        if (chordEl) chordEl.textContent = '';
-        if (melLenEl) melLenEl.textContent = '0';
-        if (melRestEl) melRestEl.textContent = '5%';
-        if (melBankEl) {
-            melBankEl.textContent = '--';
-            melBankEl.style.color = 'var(--text-dim)';
-        }
-        if (dbgNodesEl) dbgNodesEl.textContent = '0';
-        if (dbgLoadEl) dbgLoadEl.textContent = '0%';
-        if (dbgStepEl) dbgStepEl.textContent = '--';
-        if (dbgMoonEl) {
-            dbgMoonEl.textContent = '--';
-            dbgMoonEl.style.color = 'var(--text-dim)';
-        }
-        if (melModeEl) {
-            melModeEl.textContent = 'STANDBY';
-            melModeEl.style.background = 'rgba(255, 255, 255, 0.05)';
-            melModeEl.style.color = 'var(--text-dim)';
-            melModeEl.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-        }
-    }
+    if (renderAudioState) renderAudioState(state);
 }
 
 function bindControls() {
-    const slider = (id) => {
-        const el = $(id);
-        fillSlider(el);
-        return el;
-    };
-
-    slider('ctrl-vol').addEventListener('input', (e) => {
-        audio.setMix({ volume: +e.target.value });
-        fillSlider(e.target);
+    bindAudioEngineControls({
+        getEl: $,
+        audio,
+        fillSliderFn: fillSlider,
+        defaultArpChecked: true,
     });
-    slider('ctrl-reverb').addEventListener('input', (e) => {
-        audio.setMix({ reverb: +e.target.value });
-        fillSlider(e.target);
-    });
-    slider('ctrl-drift').addEventListener('input', (e) => {
-        audio.setPerformance({ drift: +e.target.value });
-        fillSlider(e.target);
-    });
-    slider('ctrl-density').addEventListener('input', (e) => {
-        audio.setPerformance({ density: +e.target.value });
-        fillSlider(e.target);
-    });
-    slider('ctrl-perc-vol').addEventListener('input', (e) => {
-        audio.setMix({ percussionVolume: +e.target.value });
-        fillSlider(e.target);
-    });
-    slider('ctrl-eq-low').addEventListener('input', (e) => {
-        audio.setMix({ eqLow: +e.target.value });
-        fillSlider(e.target);
-    });
-    slider('ctrl-eq-mid').addEventListener('input', (e) => {
-        audio.setMix({ eqMid: +e.target.value });
-        fillSlider(e.target);
-    });
-    slider('ctrl-eq-high').addEventListener('input', (e) => {
-        audio.setMix({ eqHigh: +e.target.value });
-        fillSlider(e.target);
-    });
-
-    $('ctrl-granular').addEventListener('change', (e) => audio.setFeatureFlags({ granular: e.target.checked }));
-    $('ctrl-perc').addEventListener('change', (e) => audio.setFeatureFlags({ percussion: e.target.checked }));
-    $('ctrl-chords').addEventListener('change', (e) => audio.setFeatureFlags({ chords: e.target.checked }));
-    $('ctrl-arp').addEventListener('change', (e) => audio.setFeatureFlags({ arp: e.target.checked }));
-    $('ctrl-bend').addEventListener('change', (e) => audio.setFeatureFlags({ pitchBend: e.target.checked }));
-    $('ctrl-motif').addEventListener('change', (e) => audio.setFeatureFlags({ motif: e.target.checked }));
-    $('ctrl-ghost').addEventListener('change', (e) => audio.setFeatureFlags({ ghost: e.target.checked }));
-    $('ctrl-fills').addEventListener('change', (e) => audio.setFeatureFlags({ fills: e.target.checked }));
-    $('ctrl-arp').checked = true;
 }
 
 function bindKeyboard() {
@@ -578,6 +437,31 @@ function bindButtons() {
 }
 
 function initStateSubscription() {
+    if (!renderAudioState) {
+        renderAudioState = createAudioStateRenderer({
+            audio,
+            elements: {
+                chord: $('chord-display'),
+                melMode: $('mel-mode'),
+                melLen: $('mel-len'),
+                melRest: $('mel-rest'),
+                melBank: $('mel-bank'),
+                dbgNodes: $('dbg-nodes'),
+                dbgLoad: $('dbg-load'),
+                dbgStep: $('dbg-step'),
+                dbgMoon: $('dbg-moon'),
+                tensionFill: $('tension-fill'),
+                tensionIcon: $('tension-icon'),
+            },
+            options: {
+                chordScale: 1.1,
+                motifEnabledColor: 'var(--accent)',
+                motifDisabledColor: 'var(--text-dim)',
+                standbyTextColor: 'var(--text-dim)',
+                accentColor: 'var(--accent)',
+            },
+        });
+    }
     if (unsubscribeState) unsubscribeState();
     unsubscribeState = audio.subscribeState((state) => updateAudioUI(state));
 }

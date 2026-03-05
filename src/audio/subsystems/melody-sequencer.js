@@ -184,6 +184,9 @@ export function scheduleMelodyNote(engine, planet, dest, ac, scheduledTime = nul
         ({ atk, dur } = engine._getAdditiveVoiceEnvelope(wType, rng, atk, dur));
         ({ atk, dur } = engine._applyBiomeMelodyGesture(planet, wType, engine._melodyMode, phrasePos, isPhraseEnd, atk, dur));
         ({ atk, dur } = engine._shapeMelodyEnvelope(wType, atk, dur, planet));
+        if (typeof engine._limitLongTailEnvelope === 'function') {
+            ({ atk, dur } = engine._limitLongTailEnvelope(wType, atk, dur, planet));
+        }
         engine._markMelodyVoiceUsage(wType, planet);
         //    Additive synthesis voice (self-contained, returns early)
         // Build a panner for spatial placement, same as normal notes
@@ -220,6 +223,9 @@ export function scheduleMelodyNote(engine, planet, dest, ac, scheduledTime = nul
 
     ({ atk, dur } = engine._applyBiomeMelodyGesture(planet, wType, engine._melodyMode, phrasePos, isPhraseEnd, atk, dur));
     ({ atk, dur } = engine._shapeMelodyEnvelope(wType, atk, dur, planet));
+    if (typeof engine._limitLongTailEnvelope === 'function') {
+        ({ atk, dur } = engine._limitLongTailEnvelope(wType, atk, dur, planet));
+    }
     engine._markMelodyVoiceUsage(wType, planet);
 
     osc.frequency.value = freq;

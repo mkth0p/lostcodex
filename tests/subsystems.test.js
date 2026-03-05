@@ -22,6 +22,7 @@ import {
 } from '../src/audio/subsystems/harmony.js';
 import { DEFAULT_TENSION_PROFILE, BIOME_TENSION_PROFILES } from '../src/audio/config/tension-profiles.js';
 import { DEFAULT_DRUM_TONE, BIOME_DRUM_TONES } from '../src/audio/config/drum-profiles.js';
+import { resolveTimbreDeltaLimits } from '../src/audio/config/timbre-delta-limits.js';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -185,5 +186,16 @@ describe('audio subsystem helpers', () => {
             rng: { pick: (values) => values[0] },
         });
         expect(next.nextChordIndex).toBe(0);
+    });
+
+    it('resolves timbre delta limits with biome overrides and fallback defaults', () => {
+        const storm = resolveTimbreDeltaLimits('storm');
+        const fallback = resolveTimbreDeltaLimits('unknown-biome');
+
+        expect(storm.filterBurstMulMax).toBeLessThan(5);
+        expect(storm.harshnessTame).toBeLessThan(1);
+        expect(storm.longTailMaxDur.gong).toBeGreaterThan(1);
+        expect(fallback.chordGlideSec).toBeGreaterThan(0.5);
+        expect(fallback.longTailMaxDur.granular_cloud).toBeGreaterThan(0.2);
     });
 });

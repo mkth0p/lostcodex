@@ -4,6 +4,7 @@ import { buildTransport } from './audio/core/transport.js';
 import { LookaheadScheduler } from './audio/core/scheduler.js';
 import { DEFAULT_TENSION_PROFILE, BIOME_TENSION_PROFILES } from './audio/config/tension-profiles.js';
 import { DEFAULT_DRUM_TONE, BIOME_DRUM_TONES } from './audio/config/drum-profiles.js';
+import { resolveTimbreDeltaLimits } from './audio/config/timbre-delta-limits.js';
 import { buildTensionProfile, resolveRhythmState, resolveTensionState } from './audio/subsystems/tension.js';
 import { fireClimaxEvent, startTensionArcLoop } from './audio/subsystems/tension-engine.js';
 import {
@@ -49,8 +50,6 @@ import {
     startBassLine,
     updateChordProgression
 } from './audio/subsystems/harmony.js';
-import { updateChordProgressionLegacy } from './audio/legacy/chord-fallback.js';
-import { resolveLegacyAudioToggles } from './audio/legacy/toggles.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -114,8 +113,7 @@ export class AudioEngine {
         this._stateTimer = null;
         this._worklets = { bitcrusherReady: false, loadPromise: null };
         this._transportScheduler = null;
-        this._legacyAudioToggles = resolveLegacyAudioToggles();
-        this._engineRefactorV2 = !this._legacyAudioToggles.chordProgressionFallback;
+        this._engineRefactorV2 = true;
         this._noiseBuffer = null; // Cached noise buffer for percussion
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
@@ -229,7 +227,7 @@ export class AudioEngine {
     }
 
     _startTransportScheduler() {
-        if (!this._engineRefactorV2 || !this.ctx) return;
+        if (!this.ctx) return;
         this._stopTransportScheduler();
         this._transportScheduler = new LookaheadScheduler(this.ctx, {
             tickMs: SCHEDULER_TICK_MS,
@@ -388,6 +386,28 @@ export class AudioEngine {
         return Math.min(max, Math.max(min, value));
     }
 
+    _getTimbreDeltaLimits(planet = null) {
+        return resolveTimbreDeltaLimits(planet?.biome?.id || this.planet?.biome?.id || 'default');
+    }
+
+    _getChordGlideSeconds(planet = null) {
+        const limits = this._getTimbreDeltaLimits(planet);
+        return this._clamp(limits.chordGlideSec ?? 2.2, 0.8, 4.0);
+    }
+
+    _limitLongTailEnvelope(wType, atk, dur, planet = null) {
+        const limits = this._getTimbreDeltaLimits(planet);
+        const maxForVoice = limits.longTailMaxDur?.[wType];
+        const maxDur = Number.isFinite(maxForVoice)
+            ? maxForVoice
+            : (limits.longTailMaxDefaultDur ?? 5.5);
+        const safeDur = Number.isFinite(dur) ? dur : 0.8;
+        const safeAtk = Number.isFinite(atk) ? atk : 0.03;
+        const nextDur = this._clamp(safeDur, 0.1, maxDur);
+        const nextAtk = this._clamp(safeAtk, 0.008, Math.max(0.08, nextDur * 0.65));
+        return { atk: nextAtk, dur: nextDur };
+    }
+
     _getTensionProfile(planet) {
         return buildTensionProfile({
             biomeId: planet?.biome?.id || 'default',
@@ -536,7 +556,10 @@ export class AudioEngine {
     }
 
     _getAdditiveVoiceLifetime(name, atk, dur) {
-        return resolveAdditiveVoiceLifetime(name, atk, dur);
+        const limited = this._limitLongTailEnvelope(name, atk, dur, this.planet);
+        const resolved = resolveAdditiveVoiceLifetime(name, limited.atk, limited.dur);
+        const releaseTail = this._clamp(0.8 + (limited.atk * 0.4), 0.8, 2.4);
+        return this._clamp(resolved, 0.4, limited.dur + releaseTail);
     }
 
     _getPerformanceProfile(planet) {
@@ -595,6 +618,7 @@ export class AudioEngine {
         const requestedSpan = Math.max(0.12, (atk || 0) + (dur || 0));
         let maxSpan = (perf.stepSeconds * (12 + (1 - perf.density) * 14)) * (1.05 - perf.pressure * 0.2);
         const cost = MELODY_VOICE_COSTS[wType] || 0;
+        const applyLongTailLimit = (nextAtk, nextDur) => this._limitLongTailEnvelope(wType, nextAtk, nextDur, planet);
 
         if (cost > 0.75) maxSpan *= 0.72;
         else if (cost > 0.45) maxSpan *= 0.86;
@@ -603,12 +627,12 @@ export class AudioEngine {
         if (['theremin', 'vowel_morph', 'choir'].includes(wType)) maxSpan *= 1.08;
 
         maxSpan = this._clamp(maxSpan, 0.65, 8.5);
-        if (requestedSpan <= maxSpan) return { atk, dur };
+        if (requestedSpan <= maxSpan) return applyLongTailLimit(atk, dur);
 
         const attackRatio = this._clamp((atk || 0) / requestedSpan, 0.08, 0.6);
         const nextAtk = this._clamp(maxSpan * attackRatio, 0.015, Math.max(0.08, maxSpan * 0.55));
         const nextDur = Math.max(0.12, maxSpan - nextAtk);
-        return { atk: nextAtk, dur: nextDur };
+        return applyLongTailLimit(nextAtk, nextDur);
     }
 
     _getMoonWavePool(planet) {
@@ -701,7 +725,7 @@ export class AudioEngine {
         const now = this.ctx.currentTime;
         const rootOffset = this._currentChordIntervals[0];
         const newRootFreq = this._getStepFrequency(this.planet, rootOffset, 1);
-        const glide = 2.0; // Slow, smooth chord transitions
+        const glide = this._getChordGlideSeconds(this.planet);
 
         if (this.harmonicNodes.baseOsc) {
             this.harmonicNodes.baseOsc.frequency.linearRampToValueAtTime(newRootFreq * 0.5, now + glide);
@@ -962,10 +986,6 @@ export class AudioEngine {
 
     //    HARMONIC PROGRESSION                                           
     _updateChord() {
-        if (this._legacyAudioToggles.chordProgressionFallback) {
-            updateChordProgressionLegacy(this);
-            return;
-        }
         updateChordProgression(this);
     }
     getChord() {

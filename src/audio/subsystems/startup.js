@@ -9,6 +9,7 @@ export function startEnginePlayback(engine, planet) {
     engine._resetSteps();
     const ctx = engine.ctx, p = planet, ac = p.ac;
     const transport = engine._buildTransport(p);
+    const timbreLimits = engine._getTimbreDeltaLimits(p);
     engine.transport = transport;
     engine._startTransportScheduler();
 
@@ -128,7 +129,8 @@ export function startEnginePlayback(engine, planet) {
     // Pad - intro phase: pads fade in from silence over ~15s
     const padBus = ctx.createGain();
     padBus.gain.setValueAtTime(0, ctx.currentTime);
-    const padTarget = 1.0 * (p.ac.chordAudibility !== undefined ? p.ac.chordAudibility : 0.5);
+    const padTargetRaw = 1.0 * (p.ac.chordAudibility !== undefined ? p.ac.chordAudibility : 0.5);
+    const padTarget = engine._clamp(padTargetRaw, 0.05, timbreLimits.padGainMax ?? 0.86);
     padBus.gain.linearRampToValueAtTime(padTarget, ctx.currentTime + 15);
     padBus.connect(filt);
     engine.nodes.push(padBus);
@@ -303,7 +305,8 @@ export function startEnginePlayback(engine, planet) {
             if (rng.range(0, 1) < 0.35) {
                 const orig = filt.frequency.value;
                 const nyquist = ctx.sampleRate / 2;
-                const spike = Math.min(orig * rng.range(0.1, 8), nyquist);
+                const burstMulMax = engine._clamp(timbreLimits.filterBurstMulMax ?? 5.0, 1.6, 8.0);
+                const spike = Math.min(orig * rng.range(0.1, burstMulMax), nyquist);
                 filt.frequency.setValueAtTime(spike, ctx.currentTime);
                 filt.frequency.exponentialRampToValueAtTime(Math.min(orig, nyquist), ctx.currentTime + rng.range(0.02, 0.18));
             }
@@ -311,7 +314,8 @@ export function startEnginePlayback(engine, planet) {
     }
     if (p.biome.id === 'nebula') {
         // Push extra wet reverb for the immense nebular space
-        wet.gain.linearRampToValueAtTime(Math.min(engine._reverb * 1.4, 1), ctx.currentTime + 8);
+        const wetBoost = engine._clamp(timbreLimits.reverbWetBoostMax ?? 1.4, 1.0, 1.6);
+        wet.gain.linearRampToValueAtTime(Math.min(engine._reverb * wetBoost, 1), ctx.currentTime + 8);
         // Slowly evolve formant movement via LFO on filter
         engine._lfo(0.018, p.filterFreq * 0.3, filt.frequency, 'sine');
     }

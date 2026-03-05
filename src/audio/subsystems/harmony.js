@@ -177,7 +177,9 @@ export function updateChordProgression(engine) {
     engine._currentChordIntervals = intervals;
 
     const now = engine.ctx ? engine.ctx.currentTime : 0;
-    const ramp = 2.5;
+    const ramp = typeof engine._getChordGlideSeconds === 'function'
+        ? engine._getChordGlideSeconds(engine.planet)
+        : 2.2;
 
     if (engine.harmonicNodes && engine.ctx) {
         const rootPitch = engine._getStepFrequency(engine.planet, intervals[0], 1);

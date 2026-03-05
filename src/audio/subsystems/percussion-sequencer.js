@@ -36,6 +36,14 @@ export function startPercussionSequencer(engine, p, dest) {
     const tensionProfile = engine._tensionProfile || engine._getTensionProfile(p);
     const drumTone = engine._getDrumToneProfile(p);
     const fungalGroove = bid === 'fungal';
+    const timbreLimits = typeof engine._getTimbreDeltaLimits === 'function'
+        ? engine._getTimbreDeltaLimits(p)
+        : {};
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const hatBrightnessMin = Number.isFinite(timbreLimits.hatBrightnessMin) ? timbreLimits.hatBrightnessMin : 0.58;
+    const hatBrightnessMax = Number.isFinite(timbreLimits.hatBrightnessMax) ? timbreLimits.hatBrightnessMax : 1.45;
+    const harshnessTame = Number.isFinite(timbreLimits.harshnessTame) ? timbreLimits.harshnessTame : 1;
+    const cymbalTame = clamp(harshnessTame, 0.68, 1.1);
 
     // Live-toggle bus: fade in/out without stopping
     const percBody = ctx.createBiquadFilter();
@@ -79,7 +87,7 @@ export function startPercussionSequencer(engine, p, dest) {
         sBody: drumTone.snareBody,
         hPitch: rng.range(0.7, 1.4) * drumTone.hatPitch,
         hDecay: rng.range(0.5, 1.8) * drumTone.hatDecay,
-        hBright: drumTone.hatBright,
+        hBright: clamp(drumTone.hatBright, hatBrightnessMin, hatBrightnessMax),
         subWeight: drumTone.subWeight,
         extraTone: drumTone.extraTone
     };
@@ -123,7 +131,8 @@ export function startPercussionSequencer(engine, p, dest) {
         noise.buffer = engine._noiseBuffer;
         const nFilt = ctx.createBiquadFilter();
         nFilt.type = 'bandpass';
-        nFilt.frequency.value = (fungalGroove ? 2600 : 3500) * kit.sPitch * kit.sNoise;
+        const snareBandBase = fungalGroove ? 2600 : 3500 * harshnessTame;
+        nFilt.frequency.value = snareBandBase * kit.sPitch * kit.sNoise;
         nFilt.Q.value = fungalGroove ? 0.75 : 1.0;
         const nEnv = ctx.createGain();
 
@@ -157,7 +166,7 @@ export function startPercussionSequencer(engine, p, dest) {
             const bp = ctx.createBiquadFilter(), hp = ctx.createBiquadFilter(), env = ctx.createGain();
             osc1.type = 'triangle'; osc1.frequency.value = 760 * kit.hPitch;
             osc2.type = 'sine'; osc2.frequency.value = 1180 * kit.hPitch;
-            bp.type = 'bandpass'; bp.frequency.value = 2400 * kit.hBright; bp.Q.value = 1.2;
+            bp.type = 'bandpass'; bp.frequency.value = 2400 * kit.hBright * (0.9 + cymbalTame * 0.1); bp.Q.value = 1.2;
             hp.type = 'highpass'; hp.frequency.value = 1400;
 
             const dur = (open ? 0.48 : 0.13) * kit.hDecay;
@@ -176,7 +185,7 @@ export function startPercussionSequencer(engine, p, dest) {
         const filt = ctx.createBiquadFilter(), env = ctx.createGain();
         osc1.type = 'square'; osc1.frequency.value = 400 * kit.hPitch;
         osc2.type = 'square'; osc2.frequency.value = 600 * kit.hPitch;
-        filt.type = 'highpass'; filt.frequency.value = 7000 * kit.hBright;
+        filt.type = 'highpass'; filt.frequency.value = 7000 * kit.hBright * cymbalTame;
 
         const dur = (open ? 0.35 : 0.08) * kit.hDecay;
         env.gain.setValueAtTime(0, t);
@@ -231,7 +240,7 @@ export function startPercussionSequencer(engine, p, dest) {
 
         // Bandpass filter to tame harshness and shape the "tonk"
         filt.type = 'bandpass';
-        filt.frequency.value = 900 * kit.hPitch;
+        filt.frequency.value = 900 * kit.hPitch * harshnessTame;
         filt.Q.value = 1.5;
 
         env.gain.setValueAtTime(0, t);
@@ -268,7 +277,7 @@ export function startPercussionSequencer(engine, p, dest) {
         mMod.connect(mModGain); mModGain.connect(mSrc.frequency);
 
         const filt = ctx.createBiquadFilter();
-        filt.type = 'highpass'; filt.frequency.value = 5000;
+        filt.type = 'highpass'; filt.frequency.value = 5000 * (0.85 + harshnessTame * 0.15);
         const env = ctx.createGain();
         env.gain.setValueAtTime(0, t);
         env.gain.linearRampToValueAtTime(vel * 0.4, t + 0.01);
@@ -509,7 +518,7 @@ export function startPercussionSequencer(engine, p, dest) {
             const dynVel = velScale * state.velocityLift;
             const kickVelMul = fungalGroove ? 0.8 : 1;
             const snareVelMul = fungalGroove ? 0.88 : 1;
-            const hatVelMul = fungalGroove ? 0.82 : 1;
+            const hatVelMul = (fungalGroove ? 0.82 : 1) * cymbalTame;
             const subVelMul = fungalGroove ? 0.72 : 1;
 
             if (chaos) {

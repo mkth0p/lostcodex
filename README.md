@@ -29,7 +29,9 @@ Contributor rule: UI/controller code must use public `AudioEngine` methods and m
 - Lint: `npm run lint`
 - Test: `npm run test`
 - Baseline metadata report: `npm run baseline:report`
-- Browser smoke harness (requires `playwright`): `npm run smoke:engine -- http://127.0.0.1:8080/synth.html 3000 5`
+- Browser smoke harness quick profile (prints live progress): `npm run smoke:engine -- http://127.0.0.1:8080/synth.html`
+- Browser smoke harness full profile: `npm run smoke:engine:full`
+- Smoke regression check: `npm run smoke:compare`
 
 ## 1. Instrument Overview
 

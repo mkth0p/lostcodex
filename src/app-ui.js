@@ -6,6 +6,8 @@ import { Starfield } from './starfield.js';
 import { AudioReactiveEcosystem } from './visualizer.js';
 import { WarpRenderer } from './warp.js';
 import { encodeAddress, decodeAddress } from './ui/shared/address-codec.js';
+import { bindAudioEngineControls } from './ui/shared/audio-controls.js';
+import { createAudioStateRenderer } from './ui/shared/audio-state-ui.js';
 import { fillSlider } from './ui/shared/slider-fill.js';
 import { randomAddress } from './ui/shared/address-utils.js';
 import { isBookmarked, loadBookmarks, saveBookmarks, toggleBookmark } from './ui/shared/bookmarks.js';
@@ -21,6 +23,7 @@ export class App {
         this.debugEls = null;
         this.tensionEls = null;
         this._unsubscribeState = null;
+        this._renderAudioState = null;
     }
 
     init() {
@@ -70,63 +73,12 @@ export class App {
         document.getElementById('btn-share').addEventListener('click', () => this._copyShareLink());
         document.getElementById('play-btn').addEventListener('click', () => this._togglePlay());
 
-        // Sliders
-        const sl = id => {
-            const el = document.getElementById(id);
-            this._fillSlider(el);
-            return el;
-        };
-        sl('ctrl-vol').addEventListener('input', e => { this.audio.setMix({ volume: +e.target.value }); this._fillSlider(e.target); });
-        sl('ctrl-reverb').addEventListener('input', e => { this.audio.setMix({ reverb: +e.target.value }); this._fillSlider(e.target); });
-        sl('ctrl-drift').addEventListener('input', e => { this.audio.setPerformance({ drift: +e.target.value }); this._fillSlider(e.target); });
-        sl('ctrl-density').addEventListener('input', e => { this.audio.setPerformance({ density: +e.target.value }); this._fillSlider(e.target); });
-        sl('ctrl-eq-low').addEventListener('input', e => {
-            this.audio.setMix({ eqLow: +e.target.value });
-            this._fillSlider(e.target);
+        bindAudioEngineControls({
+            getEl: (id) => document.getElementById(id),
+            audio: this.audio,
+            fillSliderFn: (el) => this._fillSlider(el),
+            defaultArpChecked: true,
         });
-        sl('ctrl-eq-mid').addEventListener('input', e => {
-            this.audio.setMix({ eqMid: +e.target.value });
-            this._fillSlider(e.target);
-        });
-        sl('ctrl-eq-high').addEventListener('input', e => {
-            this.audio.setMix({ eqHigh: +e.target.value });
-            this._fillSlider(e.target);
-        });
-        document.getElementById('ctrl-granular').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ granular: e.target.checked });
-        });
-        document.getElementById('ctrl-perc').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ percussion: e.target.checked });
-        });
-
-        sl('ctrl-perc-vol').addEventListener('input', e => {
-            this.audio.setMix({ percussionVolume: +e.target.value });
-            this._fillSlider(e.target);
-        });
-
-        // ── Melody feature toggles ──────────────────────────────────────────
-        document.getElementById('ctrl-chords').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ chords: e.target.checked });
-        });
-        document.getElementById('ctrl-arp').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ arp: e.target.checked });
-        });
-        document.getElementById('ctrl-bend').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ pitchBend: e.target.checked });
-        });
-        document.getElementById('ctrl-motif').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ motif: e.target.checked });
-        });
-
-        // ── Rhythm feature toggles ──────────────────────────────────────────
-        document.getElementById('ctrl-ghost').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ ghost: e.target.checked });
-        });
-        document.getElementById('ctrl-fills').addEventListener('change', e => {
-            this.audio.setFeatureFlags({ fills: e.target.checked });
-        });
-        document.getElementById('ctrl-arp').checked = true;
-
         this.warpR = new WarpRenderer(document.getElementById('warp-canvas'));
         this.warpR.isMobile = this.isMobile;
 
@@ -168,6 +120,34 @@ export class App {
             fill: document.getElementById('tension-fill'),
             icon: document.getElementById('tension-icon'),
         };
+        this._renderAudioState = createAudioStateRenderer({
+            audio: this.audio,
+            elements: {
+                chord: this.chordEl,
+                melodyDisplay: this.melodyEls.display,
+                melMode: this.melodyEls.mode,
+                melLen: this.melodyEls.len,
+                melRest: this.melodyEls.rest,
+                melBank: this.melodyEls.bank,
+                dbgNodes: this.debugEls.nodes,
+                dbgLoad: this.debugEls.load,
+                dbgStep: this.debugEls.step,
+                tensionFill: this.tensionEls.fill,
+                tensionIcon: this.tensionEls.icon,
+            },
+            options: {
+                chordScale: 1.2,
+                keepChordTextOnIdle: true,
+                chordOpacityPlaying: '0.6',
+                chordOpacityIdle: '0',
+                melodyDisplayOpacityPlaying: '1',
+                melodyDisplayOpacityIdle: '0.55',
+                motifEnabledColor: 'var(--planet-glow)',
+                motifDisabledColor: 'var(--text-secondary)',
+                standbyTextColor: 'var(--text-secondary)',
+                accentColor: 'var(--accent)',
+            },
+        });
         this._unsubscribeState = this.audio.subscribeState((state) => this._updateAudioUI(state));
         window.addEventListener('beforeunload', () => {
             if (this._unsubscribeState) this._unsubscribeState();
@@ -175,89 +155,7 @@ export class App {
     }
 
     _updateAudioUI(state = null) {
-        const melDisplay = this.melodyEls?.display;
-        const melModeEl = this.melodyEls?.mode;
-        const melLenEl = this.melodyEls?.len;
-        const melRestEl = this.melodyEls?.rest;
-        const melBankEl = this.melodyEls?.bank;
-        const dbgNodesEl = this.debugEls?.nodes;
-        const dbgLoadEl = this.debugEls?.load;
-        const dbgStepEl = this.debugEls?.step;
-        const tensionFillEl = this.tensionEls?.fill;
-        const tensionIconEl = this.tensionEls?.icon;
-
-        const playing = state?.playing ?? this.audio.playing;
-        const chord = state?.chord ?? this.audio.getChord();
-        const melody = state?.melody ?? this.audio.getMelodyState();
-        const debug = state?.debug ?? this.audio.getDebugState();
-        const tension = state?.tension || { energy: 0, phase: 'DORMANT' };
-
-        if (tensionFillEl) tensionFillEl.style.width = `${Math.round((tension.energy || 0) * 100)}%`;
-        if (tensionIconEl) {
-            const iconPhase = (tension.phase === 'SURGE' || tension.phase === 'CLIMAX' || tension.phase === 'FALLOUT')
-                ? 'high'
-                : tension.phase === 'BUILD'
-                    ? 'mid'
-                    : 'low';
-            tensionIconEl.className = `tension-icon tension-${iconPhase}`;
-        }
-
-        if (playing) {
-            if (this.chordEl && this.chordEl.textContent !== chord) {
-                this.chordEl.textContent = chord;
-                this.chordEl.style.transform = 'scale(1.2)';
-                setTimeout(() => this.chordEl.style.transform = 'scale(1)', 100);
-            }
-            if (this.chordEl) this.chordEl.style.opacity = '0.6';
-            if (melDisplay) melDisplay.style.opacity = '1';
-            if (melLenEl) melLenEl.textContent = `${melody.phraseLength}`;
-            if (melRestEl) melRestEl.textContent = `${Math.round(melody.restProb * 100)}%`;
-            if (dbgNodesEl) dbgNodesEl.textContent = `${debug.activeNodes}`;
-            if (dbgLoadEl) dbgLoadEl.textContent = `${Math.round(debug.load * 100)}%`;
-            if (dbgStepEl) dbgStepEl.textContent = debug.stepMs
-                ? `${debug.tensionPhase} | ${debug.cycleSteps}/${debug.stepMs}ms`
-                : '--';
-            if (melBankEl) {
-                melBankEl.textContent = melody.motifEnabled
-                    ? (melody.motifCount ? `${melody.motifIndex}/${melody.motifCount}` : '--')
-                    : 'OFF';
-                melBankEl.style.color = melody.motifEnabled ? 'var(--planet-glow)' : 'var(--text-secondary)';
-            }
-            if (melModeEl) {
-                melModeEl.textContent = melody.mode;
-                if (melody.mode === 'RESPONSE') {
-                    melModeEl.style.background = 'rgba(255, 157, 91, 0.18)';
-                    melModeEl.style.color = '#ff9d5b';
-                    melModeEl.style.borderColor = 'rgba(255, 157, 91, 0.45)';
-                } else if (melody.mode === 'MOTIF') {
-                    melModeEl.style.background = 'rgba(157, 255, 91, 0.18)';
-                    melModeEl.style.color = '#9dff5b';
-                    melModeEl.style.borderColor = 'rgba(157, 255, 91, 0.45)';
-                } else {
-                    melModeEl.style.background = 'rgba(91, 157, 255, 0.16)';
-                    melModeEl.style.color = 'var(--accent)';
-                    melModeEl.style.borderColor = 'rgba(91, 157, 255, 0.35)';
-                }
-            }
-        } else {
-            if (this.chordEl) this.chordEl.style.opacity = '0';
-            if (melDisplay) melDisplay.style.opacity = '0.55';
-            if (melLenEl) melLenEl.textContent = '0';
-            if (melRestEl) melRestEl.textContent = '5%';
-            if (dbgNodesEl) dbgNodesEl.textContent = '0';
-            if (dbgLoadEl) dbgLoadEl.textContent = '0%';
-            if (dbgStepEl) dbgStepEl.textContent = '--';
-            if (melBankEl) {
-                melBankEl.textContent = '--';
-                melBankEl.style.color = 'var(--text-secondary)';
-            }
-            if (melModeEl) {
-                melModeEl.textContent = 'STANDBY';
-                melModeEl.style.background = 'rgba(255, 255, 255, 0.05)';
-                melModeEl.style.color = 'var(--text-secondary)';
-                melModeEl.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-            }
-        }
+        if (this._renderAudioState) this._renderAudioState(state);
     }
 
     _fillSlider(el) {

@@ -1,0 +1,264 @@
+{
+  "generatedAt": "2026-03-05T14:24:32.644Z",
+  "targetUrl": "http://127.0.0.1:8765/synth.html",
+  "sampleDurationMs": 30000,
+  "sampleIntervalMs": 250,
+  "corpusSize": 12,
+  "captureCount": 3,
+  "captureDurationMs": 10000,
+  "progressLogEveryMs": 5000,
+  "captures": [
+    {
+      "code": "01234",
+      "status": "skipped",
+      "reason": "MediaRecorder or recording stream unavailable"
+    },
+    {
+      "code": "56789",
+      "status": "skipped",
+      "reason": "MediaRecorder or recording stream unavailable"
+    },
+    {
+      "code": "abcde",
+      "status": "skipped",
+      "reason": "MediaRecorder or recording stream unavailable"
+    }
+  ],
+  "planets": [
+    {
+      "code": "01234",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 183,
+        "activeNodeMean": 132.4561403508772,
+        "loadMean": 0.10137426170320923,
+        "stepMsMean": 105,
+        "schedulerLateCallbacksPeak": 3,
+        "schedulerMaxLateMsPeak": 1,
+        "sampleIntervalJitterMeanMs": 13.938053097345133,
+        "sampleIntervalJitterPeakMs": 19,
+        "phaseTransitions": 1,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "56789",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 182,
+        "activeNodeMean": 125.99122807017544,
+        "loadMean": 0.004881958449170885,
+        "stepMsMean": 214,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 14.309734513274336,
+        "sampleIntervalJitterPeakMs": 19,
+        "phaseTransitions": 3,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR",
+          "BUILD",
+          "SURGE"
+        ]
+      }
+    },
+    {
+      "code": "abcde",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 117,
+        "activeNodeMean": 77.57894736842105,
+        "loadMean": 0,
+        "stepMsMean": 167,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 14.044247787610619,
+        "sampleIntervalJitterPeakMs": 19,
+        "phaseTransitions": 0,
+        "tensionPhases": [
+          "DORMANT"
+        ]
+      }
+    },
+    {
+      "code": "fghij",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 250,
+        "activeNodeMean": 211.33333333333334,
+        "loadMean": 0.4440593179223017,
+        "stepMsMean": 90,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 13.486725663716815,
+        "sampleIntervalJitterPeakMs": 18,
+        "phaseTransitions": 3,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR",
+          "BUILD",
+          "SURGE"
+        ]
+      }
+    },
+    {
+      "code": "klmno",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 138,
+        "activeNodeMean": 103.09649122807018,
+        "loadMean": 0,
+        "stepMsMean": 205,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 14.132743362831858,
+        "sampleIntervalJitterPeakMs": 18,
+        "phaseTransitions": 2,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "pqrst",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 137,
+        "activeNodeMean": 96.80701754385964,
+        "loadMean": 0.08944099378881988,
+        "stepMsMean": 109,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 14.132743362831858,
+        "sampleIntervalJitterPeakMs": 18,
+        "phaseTransitions": 1,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "00000",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 331,
+        "activeNodeMean": 234.06140350877192,
+        "loadMean": 0.33130349934159686,
+        "stepMsMean": 97,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 14.132743362831858,
+        "sampleIntervalJitterPeakMs": 22,
+        "phaseTransitions": 1,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "ttttt",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 198,
+        "activeNodeMean": 145.2719298245614,
+        "loadMean": 0.005307017543859649,
+        "stepMsMean": 238,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 13.876106194690266,
+        "sampleIntervalJitterPeakMs": 20,
+        "phaseTransitions": 1,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "02468ace",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 194,
+        "activeNodeMean": 146.1140350877193,
+        "loadMean": 0.07650851843348833,
+        "stepMsMean": 115,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 13.769911504424778,
+        "sampleIntervalJitterPeakMs": 18,
+        "phaseTransitions": 1,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "13579bdf",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 169,
+        "activeNodeMean": 131.9298245614035,
+        "loadMean": 0.13055053839362776,
+        "stepMsMean": 99,
+        "schedulerLateCallbacksPeak": 4,
+        "schedulerMaxLateMsPeak": 1,
+        "sampleIntervalJitterMeanMs": 14.168141592920353,
+        "sampleIntervalJitterPeakMs": 19,
+        "phaseTransitions": 2,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR",
+          "BUILD"
+        ]
+      }
+    },
+    {
+      "code": "0a1b2c3d4e",
+      "summary": {
+        "sampleCount": 114,
+        "activeNodePeak": 287,
+        "activeNodeMean": 202.76315789473685,
+        "loadMean": 0.15067318106650196,
+        "stepMsMean": 144,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 13.752212389380531,
+        "sampleIntervalJitterPeakMs": 18,
+        "phaseTransitions": 1,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR"
+        ]
+      }
+    },
+    {
+      "code": "9h8g7f6e5d",
+      "summary": {
+        "sampleCount": 115,
+        "activeNodePeak": 290,
+        "activeNodeMean": 211.23478260869564,
+        "loadMean": 0.2891206355807384,
+        "stepMsMean": 136,
+        "schedulerLateCallbacksPeak": 0,
+        "schedulerMaxLateMsPeak": 0,
+        "sampleIntervalJitterMeanMs": 13.096491228070175,
+        "sampleIntervalJitterPeakMs": 18,
+        "phaseTransitions": 4,
+        "tensionPhases": [
+          "DORMANT",
+          "STIR",
+          "BUILD",
+          "SURGE",
+          "CLIMAX"
+        ]
+      }
+    }
+  ]
+}

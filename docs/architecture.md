@@ -17,6 +17,7 @@
   - `src/audio/config/tension-profiles.js`
   - `src/audio/config/drum-profiles.js`
   - `src/audio/config/pattern-banks.js`
+  - `src/audio/config/timbre-delta-limits.js`
 - Worklets:
   - `src/audio/worklets/bitcrusher-processor.js`
 
@@ -26,8 +27,10 @@
 - `src/ui/shared/address-utils.js`
 - `src/ui/shared/bookmarks.js`
 - `src/ui/shared/slider-fill.js`
+- `src/ui/shared/audio-controls.js`
+- `src/ui/shared/audio-state-ui.js`
 
-Both app modes consume this shared layer for address handling, bookmarks, and control behavior.
+Both app modes consume this shared layer for address handling, bookmarks, control behavior, and state-panel rendering.
 
 ## Data Flow
 
@@ -41,7 +44,7 @@ Both app modes consume this shared layer for address handling, bookmarks, and co
 - Lookahead scheduler defaults:
   - tick: `25ms`
   - horizon: `120ms`
-- Active recurring channels (when `engine_refactor_v2` is enabled):
+- Active recurring channels:
   - `melody`
   - `percussion`
   - `percussion-poly`
@@ -52,9 +55,9 @@ Both app modes consume this shared layer for address handling, bookmarks, and co
 
 ## Runtime Flags
 
-- `?engine_refactor_v2=true|false` toggles the runtime flag surfaced in `getDebugState().engineRefactorV2`.
+- The engine refactor path is now the default runtime path; no legacy chord fallback flag remains.
 
 ## Legacy Notes
 
-- `app.js` remains in repository for historical reference and can be archived after parity verification.
+- Deprecated root `app.js` has been removed after parity migration.
 - New work must target `main.js` + modular controllers (`src/app-ui.js`, `src/synth-ui.js`).

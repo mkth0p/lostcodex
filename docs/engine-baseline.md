@@ -53,3 +53,7 @@ Generated: 2026-03-05T10:06:50.931Z
 
 - This baseline is generated from deterministic planet metadata (no audio runtime sampling).
 - Use `npm run smoke:engine` for runtime `AudioEngine` start/stop and `getDebugState()` sampling in a real browser.
+- Default smoke run is a quick profile (12 planets, 30 seconds each, 3 captures) and now prints live progress: `npm run smoke:engine -- http://127.0.0.1:8080/synth.html`.
+- Full corpus profile (30 planets, 60 seconds each, 5 captures): `npm run smoke:engine:full`.
+- To lock a runtime baseline, copy `docs/engine-smoke-latest.json` to `docs/engine-smoke-baseline.json`.
+- Compare latest run against baseline acceptance thresholds: `npm run smoke:compare`.
