@@ -3,8 +3,11 @@ import { buildVoice, ADDITIVE_VOICE_NAMES } from './voices.js';
 import { CHORD_TEMPLATES } from './data.js';
 import { NodeRegistry as CoreNodeRegistry } from './audio/core/node-registry.js';
 import { buildTransport } from './audio/core/transport.js';
+import { LookaheadScheduler } from './audio/core/scheduler.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
+const SCHEDULER_TICK_MS = 25;
+const SCHEDULER_HORIZON_SEC = 0.12;
 
 const NATIVE_OSC_TYPES = new Set(['sine', 'square', 'sawtooth', 'triangle']);
 const OSC_TYPE_FALLBACKS = {
@@ -942,6 +945,7 @@ export class AudioEngine {
         this._listeners = new Set();
         this._stateTimer = null;
         this._worklets = { bitcrusherReady: false, loadPromise: null };
+        this._transportScheduler = null;
         this._engineRefactorV2 = true;
         if (typeof window !== 'undefined') {
             const rawFlag = new URLSearchParams(window.location?.search || '').get('engine_refactor_v2');
@@ -1058,6 +1062,33 @@ export class AudioEngine {
             clearInterval(this._stateTimer);
             this._stateTimer = null;
         }
+    }
+
+    _startTransportScheduler() {
+        if (!this._engineRefactorV2 || !this.ctx) return;
+        this._stopTransportScheduler();
+        this._transportScheduler = new LookaheadScheduler(this.ctx, {
+            tickMs: SCHEDULER_TICK_MS,
+            horizonSec: SCHEDULER_HORIZON_SEC,
+        });
+        this._transportScheduler.start();
+    }
+
+    _stopTransportScheduler() {
+        if (!this._transportScheduler) return;
+        this._transportScheduler.stop();
+        this._transportScheduler = null;
+    }
+
+    _scheduleRecurringChannel(name, intervalSec, handler, startOffsetSec = 0.02) {
+        if (!this._transportScheduler || typeof handler !== 'function') return false;
+        const startTime = (this.ctx?.currentTime || 0) + Math.max(0, startOffsetSec);
+        this._transportScheduler.addRecurringChannel(name, {
+            startTime,
+            intervalSec,
+            handler,
+        });
+        return true;
     }
 
     _ensureAudioWorklets() {
@@ -2237,7 +2268,7 @@ export class AudioEngine {
         this.nodes.push(l, g);
     }
 
-    _scheduleNote(planet, dest, ac) {
+    _scheduleNote(planet, dest, ac, scheduledTime = null) {
         const ctx = this.ctx;
         // Tier 4: Strict Determinism & Scaled Generation
         // A unique RNG seed composed of the planet seed + the total number of notes fired
@@ -2457,7 +2488,7 @@ export class AudioEngine {
         this._markMelodyVoiceUsage(wType, planet);
 
         osc.frequency.value = freq;
-        const now = ctx.currentTime;
+        const now = Number.isFinite(scheduledTime) ? Math.max(ctx.currentTime, scheduledTime) : ctx.currentTime;
         env.gain.setValueAtTime(0, now);
 
         const isDecayVoice = ['bell', 'wood', 'glass', 'pluck', 'brass', 'organ'].includes(wType);
@@ -2576,6 +2607,7 @@ export class AudioEngine {
         const ctx = this.ctx, p = planet, ac = p.ac;
         const transport = this._buildTransport(p);
         this.transport = transport;
+        this._startTransportScheduler();
 
         // Effect chain -> routes into EQ -> MasterGain
         const conv = this._buildReverb(p.reverbDecay, p.seed);
@@ -2754,8 +2786,7 @@ export class AudioEngine {
 
         const baseMelodyStride = this._getMelodyStride(p, transport.cycleSteps);
         let melodyTransportStep = 0;
-        const scheduleLoop = () => {
-            if (!this.playing) return;
+        const runMelodyStep = (scheduleTime = null) => {
             const seqRng = new RNG(p.seed + 10000 + melodyTransportStep);
             const tension = this.tension || 0;
             const cycleStep = melodyTransportStep % transport.cycleSteps;
@@ -2794,7 +2825,7 @@ export class AudioEngine {
                 this._restProb = this._clamp(this._restProb, 0.08, 0.92);
 
                 if (seqRng.range(0, 1) >= this._restProb) {
-                    this._scheduleNote(p, melodyBus, ac);
+                    this._scheduleNote(p, melodyBus, ac, scheduleTime);
                     this._phraseLength++;
                 } else {
                     this._phraseLength = 0;
@@ -2807,15 +2838,46 @@ export class AudioEngine {
             }
 
             melodyTransportStep++;
-
-            // Schedule next tick
-            this._setManagedTimeout(scheduleLoop, transport.stepMs);
         };
-        scheduleLoop();
+
+        const melodyScheduled = this._scheduleRecurringChannel(
+            'melody',
+            transport.stepSeconds,
+            ({ scheduleTime }) => {
+                if (!this.playing) return;
+                runMelodyStep(scheduleTime);
+            }
+        );
+
+        if (!melodyScheduled) {
+            const scheduleLoop = () => {
+                if (!this.playing) return;
+                runMelodyStep();
+                this._setManagedTimeout(scheduleLoop, transport.stepMs);
+            };
+            scheduleLoop();
+        }
+
+        const startMacroFxLoop = (name, intervalMs, callback) => {
+            const scheduled = this._scheduleRecurringChannel(
+                name,
+                intervalMs / 1000,
+                () => {
+                    if (!this.playing) return;
+                    callback();
+                }
+            );
+            if (!scheduled) {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    callback();
+                }, intervalMs));
+            }
+        };
 
         // Biome-specific periodic effects
         if (p.biome.id === 'corrupted') {
-            this.intervals.push(setInterval(() => {
+            startMacroFxLoop('macroFx', 700, () => {
                 const rng = new RNG(p.seed + 20000 + this.stepFX++);
                 if (rng.range(0, 1) < 0.2) {
                     const orig = filt.frequency.value;
@@ -2823,7 +2885,7 @@ export class AudioEngine {
                     filt.frequency.setValueAtTime(Math.min(orig * (0.2 + rng.range(0, 3)), nyquist), ctx.currentTime);
                     filt.frequency.setValueAtTime(Math.min(orig, nyquist), ctx.currentTime + 0.04 + rng.range(0, 0.12));
                 }
-            }, 700));
+            });
         }
         if (p.biome.id === 'organic') {
             // Pulsing life-like tremolo
@@ -2831,14 +2893,14 @@ export class AudioEngine {
         }
         if (p.biome.id === 'barren') {
             // Very occasional lone ping
-            this.intervals.push(setInterval(() => {
+            startMacroFxLoop('macroFx-barren', 4000, () => {
                 const rng = new RNG(p.seed + 30000 + this.stepFX++);
                 if (rng.range(0, 1) < 0.08) this._scheduleNote(p, filt, ac);
-            }, 4000));
+            });
         }
         if (p.biome.id === 'storm') {
             // Random chaotic filter bursts — electrical chaos
-            this.intervals.push(setInterval(() => {
+            startMacroFxLoop('macroFx-storm', 300, () => {
                 const rng = new RNG(p.seed + 60000 + this.stepFX++);
                 if (rng.range(0, 1) < 0.35) {
                     const orig = filt.frequency.value;
@@ -2847,7 +2909,7 @@ export class AudioEngine {
                     filt.frequency.setValueAtTime(spike, ctx.currentTime);
                     filt.frequency.exponentialRampToValueAtTime(Math.min(orig, nyquist), ctx.currentTime + rng.range(0.02, 0.18));
                 }
-            }, 300));
+            });
         }
         if (p.biome.id === 'nebula') {
             // Push extra wet reverb for the immense nebular space
@@ -3572,7 +3634,7 @@ export class AudioEngine {
 
         let step = 0;
         let barCount = 0; // counts completed 16-step bars for fill detection
-        this.intervals.push(setInterval(() => {
+        const runPercussionStep = () => {
             if (!this.playing) return;
             const seqRng = new RNG(p.seed + 50000 + this.stepPerc++);
             const stepIndex = step;
@@ -3699,7 +3761,16 @@ export class AudioEngine {
 
             step = (step + 1) % cycleSteps;
             if (step === 0) barCount++;
-        }, stepTime * 1000));
+        };
+
+        const percussionScheduled = this._scheduleRecurringChannel(
+            'percussion',
+            stepTime,
+            () => runPercussionStep()
+        );
+        if (!percussionScheduled) {
+            this.intervals.push(setInterval(() => runPercussionStep(), stepTime * 1000));
+        }
 
         // ── Polyrhythm Layer (Hemiola / 3-against-4) ──
         // Only on "complex" rhythmic biomes (fungal, crystalloid, quantum, psychedelic)
@@ -3708,7 +3779,7 @@ export class AudioEngine {
             const polyVoicePool = (tensionProfile.polyVoices || []).filter(v => extraVoices[v]);
             let polyStep = 0;
             const tripletTime = (stepTime * 4) / 3; // 3 beats over 4 sub-steps
-            this.intervals.push(setInterval(() => {
+            const runPolyrhythmStep = () => {
                 if (!this.playing) return;
                 const polyRng = new RNG(p.seed + 65000 + this.stepFX++);
                 const polyState = this._getRhythmState(p, polyStep++ % cycleSteps, barCount, polyRng);
@@ -3718,7 +3789,16 @@ export class AudioEngine {
                 if (polySound && polyRng.range(0, 1) < this._clamp(0.2 + polyState.energy * 0.38, 0.15, 0.82)) {
                     polySound(0.07 * polyState.velocityLift);
                 }
-            }, tripletTime * 1000));
+            };
+
+            const polyScheduled = this._scheduleRecurringChannel(
+                'percussion-poly',
+                tripletTime,
+                () => runPolyrhythmStep()
+            );
+            if (!polyScheduled) {
+                this.intervals.push(setInterval(() => runPolyrhythmStep(), tripletTime * 1000));
+            }
         }
     }
 
@@ -3738,7 +3818,7 @@ export class AudioEngine {
         this._climaxFired = false;
         this._climaxStartedDrain = false;
 
-        this.intervals.push(setInterval(() => {
+        const runTensionArcStep = () => {
             if (!this.playing) return;
             const nyquist = ctx.sampleRate / 2;
             const arcRng = new RNG(p.seed + 88000 + this._tensionTick);
@@ -3832,7 +3912,16 @@ export class AudioEngine {
             if (this._climaxFired && state.energy >= 0.98) {
                 this._climaxStartedDrain = true;
             }
-        }, 2000)); // every 2s instead of 8s
+        };
+
+        const tensionScheduled = this._scheduleRecurringChannel(
+            'tension',
+            2,
+            () => runTensionArcStep()
+        );
+        if (!tensionScheduled) {
+            this.intervals.push(setInterval(() => runTensionArcStep(), 2000));
+        }
     }
 
     // Fires a rich swelling chord at climax, then fades
@@ -3876,9 +3965,26 @@ export class AudioEngine {
         ambBus.connect(dest);
         this.nodes.push(ambBus);
 
+        const startAmbienceLoop = (name, intervalMs, callback) => {
+            const scheduled = this._scheduleRecurringChannel(
+                `ambience-${name}`,
+                intervalMs / 1000,
+                () => {
+                    if (!this.playing) return;
+                    callback();
+                }
+            );
+            if (!scheduled) {
+                this.intervals.push(setInterval(() => {
+                    if (!this.playing) return;
+                    callback();
+                }, intervalMs));
+            }
+        };
+
         features.forEach(feat => {
             if (feat === 'birds') {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('birds', 1500, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 70000);
                     if (rng.range(0, 1) < 0.2) {
@@ -3894,10 +4000,10 @@ export class AudioEngine {
                         o.start(t); o.stop(t + 0.2);
                         this.nodes.push(o, g);
                     }
-                }, 1500));
+                });
             }
             if (feat === 'rain') {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('rain', 100, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 80000);
                     if (rng.range(0, 1) < 0.6) {
@@ -3914,10 +4020,10 @@ export class AudioEngine {
                         n.start(t); n.stop(t + 0.05);
                         this.nodes.push(n, f, g);
                     }
-                }, 100));
+                });
             }
             if (feat === 'bubbles') {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('bubbles', 240, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 81000);
                     if (rng.range(0, 1) < 0.42) {
@@ -3940,10 +4046,10 @@ export class AudioEngine {
                         o.start(t); o.stop(t + dur + 0.05);
                         this.nodes.push(o, f, g, pan);
                     }
-                }, 240));
+                });
             }
             if (feat === 'dew') {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('dew', 650, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 81250);
                     if (rng.range(0, 1) < 0.22) {
@@ -3966,10 +4072,10 @@ export class AudioEngine {
                         o.start(t); o.stop(t + dur + 0.03);
                         this.nodes.push(o, bp, g, pan);
                     }
-                }, 650));
+                });
             }
             if (feat === 'thunder' && bid === 'storm') {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('thunder', 5000, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 90000);
                     if (rng.range(0, 1) < 0.05) {
@@ -3986,10 +4092,10 @@ export class AudioEngine {
                         n.start(t); n.stop(t + 3.1);
                         this.nodes.push(n, f, g);
                     }
-                }, 5000));
+                });
             }
             if (feat === 'lightning' && bid === 'storm' && this._noiseBuffer) {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('lightning', 1800, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 90500);
                     if (rng.range(0, 1) < 0.08) {
@@ -4015,7 +4121,7 @@ export class AudioEngine {
                         }
                         this.nodes.push(n, hp, bp, g);
                     }
-                }, 1800));
+                });
             }
             if (feat === 'wind') {
                 const n = ctx.createBufferSource();
@@ -4049,7 +4155,7 @@ export class AudioEngine {
                 this.nodes.push(n, hp, bp, g, pan);
             }
             if (feat === 'spores' && this._noiseBuffer) {
-                this.intervals.push(setInterval(() => {
+                startAmbienceLoop('spores', 1200, () => {
                     if (!this.playing) return;
                     const rng = new RNG(p.seed + (this.stepFX++ || 0) + 91500);
                     if (rng.range(0, 1) < 0.28) {
@@ -4085,7 +4191,7 @@ export class AudioEngine {
                             this.nodes.push(o, og, of);
                         }
                     }
-                }, 1200));
+                });
             }
         });
     }
@@ -4119,6 +4225,7 @@ export class AudioEngine {
     }
 
     stop() {
+        this._stopTransportScheduler();
         this.intervals.forEach(clearInterval);
         this.intervals = [];
         this._stopStateStream();
@@ -4274,17 +4381,30 @@ export class AudioEngine {
         const bassOctave = p.biome.id === 'abyssal' ? 0.5 : 1.0;
         const bassStepMs = transport.stepMs;
         let bassStep = 0;
-
-        this.intervals.push(setInterval(() => {
-            if (!this.playing) return;
-            if (activePattern[bassStep]) {
-                this._scheduleBassNote(p, bassBus, bassOctave, transport.stepSeconds * 1.9);
+        const bassScheduled = this._scheduleRecurringChannel(
+            'bass',
+            transport.stepSeconds,
+            ({ scheduleTime }) => {
+                if (!this.playing) return;
+                if (activePattern[bassStep]) {
+                    this._scheduleBassNote(p, bassBus, bassOctave, transport.stepSeconds * 1.9, scheduleTime);
+                }
+                bassStep = (bassStep + 1) % transport.cycleSteps;
             }
-            bassStep = (bassStep + 1) % transport.cycleSteps;
-        }, bassStepMs));
+        );
+
+        if (!bassScheduled) {
+            this.intervals.push(setInterval(() => {
+                if (!this.playing) return;
+                if (activePattern[bassStep]) {
+                    this._scheduleBassNote(p, bassBus, bassOctave, transport.stepSeconds * 1.9);
+                }
+                bassStep = (bassStep + 1) % transport.cycleSteps;
+            }, bassStepMs));
+        }
     }
 
-    _scheduleBassNote(p, dest, octScale, gateSeconds = 0.4) {
+    _scheduleBassNote(p, dest, octScale, gateSeconds = 0.4, scheduledTime = null) {
         const ctx = this.ctx;
         // Bass always stays on the ROOT of the current chord for stability
         const chordBase = this._currentChordIntervals[0];
@@ -4300,7 +4420,7 @@ export class AudioEngine {
         osc.frequency.value = freq;
         sub.frequency.value = freq * 0.5;
 
-        const now = ctx.currentTime;
+        const now = Number.isFinite(scheduledTime) ? Math.max(ctx.currentTime, scheduledTime) : ctx.currentTime;
         const noteDur = Math.max(0.22, gateSeconds || 0.4);
         env.gain.setValueAtTime(0, now);
         env.gain.linearRampToValueAtTime(0.4, now + Math.min(0.03, noteDur * 0.18));
@@ -4478,6 +4598,7 @@ export class AudioEngine {
         const transport = this.transport || (this.planet ? this._buildTransport(this.planet) : null);
         const perf = this.planet ? this._getPerformanceProfile(this.planet) : null;
         const now = this.ctx?.currentTime || 0;
+        const schedulerStats = this._transportScheduler?.getStats ? this._transportScheduler.getStats() : null;
         const moonLastProcAgoMs = Number.isFinite(this._lastMoonProcAt)
             ? Math.max(0, Math.round((now - this._lastMoonProcAt) * 1000))
             : null;
@@ -4486,6 +4607,10 @@ export class AudioEngine {
             load: perf?.pressure || 0,
             determinismMode: this._determinismMode,
             engineRefactorV2: this._engineRefactorV2,
+            schedulerTickMs: schedulerStats?.tickMs || 0,
+            schedulerHorizonMs: schedulerStats ? Math.round((schedulerStats.horizonSec || 0) * 1000) : 0,
+            schedulerLateCallbacks: schedulerStats?.lateCallbacks || 0,
+            schedulerMaxLateMs: schedulerStats ? Math.round(schedulerStats.maxLateMs || 0) : 0,
             tensionPhase: this._tensionState?.phase || 'DORMANT',
             tensionEnergy: this._tensionState?.energy || 0,
             cycleSteps: transport?.cycleSteps || 0,

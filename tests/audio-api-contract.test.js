@@ -20,6 +20,7 @@ describe('AudioEngine API contract', () => {
             'setFeatureFlags',
             'setDeterminismMode',
             'subscribeState',
+            'triggerNavigationFx',
         ];
 
         methods.forEach((name) => {
@@ -42,6 +43,10 @@ describe('AudioEngine API contract', () => {
         expect(lastState).toHaveProperty('chord');
         expect(lastState.debug).toHaveProperty('determinismMode');
         expect(lastState.debug).toHaveProperty('engineRefactorV2');
+        expect(lastState.debug).toHaveProperty('schedulerTickMs');
+        expect(lastState.debug).toHaveProperty('schedulerHorizonMs');
+        expect(lastState.debug).toHaveProperty('schedulerLateCallbacks');
+        expect(lastState.debug).toHaveProperty('schedulerMaxLateMs');
         unsubscribe();
     });
 

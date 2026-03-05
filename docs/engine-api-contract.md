@@ -41,7 +41,11 @@ These methods are supported for external callers and UI controllers:
 }
 ```
 
-`getDebugState()` includes `determinismMode` and `engineRefactorV2`.
+`getDebugState()` includes:
+
+- `determinismMode`
+- `engineRefactorV2`
+- scheduler telemetry (`schedulerTickMs`, `schedulerHorizonMs`, `schedulerLateCallbacks`, `schedulerMaxLateMs`)
 
 ## Internal/Private Surface
 

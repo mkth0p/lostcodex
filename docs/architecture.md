@@ -12,6 +12,7 @@
 - Extracted core utilities:
   - `src/audio/core/node-registry.js`
   - `src/audio/core/transport.js`
+  - `src/audio/core/scheduler.js`
 - Worklets:
   - `src/audio/worklets/bitcrusher-processor.js`
 
@@ -30,6 +31,20 @@ Both app modes consume this shared layer for address handling, bookmarks, and co
 2. UI controls call stable engine methods (`setMix`, `setPerformance`, `setFeatureFlags`).
 3. Engine emits read-only snapshots through `subscribeState`.
 4. UI renders chord/melody/debug/tension from state stream.
+
+## Transport Scheduler
+
+- Lookahead scheduler defaults:
+  - tick: `25ms`
+  - horizon: `120ms`
+- Active recurring channels (when `engine_refactor_v2` is enabled):
+  - `melody`
+  - `percussion`
+  - `percussion-poly`
+  - `bass`
+  - `tension`
+  - `macroFx*`
+  - `ambience-*`
 
 ## Runtime Flags
 
