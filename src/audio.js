@@ -7,6 +7,15 @@ import { LookaheadScheduler } from './audio/core/scheduler.js';
 import { DEFAULT_TENSION_PROFILE, BIOME_TENSION_PROFILES } from './audio/config/tension-profiles.js';
 import { DEFAULT_DRUM_TONE, BIOME_DRUM_TONES } from './audio/config/drum-profiles.js';
 import { BASE_BIOME_PATTERN_BANKS, AMBIENT_PATTERN_BANK } from './audio/config/pattern-banks.js';
+import { buildTensionProfile, resolveRhythmState, resolveTensionState } from './audio/subsystems/tension.js';
+import {
+    buildDrumToneProfile,
+    buildPhasePatternBanks,
+    fitPatternToCycle,
+    getPhasePatternProfile,
+    transformPhasePattern
+} from './audio/subsystems/percussion.js';
+import { getMelodyStride } from './audio/subsystems/melody.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -349,193 +358,38 @@ export class AudioEngine {
     }
 
     _getTensionProfile(planet) {
-        const biomeId = planet?.biome?.id || 'default';
-        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
-        const merged = {
-            ...DEFAULT_TENSION_PROFILE,
-            ...(BIOME_TENSION_PROFILES[biomeId] || {})
-        };
-        const densityLift = (density - 0.08) * 0.05;
-        return {
-            ...merged,
-            riseRate: this._clamp(merged.riseRate + densityLift, 0.012, 0.05),
-            surgeChance: this._clamp(merged.surgeChance + densityLift * 1.8, 0, 0.35),
-            climaxThreshold: this._clamp(merged.climaxThreshold, 0.74, 0.92),
-            fillVoices: [...(merged.fillVoices || [])],
-            polyVoices: [...(merged.polyVoices || [])],
-            climaxRatios: [...(merged.climaxRatios || DEFAULT_TENSION_PROFILE.climaxRatios)],
-        };
+        return buildTensionProfile({
+            biomeId: planet?.biome?.id || 'default',
+            melodyDensity: planet?.melodyDensity || 0.05,
+            clamp: (value, min, max) => this._clamp(value, min, max),
+            defaultProfile: DEFAULT_TENSION_PROFILE,
+            biomeProfiles: BIOME_TENSION_PROFILES,
+        });
     }
 
     _getDrumToneProfile(planet) {
-        const biomeId = planet?.biome?.id || 'default';
-        return {
-            ...DEFAULT_DRUM_TONE,
-            ...(BIOME_DRUM_TONES[biomeId] || {})
-        };
+        return buildDrumToneProfile({
+            biomeId: planet?.biome?.id || 'default',
+            defaultTone: DEFAULT_DRUM_TONE,
+            biomeTones: BIOME_DRUM_TONES,
+        });
     }
 
     _getPhasePatternProfile(biomeId) {
-        const profile = {
-            DORMANT: { drop: 0.34, add: 0.01, open: 0.01, rotate: 0 },
-            STIR: { drop: 0.18, add: 0.03, open: 0.03, rotate: 0 },
-            BUILD: { drop: 0.07, add: 0.09, open: 0.08, rotate: 0 },
-            SURGE: { drop: 0.02, add: 0.16, open: 0.14, rotate: 0 },
-            CLIMAX: { drop: 0.0, add: 0.22, open: 0.22, rotate: 0 },
-            FALLOUT: { drop: 0.24, add: 0.02, open: 0.04, rotate: 0 },
-        };
-
-        switch (biomeId) {
-            case 'barren':
-            case 'glacial':
-            case 'arctic':
-            case 'nebula':
-            case 'ethereal':
-                profile.DORMANT = { drop: 0.5, add: 0.0, open: 0.0, rotate: 0 };
-                profile.STIR = { drop: 0.34, add: 0.01, open: 0.01, rotate: 0 };
-                profile.BUILD = { drop: 0.16, add: 0.04, open: 0.04, rotate: 0 };
-                profile.SURGE = { drop: 0.08, add: 0.08, open: 0.08, rotate: 0 };
-                profile.CLIMAX = { drop: 0.04, add: 0.1, open: 0.1, rotate: 0 };
-                profile.FALLOUT = { drop: 0.3, add: 0.01, open: 0.02, rotate: 0 };
-                break;
-            case 'oceanic':
-                profile.DORMANT = { drop: 0.28, add: 0.01, open: 0.02, rotate: 0 };
-                profile.STIR = { drop: 0.14, add: 0.03, open: 0.04, rotate: 0 };
-                profile.BUILD = { drop: 0.05, add: 0.07, open: 0.08, rotate: 0 };
-                profile.SURGE = { drop: 0.01, add: 0.13, open: 0.14, rotate: 0 };
-                profile.CLIMAX = { drop: 0.0, add: 0.16, open: 0.18, rotate: 1 };
-                profile.FALLOUT = { drop: 0.2, add: 0.02, open: 0.05, rotate: 0 };
-                break;
-            case 'fungal':
-                profile.DORMANT = { drop: 0.18, add: 0.02, open: 0.03, rotate: 0 };
-                profile.STIR = { drop: 0.07, add: 0.04, open: 0.05, rotate: 0 };
-                profile.BUILD = { drop: 0.02, add: 0.08, open: 0.08, rotate: 0 };
-                profile.SURGE = { drop: 0.0, add: 0.13, open: 0.1, rotate: 0 };
-                profile.CLIMAX = { drop: 0.0, add: 0.16, open: 0.12, rotate: 1 };
-                profile.FALLOUT = { drop: 0.14, add: 0.02, open: 0.04, rotate: 0 };
-                break;
-            case 'organic':
-            case 'desert':
-                profile.DORMANT = { drop: 0.2, add: 0.02, open: 0.02, rotate: 0 };
-                profile.STIR = { drop: 0.08, add: 0.05, open: 0.04, rotate: 0 };
-                profile.BUILD = { drop: 0.03, add: 0.11, open: 0.08, rotate: 0 };
-                profile.SURGE = { drop: 0.0, add: 0.19, open: 0.12, rotate: 1 };
-                profile.CLIMAX = { drop: 0.0, add: 0.23, open: 0.16, rotate: 1 };
-                profile.FALLOUT = { drop: 0.18, add: 0.03, open: 0.04, rotate: 0 };
-                break;
-            case 'crystalline':
-            case 'crystalloid':
-                profile.DORMANT = { drop: 0.26, add: 0.01, open: 0.03, rotate: 0 };
-                profile.STIR = { drop: 0.12, add: 0.04, open: 0.06, rotate: 0 };
-                profile.BUILD = { drop: 0.04, add: 0.08, open: 0.12, rotate: 0 };
-                profile.SURGE = { drop: 0.0, add: 0.12, open: 0.18, rotate: 1 };
-                profile.CLIMAX = { drop: 0.0, add: 0.16, open: 0.24, rotate: 1 };
-                profile.FALLOUT = { drop: 0.22, add: 0.02, open: 0.05, rotate: 0 };
-                break;
-            case 'quantum':
-            case 'corrupted':
-            case 'storm':
-            case 'psychedelic':
-                profile.DORMANT = { drop: 0.14, add: 0.04, open: 0.04, rotate: 0 };
-                profile.STIR = { drop: 0.04, add: 0.09, open: 0.08, rotate: 0 };
-                profile.BUILD = { drop: 0.0, add: 0.17, open: 0.12, rotate: 1 };
-                profile.SURGE = { drop: 0.0, add: 0.26, open: 0.18, rotate: 1 };
-                profile.CLIMAX = { drop: 0.0, add: 0.32, open: 0.24, rotate: 2 };
-                profile.FALLOUT = { drop: 0.1, add: 0.05, open: 0.08, rotate: 0 };
-                break;
-            case 'volcanic':
-            case 'abyssal':
-                profile.DORMANT = { drop: 0.22, add: 0.01, open: 0.01, rotate: 0 };
-                profile.STIR = { drop: 0.1, add: 0.03, open: 0.03, rotate: 0 };
-                profile.BUILD = { drop: 0.03, add: 0.08, open: 0.05, rotate: 0 };
-                profile.SURGE = { drop: 0.0, add: 0.14, open: 0.07, rotate: 0 };
-                profile.CLIMAX = { drop: 0.0, add: 0.18, open: 0.1, rotate: 1 };
-                profile.FALLOUT = { drop: 0.2, add: 0.02, open: 0.03, rotate: 0 };
-                break;
-            default:
-                break;
-        }
-
-        return profile;
+        return getPhasePatternProfile(biomeId);
     }
 
     _transformPhasePattern(pattern, voice, phaseCfg, rng) {
-        const source = Array.isArray(pattern) ? pattern.slice() : [];
-        const len = source.length;
-        if (!len) return source;
-
-        const voiceAddBias = voice === 'k' ? 0.58 : voice === 's' ? 0.42 : voice === 'h' ? 0.88 : 0.32;
-        const voiceDropBias = voice === 'h' ? 0.75 : voice === 'b' ? 0.95 : 0.7;
-
-        for (let i = 0; i < len; i++) {
-            const strong = i % 4 === 0;
-            const backbeat = (i + 2) % 4 === 0;
-            const offbeat = i % 2 === 1;
-            const turnaround = i >= len - 2;
-            const prevHit = source[(i - 1 + len) % len] > 0;
-            const nextHit = source[(i + 1) % len] > 0;
-            const nearHit = prevHit || nextHit;
-            const slotWeight = voice === 'k'
-                ? (strong ? 1 : turnaround ? 0.72 : offbeat ? 0.2 : 0.42)
-                : voice === 's'
-                    ? (backbeat ? 1 : offbeat ? 0.26 : 0.14)
-                    : voice === 'h'
-                        ? (offbeat ? 1 : strong ? 0.28 : 0.6)
-                        : (strong ? 0.72 : turnaround ? 0.28 : 0.1);
-
-            if (source[i]) {
-                const protect = strong || backbeat
-                    ? (voice === 'k' || voice === 's' ? 0.08 : 0.16)
-                    : turnaround
-                        ? 0.45
-                        : 1;
-                if (rng.range(0, 1) < phaseCfg.drop * protect * voiceDropBias) {
-                    source[i] = 0;
-                    continue;
-                }
-                if (voice === 'h' && source[i] === 1 && rng.range(0, 1) < phaseCfg.open * slotWeight * 0.85) {
-                    source[i] = 2;
-                }
-                continue;
-            }
-
-            let addChance = phaseCfg.add * slotWeight * voiceAddBias;
-            if (nearHit) addChance *= voice === 'h' ? 0.55 : 0.2;
-            if (voice === 'k' && offbeat && !turnaround) addChance *= 0.35;
-            if (voice === 's' && !backbeat && !offbeat) addChance *= 0.2;
-            if (voice === 'b' && !strong) addChance *= 0.25;
-
-            if (rng.range(0, 1) < addChance) {
-                source[i] = voice === 'h' && rng.range(0, 1) < phaseCfg.open * (offbeat ? 1 : 0.35) ? 2 : 1;
-            }
-        }
-
-        const rotateBase = voice === 'h' ? Math.min(1, phaseCfg.rotate || 0) : 0;
-        const rotate = ((rotateBase % len) + len) % len;
-        if (!rotate) return source;
-        return source.slice(len - rotate).concat(source.slice(0, len - rotate));
+        return transformPhasePattern(pattern, voice, phaseCfg, rng);
     }
 
     _buildPhasePatternBanks(patterns, cycleSteps, seed, biomeId) {
-        const profile = this._getPhasePatternProfile(biomeId);
-        const phases = ['DORMANT', 'STIR', 'BUILD', 'SURGE', 'CLIMAX', 'FALLOUT'];
-        const voices = ['k', 's', 'h', 'b'];
-        const banks = {};
-
-        phases.forEach((phase, phaseIdx) => {
-            banks[phase] = {};
-            voices.forEach((voice, voiceIdx) => {
-                const phaseSeed = (seed + 97000 + phaseIdx * 173 + voiceIdx * 29 + cycleSteps * 7) >>> 0;
-                banks[phase][voice] = this._transformPhasePattern(
-                    patterns[voice],
-                    voice,
-                    profile[phase],
-                    new RNG(phaseSeed)
-                );
-            });
+        return buildPhasePatternBanks({
+            patterns,
+            cycleSteps,
+            seed,
+            biomeId
         });
-
-        return banks;
     }
 
     _getMacroEventChance(biomeId, state) {
@@ -854,99 +708,27 @@ export class AudioEngine {
 
     _getTensionState(planet, stepIndex = 0) {
         const profile = this._tensionProfile || this._getTensionProfile(planet);
-        const cycleSteps = Math.max(1, this.transport?.cycleSteps || planet?.ac?.stepCount || 16);
-        const cyclePos = ((stepIndex % cycleSteps) + cycleSteps) % cycleSteps / cycleSteps;
-        const energy = this._clamp(this.tension || 0, 0, 1);
-        const phaseAngle = (this._tensionTick || 0) * profile.pulseRate + cyclePos * Math.PI * 2 + profile.phaseOffset;
-        const pocket = 0.5 + Math.sin(phaseAngle) * 0.5;
-
-        let phase = 'DORMANT';
-        if (this._climaxStartedDrain) phase = 'FALLOUT';
-        else if (this._climaxFired || energy >= Math.min(0.98, profile.climaxThreshold + 0.06)) phase = 'CLIMAX';
-        else if (energy >= profile.surgePoint) phase = 'SURGE';
-        else if (energy >= profile.buildPoint) phase = 'BUILD';
-        else if (energy >= profile.lowPoint) phase = 'STIR';
-
-        return { phase, energy, cyclePos, pocket, profile };
+        return resolveTensionState({
+            tensionProfile: profile,
+            tension: this.tension,
+            tensionTick: this._tensionTick,
+            cycleSteps: Math.max(1, this.transport?.cycleSteps || planet?.ac?.stepCount || 16),
+            stepIndex,
+            climaxStartedDrain: this._climaxStartedDrain,
+            climaxFired: this._climaxFired,
+            clamp: (value, min, max) => this._clamp(value, min, max),
+        });
     }
 
     _getRhythmState(planet, stepIndex, barCount, rng) {
-        const tension = this._getTensionState(planet, stepIndex);
-        const profile = tension.profile;
-        const density = this._clamp((planet?.melodyDensity || 0.05) * 4.5, 0.2, 1.4);
-        const pocketLift = Math.max(0, tension.pocket - 0.42);
-        const phaseBoost = tension.phase === 'SURGE'
-            ? 0.08
-            : tension.phase === 'CLIMAX'
-                ? 0.14
-                : tension.phase === 'FALLOUT'
-                    ? -0.05
-                    : 0;
-        const fillModulo = Math.max(2, Math.round(profile.fillEvery || 4));
-        const fillBar = (barCount % fillModulo) === fillModulo - 1;
-        const fillWindow = tension.cyclePos >= profile.fillStart;
-        const preferredFillVoices = (profile.fillVoices || []).filter(v => typeof v === 'string');
-        const preferredPolyVoices = (profile.polyVoices || []).filter(v => typeof v === 'string');
-
-        return {
-            phase: tension.phase,
-            energy: tension.energy,
-            chaosChance: this._clamp(
-                Math.max(0, tension.energy - profile.surgePoint) * 1.2 * profile.chaosBias
-                + (tension.phase === 'CLIMAX' ? 0.05 * profile.chaosBias : 0),
-                0,
-                0.55
-            ),
-            ghostChance: this._clamp(
-                (0.045 + tension.energy * 0.08 + pocketLift * 0.12) * profile.ghostBias,
-                0.01,
-                0.45
-            ),
-            fillActive: this._fillsEnabled && fillWindow && fillBar
-                && tension.energy > Math.max(profile.lowPoint, profile.buildPoint - 0.08),
-            fillChance: this._clamp(
-                (0.12 + tension.energy * 0.24 + phaseBoost + pocketLift * 0.08) * profile.fillBias,
-                0.04,
-                0.95
-            ),
-            accentChance: this._clamp(
-                (0.03 + tension.energy * 0.12 + pocketLift * 0.08) * profile.accentBias,
-                0.02,
-                0.52
-            ),
-            kickPush: this._clamp(
-                (tension.energy * 0.05 + (tension.phase === 'SURGE' ? 0.05 : 0)) * profile.kickBias * density,
-                0,
-                0.32
-            ),
-            snarePush: this._clamp(
-                (tension.energy * 0.045 + (tension.phase === 'CLIMAX' ? 0.045 : 0)) * profile.snareBias * density,
-                0,
-                0.24
-            ),
-            hatPush: this._clamp(
-                (0.02 + tension.energy * 0.1 + Math.abs(tension.pocket - 0.5) * 0.16) * profile.hatBias,
-                0,
-                0.5
-            ),
-            openHatChance: this._clamp(
-                (0.06 + tension.energy * 0.14 + (tension.phase === 'SURGE' ? 0.08 : 0)) * profile.openHatBias,
-                0.03,
-                0.72
-            ),
-            extraVoiceChance: this._clamp(
-                (0.08 + tension.energy * 0.14 + (tension.phase === 'BUILD' ? 0.04 : 0)) * profile.extraBias,
-                0.02,
-                0.95
-            ),
-            velocityLift: this._clamp(
-                1 + tension.energy * 0.18 + (tension.phase === 'CLIMAX' ? 0.12 : tension.phase === 'FALLOUT' ? -0.06 : 0),
-                0.82,
-                1.36
-            ),
-            fillVoices: preferredFillVoices,
-            polyVoices: preferredPolyVoices,
-        };
+        return resolveRhythmState({
+            planet,
+            stepIndex,
+            barCount,
+            fillsEnabled: this._fillsEnabled,
+            tensionState: this._getTensionState(planet, stepIndex),
+            clamp: (value, min, max) => this._clamp(value, min, max),
+        });
     }
 
     _setManagedTimeout(fn, delayMs) {
@@ -965,24 +747,15 @@ export class AudioEngine {
     }
 
     _fitPatternToCycle(pattern, targetLength) {
-        const source = Array.isArray(pattern) && pattern.length ? pattern : [0];
-        if (!Number.isFinite(targetLength) || targetLength <= 0) return source.slice();
-        if (source.length === targetLength) return source.slice();
-
-        const projected = new Array(targetLength).fill(0);
-        source.forEach((value, index) => {
-            if (!value) return;
-            const mappedIndex = Math.min(targetLength - 1, Math.floor((index / source.length) * targetLength));
-            projected[mappedIndex] = Math.max(projected[mappedIndex], value);
-        });
-        return projected;
+        return fitPatternToCycle(pattern, targetLength);
     }
 
     _getMelodyStride(planet, cycleSteps) {
-        const density = this._clamp(planet?.melodyDensity || 0.05, 0.01, 0.35);
-        let stride = density >= 0.2 ? 1 : density >= 0.09 ? 2 : 4;
-        if (cycleSteps <= 8 && stride > 1) stride -= 1;
-        return this._clamp(stride, 1, cycleSteps);
+        return getMelodyStride({
+            melodyDensity: planet?.melodyDensity || 0.05,
+            cycleSteps,
+            clamp: (value, min, max) => this._clamp(value, min, max),
+        });
     }
 
     _getTargetRestProbability(planet, opts = {}) {
