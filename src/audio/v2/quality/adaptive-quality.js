@@ -17,6 +17,8 @@ export class AdaptiveQualityGovernor {
             counterlineEnabled: true,
             ambienceRateMul: 1,
             percussionDensityMul: 1,
+            detailDensityMul: 1,
+            continuityPriority: 1,
             cpuClass: this.cpuClass,
             cpuTier: this.cpuClass,
             degradeStage: 'full',
@@ -42,6 +44,8 @@ export class AdaptiveQualityGovernor {
         const counterlineEnabled = qualityScalar > 0.58;
         const ambienceRateMul = clamp(0.62 + qualityScalar * 0.52, 0.38, 1.12);
         const percussionDensityMul = clamp(0.42 + qualityScalar * 0.36, 0.24, 0.88);
+        const detailDensityMul = clamp(0.34 + qualityScalar * 0.8, 0.3, 1.18);
+        const continuityPriority = clamp(0.72 + (1 - pressure) * 0.28, 0.72, 1);
         const degradeStage = qualityScalar > 0.84
             ? 'full'
             : qualityScalar > 0.64
@@ -56,6 +60,8 @@ export class AdaptiveQualityGovernor {
             counterlineEnabled,
             ambienceRateMul,
             percussionDensityMul,
+            detailDensityMul,
+            continuityPriority,
             cpuClass: this.cpuClass,
             cpuTier: this.cpuClass,
             degradeStage,

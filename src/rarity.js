@@ -5,32 +5,32 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export const RARITY_ORDER = ['common', 'standard', 'uncommon', 'rare', 'anomalous', 'legendary'];
 
 const RARITY_THRESHOLDS = [
-    { key: 'common', max: 0.24, label: 'COMMON' },
-    { key: 'standard', max: 0.44, label: 'STANDARD' },
-    { key: 'uncommon', max: 0.65, label: 'UNCOMMON' },
-    { key: 'rare', max: 0.82, label: 'RARE' },
-    { key: 'anomalous', max: 0.94, label: 'ANOMALOUS' },
-    { key: 'legendary', max: 1, label: 'LEGENDARY' },
+    { key: 'common', max: 0.46, label: 'COMMON' },     // ~50%
+    { key: 'standard', max: 0.56, label: 'STANDARD' }, // ~25%
+    { key: 'uncommon', max: 0.61, label: 'UNCOMMON' }, // ~13%
+    { key: 'rare', max: 0.65, label: 'RARE' },         // ~7%
+    { key: 'anomalous', max: 0.68, label: 'ANOMALOUS' }, // ~4%
+    { key: 'legendary', max: 1, label: 'LEGENDARY' },  // ~1%
 ];
 
 const BIOME_RARITY_BIAS = {
-    barren: 0.22,
-    glacial: 0.36,
-    arctic: 0.36,
-    crystalline: 0.44,
-    crystalloid: 0.58,
-    volcanic: 0.52,
-    desert: 0.3,
-    oceanic: 0.33,
-    organic: 0.31,
-    fungal: 0.47,
-    ethereal: 0.55,
-    nebula: 0.63,
-    abyssal: 0.61,
-    storm: 0.67,
-    corrupted: 0.78,
-    quantum: 0.86,
-    psychedelic: 0.56,
+    barren: 0.12,
+    glacial: 0.18,
+    arctic: 0.18,
+    crystalline: 0.22,
+    crystalloid: 0.28,
+    volcanic: 0.26,
+    desert: 0.15,
+    oceanic: 0.16,
+    organic: 0.16,
+    fungal: 0.22,
+    ethereal: 0.26,
+    nebula: 0.32,
+    abyssal: 0.3,
+    storm: 0.34,
+    corrupted: 0.4,
+    quantum: 0.44,
+    psychedelic: 0.28,
 };
 
 function toTier(score) {
@@ -124,7 +124,7 @@ export function computePlanetRarity(options = {}) {
 
     const rng = new RNG((seed ^ 0x517cc1b7) >>> 0);
     const jitter = rng.range(0, 1);
-    let score = clamp(base * 0.84 + jitter * 0.16, 0, 1);
+    let score = clamp(base * 0.6 + jitter * 0.4, 0, 1);
 
     if (score > 0.88 && jitter > 0.8) score = clamp(score + 0.03, 0, 1);
     if (addressComplexity.repeatPenalty > 0.65) score = clamp(score - 0.05, 0, 1);

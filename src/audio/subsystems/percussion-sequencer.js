@@ -99,12 +99,21 @@ export function startPercussionSequencer(engine, p, dest) {
     const playKick = (vel) => {
         const t = ctx.currentTime;
         const osc = ctx.createOscillator(), env = ctx.createGain();
-        // Hard transient pitch envelope for punch
         osc.frequency.setValueAtTime(180 * kit.kPitch * kit.kPunch, t);
         osc.frequency.exponentialRampToValueAtTime(45 * kit.kPitch, t + 0.05 * kit.kDecay);
         env.gain.setValueAtTime(0, t);
         env.gain.linearRampToValueAtTime(vel, t + 0.005);
         env.gain.exponentialRampToValueAtTime(0.001, t + 0.4 * kit.kDecay);
+
+        // Pitch-enveloped FM for massive thump
+        const fmOsc = ctx.createOscillator(), fmGain = ctx.createGain();
+        fmOsc.frequency.setValueAtTime(90 * kit.kPitch, t);
+        fmOsc.frequency.exponentialRampToValueAtTime(20 * kit.kPitch, t + 0.06);
+        fmGain.gain.setValueAtTime(180, t);
+        fmGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        fmOsc.connect(fmGain); fmGain.connect(osc.frequency);
+        fmOsc.start(t); fmOsc.stop(t + 0.5 * kit.kDecay);
+
         osc.connect(env); env.connect(dest2);
         osc.start(t); osc.stop(t + 0.5 * kit.kDecay);
 
@@ -129,6 +138,11 @@ export function startPercussionSequencer(engine, p, dest) {
         const t = ctx.currentTime;
         const noise = ctx.createBufferSource();
         noise.buffer = engine._noiseBuffer;
+
+        const nHp = ctx.createBiquadFilter();
+        nHp.type = 'highpass';
+        nHp.frequency.value = 2500;
+
         const nFilt = ctx.createBiquadFilter();
         nFilt.type = 'bandpass';
         const snareBandBase = fungalGroove ? 2600 : 3500 * harshnessTame;
@@ -151,12 +165,12 @@ export function startPercussionSequencer(engine, p, dest) {
         tEnv.gain.linearRampToValueAtTime(vel * (fungalGroove ? 0.42 : 0.7) * kit.sBody, t + 0.005);
         tEnv.gain.exponentialRampToValueAtTime(0.001, t + (fungalGroove ? 0.14 : 0.08) * kit.sDecay);
 
-        noise.connect(nFilt); nFilt.connect(nEnv); nEnv.connect(dest2);
+        noise.connect(nHp); nHp.connect(nFilt); nFilt.connect(nEnv); nEnv.connect(dest2);
         osc.connect(tEnv); tEnv.connect(dest2);
         noise.start(t); osc.start(t);
         noise.stop(t + (fungalGroove ? 0.36 : 0.3) * kit.sDecay);
         osc.stop(t + (fungalGroove ? 0.26 : 0.2) * kit.sDecay);
-        engine.nodes.push(noise, nFilt, nEnv, osc, tEnv);
+        engine.nodes.push(noise, nHp, nFilt, nEnv, osc, tEnv);
     };
 
     const playHat = (vel, open) => {
@@ -500,21 +514,25 @@ export function startPercussionSequencer(engine, p, dest) {
         const phasePatterns = phasePatternBanks[rhythmState.phase] || phasePatternBanks.STIR || basePercPatterns;
         const chaos = seqRng.range(0, 1) < rhythmState.chaosChance;
 
+        // Dynamic 64-step evolving grove permutations
+        const kShift = (barCount % 4) * 2;
+        const hShift = (barCount % 2) * 4;
+
         // Velocity variance
         const velScale = 1 - (p.ac.velocityVar || 0) * seqRng.range(0, 1);
 
-        //    Ghost notes: very quiet hat & snare on empty adjacent steps   
-        // Fires only when the pattern has no hit on this step (off-beats)
+        // Ghost notes: very quiet hat & snare on empty adjacent steps
         const doGhost = engine._ghostEnabled && !chaos
-            && phasePatterns.k[stepIndex] === 0 && phasePatterns.s[stepIndex] === 0
+            && phasePatterns.k[(stepIndex + kShift) % cycleSteps] === 0
+            && phasePatterns.s[stepIndex] === 0
             && seqRng.range(0, 1) < rhythmState.ghostChance;
 
-        //    Fill detection: last 4 steps of a 16-step bar when fills on   
+        // Fill detection: last 4 steps of a 16-step bar
         const playStep = (s, state) => {
-            let kickHit = phasePatterns.k[s] === 1;
-            let snareHit = phasePatterns.s[s] === 1;
-            let hatHit = phasePatterns.h[s];
-            const subHit = phasePatterns.b[s] === 1;
+            let kickHit = phasePatterns.k[(s + kShift) % cycleSteps] === 1;
+            let snareHit = phasePatterns.s[s] === 1; // Snare anchors the groove
+            let hatHit = phasePatterns.h[(s + hShift) % cycleSteps];
+            const subHit = phasePatterns.b[(s + kShift) % cycleSteps] === 1;
             const dynVel = velScale * state.velocityLift;
             const kickVelMul = fungalGroove ? 0.8 : 1;
             const snareVelMul = fungalGroove ? 0.88 : 1;

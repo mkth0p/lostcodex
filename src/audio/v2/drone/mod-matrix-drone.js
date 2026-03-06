@@ -52,12 +52,22 @@ export class DroneModMatrix {
             return raw;
         };
 
+        const geoLane = Math.sin((scheduleTime * 0.0005 * Math.PI * 2) + (this._phases[0] || 0));
+
         return {
-            filterCutoffShift: lane(0, 0.65) * depth * 0.16,
-            detuneShiftCents: lane(1, 0.52) * depth * 9.5,
-            resonatorShift: lane(2, 0.84) * depth * 0.12,
-            panShift: lane(3, 0.42) * depth * 0.22,
-            shimmerChance: clamp(0.08 + Math.max(0, lane(0, 0.34)) * depth * 0.22, 0.04, 0.46),
+            // Increased filter shift from 0.48 to 1.15 for more dramatic sweeps
+            filterCutoffShift: (lane(0, 0.65) * 0.4 + geoLane * 0.6) * depth * 1.15,
+
+            // Increased detune from 28.0 to 125.0 cents for warped stability
+            detuneShiftCents: (lane(1, 0.52) * 0.5 + geoLane * 0.5) * depth * 125.0,
+
+            // Increased resonator shift from 0.28 to 0.55
+            resonatorShift: lane(2, 0.84) * depth * 0.55,
+
+            panShift: (lane(3, 0.42) * 0.7 + geoLane * 0.3) * depth * 0.55,
+
+            // Increased shimmer chance top end from 0.6 to 0.88
+            shimmerChance: clamp(0.08 + Math.max(0, lane(0, 0.34)) * depth * 0.45, 0.04, 0.88),
             motionDepth: depth,
             rateHz,
         };

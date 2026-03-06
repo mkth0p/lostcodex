@@ -10,7 +10,7 @@ export const DEFAULT_DRONE_MACROS = Object.freeze({
 });
 
 export const DEFAULT_DRONE_EXPERT = Object.freeze({
-    expertPriority: 'expert',
+    expertPriority: 'hybrid',
     sourceMode: 'hybrid',
     looperSource: 'pre',
     loopStart: 0,
@@ -92,24 +92,31 @@ function applyGenomeBias(base, genome = {}) {
     const resonator = Number.isFinite(genome?.resonator) ? genome.resonator : 0.5;
     const ambience = Number.isFinite(genome?.ambience) ? genome.ambience : 0.5;
     const echo = Number.isFinite(genome?.echo) ? genome.echo : 0.5;
+
+    // Increased from 0.45 to 0.85 to allow genes to actually dominate the sound
+    const biasScale = 0.85;
+
     return {
-        dream: clamp(base.dream + (profile - 0.5) * 0.18, 0, 1),
-        texture: clamp(base.texture + (profile - 0.5) * 0.2, 0, 1),
-        motion: clamp(base.motion + (drift - 0.5) * 0.2, 0, 1),
-        resonance: clamp(base.resonance + (resonator - 0.5) * 0.22, 0, 1),
-        diffusion: clamp(base.diffusion + (ambience - 0.5) * 0.24, 0, 1),
-        tail: clamp(base.tail + (echo - 0.5) * 0.2, 0, 1),
+        ...base,
+        dream: clamp(base.dream + (profile - 0.5) * biasScale, 0, 1),
+        texture: clamp(base.texture + (profile - 0.5) * biasScale, 0, 1),
+        motion: clamp(base.motion + (drift - 0.5) * biasScale, 0, 1),
+        resonance: clamp(base.resonance + (resonator - 0.5) * biasScale, 0, 1),
+        diffusion: clamp(base.diffusion + (ambience - 0.5) * biasScale, 0, 1),
+        tail: clamp(base.tail + (echo - 0.5) * biasScale, 0, 1),
     };
 }
 
 export function mapDroneMacrosToExpert(macros = DEFAULT_DRONE_MACROS, expert = DEFAULT_DRONE_EXPERT, genome = null) {
     const m = genome ? applyGenomeBias(macros, genome) : macros;
     const priority = EXPERT_PRIORITIES.has(expert.expertPriority) ? expert.expertPriority : DEFAULT_DRONE_EXPERT.expertPriority;
+
+    // Keep expert lock exact, but make hybrid and macro modes strongly shape timbre.
     const macroMix = priority === 'expert'
         ? 0
         : priority === 'macro'
-            ? 0.68
-            : 0.24;
+            ? 0.92
+            : 0.68;
     const expertMix = 1 - macroMix;
 
     const mapped = {

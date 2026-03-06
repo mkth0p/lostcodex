@@ -1,5 +1,12 @@
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+function safeRamp(param, val, time, ctx) {
+    if (!param || !ctx) return;
+    const now = ctx.currentTime;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(val, time);
+}
 export class LoopBuffer {
     constructor(ctx, { maxSeconds = 5 } = {}) {
         this.ctx = ctx;
@@ -52,17 +59,17 @@ export class LoopBuffer {
         this.varispeed = safe;
         this.direction = safe < 0 ? 'reverse' : 'forward';
         const toneCut = clamp(5600 + Math.abs(safe) * 2200, 1800, 9800);
-        this.tone.frequency.linearRampToValueAtTime(toneCut, this.ctx.currentTime + 0.1);
+        safeRamp(this.tone.frequency, toneCut, this.ctx.currentTime + 0.1, this.ctx);
     }
 
     setSoundOnSound(next = 0.42) {
         this.sos = clamp(next, 0, 0.96);
-        this.feedback.gain.linearRampToValueAtTime(this.sos, this.ctx.currentTime + 0.08);
+        safeRamp(this.feedback.gain, this.sos, this.ctx.currentTime + 0.08, this.ctx);
     }
 
     setCaptureEnabled(enabled) {
         this.captureEnabled = !!enabled;
-        this.captureGain.gain.linearRampToValueAtTime(this.captureEnabled ? 1 : 0, this.ctx.currentTime + 0.04);
+        safeRamp(this.captureGain.gain, this.captureEnabled ? 1 : 0, this.ctx.currentTime + 0.04, this.ctx);
     }
 
     setSourceMode(mode = 'pre') {
@@ -70,14 +77,14 @@ export class LoopBuffer {
     }
 
     setOutputLevel(level = 0.55) {
-        this.output.gain.linearRampToValueAtTime(clamp(level, 0, 1.2), this.ctx.currentTime + 0.1);
+        safeRamp(this.output.gain, clamp(level, 0, 1.2), this.ctx.currentTime + 0.1, this.ctx);
     }
 
     _applyDelayTime() {
         const maxOffset = Math.max(0, this.maxSeconds - this.loopLength);
         const offset = this.loopStart * maxOffset;
         const target = clamp(this.loopLength + offset, 0.02, this.maxSeconds);
-        this.delay.delayTime.linearRampToValueAtTime(target, this.ctx.currentTime + 0.08);
+        safeRamp(this.delay.delayTime, target, this.ctx.currentTime + 0.08, this.ctx);
     }
 
     tick(durationSec = 0) {

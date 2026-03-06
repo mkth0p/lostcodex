@@ -14,9 +14,20 @@ export class VoicePool {
     requestVoice({ nowSec = 0, ttlSec = 1.2, kind = 'generic', weight = 1 } = {}) {
         this._cleanup(nowSec);
         if (this.active.size >= this.maxVoices) {
-            const oldest = this.active.entries().next().value;
-            if (!oldest) return { granted: false, id: null };
-            this.active.delete(oldest[0]);
+            let victimId = null;
+            let lowestWeight = Infinity;
+            for (const [id, entry] of this.active.entries()) {
+                if (entry.weight < lowestWeight) {
+                    lowestWeight = entry.weight;
+                    victimId = id;
+                }
+            }
+            if (victimId === null) {
+                const oldest = this.active.entries().next().value;
+                if (!oldest) return { granted: false, id: null };
+                victimId = oldest[0];
+            }
+            this.active.delete(victimId);
             this.voiceStealCount++;
         }
         const id = ++this.sequence;
@@ -49,9 +60,20 @@ export class VoicePool {
 
     _trim() {
         while (this.active.size > this.maxVoices) {
-            const oldest = this.active.entries().next().value;
-            if (!oldest) break;
-            this.active.delete(oldest[0]);
+            let victimId = null;
+            let lowestWeight = Infinity;
+            for (const [id, entry] of this.active.entries()) {
+                if (entry.weight < lowestWeight) {
+                    lowestWeight = entry.weight;
+                    victimId = id;
+                }
+            }
+            if (victimId === null) {
+                const oldest = this.active.entries().next().value;
+                if (!oldest) break;
+                victimId = oldest[0];
+            }
+            this.active.delete(victimId);
             this.voiceStealCount++;
         }
     }

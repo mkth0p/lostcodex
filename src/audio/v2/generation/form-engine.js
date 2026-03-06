@@ -34,12 +34,13 @@ export class FormEngine {
     }
 
     update(barIndex = 0) {
-        const barsInSection = Math.max(0, barIndex - this.sectionBarStart);
-        if (barsInSection >= this.sectionBarLength) {
+        let barsInSection = Math.max(0, barIndex - this.sectionBarStart);
+        while (barsInSection >= this.sectionBarLength) {
+            this.sectionBarStart += this.sectionBarLength;
             this.sectionIndex = (this.sectionIndex + 1) % SECTION_ORDER.length;
             this.section = SECTION_ORDER[this.sectionIndex];
-            this.sectionBarStart = barIndex;
             this.sectionBarLength = this._pickSectionBarLength(this.section);
+            barsInSection = Math.max(0, barIndex - this.sectionBarStart);
         }
         const progress = clamp((barsInSection + 1) / Math.max(1, this.sectionBarLength), 0, 1);
         const rise = this.section === 'SURGE'

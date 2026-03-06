@@ -1,5 +1,12 @@
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+function safeRamp(param, val, time, ctx) {
+    if (!param || !ctx) return;
+    const now = ctx.currentTime;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(val, time);
+}
 function safeDisconnect(node) {
     try { node.disconnect(); } catch { }
 }
@@ -53,12 +60,12 @@ export class FilterRouter {
         if (Number.isFinite(cutoffNorm)) {
             const safe = clamp(cutoffNorm, 0, 1);
             const hz = 120 + Math.pow(safe, 1.6) * 8800;
-            this.filter.frequency.linearRampToValueAtTime(hz, this.ctx.currentTime + 0.08);
+            safeRamp(this.filter.frequency, hz, this.ctx.currentTime + 0.08, this.ctx);
         }
         if (Number.isFinite(qNorm)) {
             const safe = clamp(qNorm, 0, 1);
             const q = 0.2 + safe * 14;
-            this.filter.Q.linearRampToValueAtTime(q, this.ctx.currentTime + 0.08);
+            safeRamp(this.filter.Q, q, this.ctx.currentTime + 0.08, this.ctx);
         }
         if (Number.isFinite(position) && Math.round(position) !== this.position) {
             this._rewire(position);

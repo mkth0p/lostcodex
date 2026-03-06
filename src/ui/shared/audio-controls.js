@@ -150,6 +150,51 @@ function bindSelect(getEl, id, onChange, options = {}) {
     });
 }
 
+export function syncDroneUiToPlanet(planet, getEl, audio, fillSliderFn = fillSlider) {
+    if (!planet?.v2?.defaultDroneMacros || typeof getEl !== 'function' || !audio) return;
+
+    const macros = planet.v2.defaultDroneMacros;
+    const expert = planet.v2.defaultDroneExpert || {};
+    const droneUiState = loadDroneUiState();
+
+    DRONE_MACRO_SLIDERS.forEach(([id, key]) => {
+        const value = macros[key];
+        if (Number.isFinite(value)) {
+            const el = getEl(id);
+            if (el) {
+                el.value = value;
+                fillSliderFn(el);
+            }
+            droneUiState[id] = value;
+        }
+    });
+
+    DRONE_EXPERT_SLIDERS.forEach(([id, key]) => {
+        const value = expert[key];
+        if (Number.isFinite(value)) {
+            const el = getEl(id);
+            if (el) {
+                el.value = value;
+                fillSliderFn(el);
+            }
+            droneUiState[id] = value;
+        }
+    });
+
+    DRONE_EXPERT_SELECTS.forEach(([id, key]) => {
+        const value = expert[key];
+        if (value) {
+            const el = getEl(id);
+            if (el) el.value = value;
+            droneUiState[id] = value;
+        }
+    });
+
+    saveDroneUiState(droneUiState);
+    audio.setDroneMacros(macros);
+    audio.setDroneExpert(expert);
+}
+
 export function bindAudioEngineControls({
     getEl,
     audio,

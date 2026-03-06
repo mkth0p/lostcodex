@@ -34,17 +34,28 @@ function applyMelodyModeStyle(el, mode, options) {
     el.style.borderColor = 'rgba(91, 157, 255, 0.35)';
 }
 
-function setTensionUI(tensionFillEl, tensionIconEl, tension) {
+function setTensionUI(tensionFillEl, tensionIconEl, tensionValEl, tension, containerEl) {
+    const energy = tension.energy || 0;
+    const energyPct = Math.round(energy * 100);
+
     if (tensionFillEl) {
-        tensionFillEl.style.width = `${Math.round((tension.energy || 0) * 100)}%`;
+        tensionFillEl.style.width = `${energyPct}%`;
     }
+    if (tensionValEl) {
+        tensionValEl.textContent = `${energyPct}%`;
+    }
+    if (containerEl) {
+        containerEl.style.setProperty('--tension-energy', energy);
+    }
+
     if (!tensionIconEl) return;
     const iconPhase = (tension.phase === 'SURGE' || tension.phase === 'CLIMAX' || tension.phase === 'FALLOUT')
         ? 'high'
-        : tension.phase === 'BUILD'
+        : (tension.phase === 'BUILD' || tension.phase === 'GROWTH' || tension.phase === 'RELEASE')
             ? 'mid'
             : 'low';
     tensionIconEl.className = `tension-icon tension-${iconPhase}`;
+    tensionIconEl.style.transform = `scale(${1 + energy * 0.4})`;
 }
 
 function setMoonDebug(dbgMoonEl, debug, options) {
@@ -95,6 +106,8 @@ export function createAudioStateRenderer({ audio, elements = {}, options = {} } 
             dbgMoonRate: dbgMoonRateEl,
             tensionFill: tensionFillEl,
             tensionIcon: tensionIconEl,
+            tensionVal: tensionValEl,
+            container: containerEl,
         } = elements;
 
         const playing = state?.playing ?? !!audio?.playing;
@@ -102,8 +115,7 @@ export function createAudioStateRenderer({ audio, elements = {}, options = {} } 
         const melody = state?.melody ?? audio?.getMelodyState?.() ?? {};
         const debug = state?.debug ?? audio?.getDebugState?.() ?? {};
         const tension = state?.tension || DEFAULT_TENSION;
-
-        setTensionUI(tensionFillEl, tensionIconEl, tension);
+        setTensionUI(tensionFillEl, tensionIconEl, tensionValEl, tension, containerEl || document.body);
 
         if (playing) {
             if (chordEl && chordEl.textContent !== chord) {

@@ -8,6 +8,8 @@ export function fireClimaxEvent(engine, p, dest) {
     const ratios = profile.climaxRatios || DEFAULT_TENSION_PROFILE.climaxRatios;
     ratios.forEach((ratio, i) => {
         const o = ctx.createOscillator();
+        const fmMod = ctx.createOscillator(); // FM cluster modulator
+        const fmGain = ctx.createGain();
         const g = ctx.createGain();
         const pan = ctx.createStereoPanner();
         o.type = engine._resolveOscType(p.ac.padWave);
@@ -17,17 +19,25 @@ export function fireClimaxEvent(engine, p, dest) {
             : 0;
 
         const now = ctx.currentTime + i * profile.climaxSpacing;
+
+        fmMod.type = 'sine';
+        fmMod.frequency.value = base * ratio * 2.14; // inharmonic crunch
+        fmGain.gain.setValueAtTime(0, now);
+        fmGain.gain.linearRampToValueAtTime(base * 4, now + 0.5); // fast swell FM
+        fmGain.gain.exponentialRampToValueAtTime(0.01, now + profile.climaxHold);
+        fmMod.connect(fmGain); fmGain.connect(o.frequency);
+
         g.gain.setValueAtTime(0, now);
-        g.gain.linearRampToValueAtTime(profile.climaxGain, now + 2.5);
-        g.gain.linearRampToValueAtTime(profile.climaxGain, now + profile.climaxHold);
+        g.gain.linearRampToValueAtTime(profile.climaxGain * 0.75, now + 2.5); // dip overall gain slightly
+        g.gain.linearRampToValueAtTime(profile.climaxGain * 0.75, now + profile.climaxHold);
         g.gain.linearRampToValueAtTime(0, now + profile.climaxRelease);
 
         o.connect(pan);
         pan.connect(g);
         g.connect(dest);
-        o.start(now);
-        o.stop(now + profile.climaxRelease + 1);
-        engine.nodes.push(o, g, pan);
+        fmMod.start(now); fmMod.stop(now + profile.climaxRelease + 1);
+        o.start(now); o.stop(now + profile.climaxRelease + 1);
+        engine.nodes.push(o, fmMod, fmGain, g, pan);
     });
 
     // Brief master swell.
@@ -117,6 +127,11 @@ export function startTensionArcLoop(engine, p, filt) {
             engine.tensionFilt.frequency.linearRampToValueAtTime(
                 Math.max(20, newFiltFreq), ctx.currentTime + 2
             );
+            if (engine.tensionFilt.Q) {
+                engine.tensionFilt.Q.linearRampToValueAtTime(
+                    Math.max(0.7, 1.0 + Math.pow(state.energy, 2) * 5.0), ctx.currentTime + 2
+                );
+            }
         }
         if (engine.fmModGainNode && engine.fmIndexBase) {
             const newIndex = engine.fmIndexBase * (1 + tSq * profile.fmMul);

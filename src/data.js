@@ -35,6 +35,48 @@ export const AUDIO_CONFIGS = {
     crystalloid: { chordAudibility: 0.6, droneWave: 'triangle', padWave: 'sine', reverbMul: 2.0, filterBase: 2400, delayFb: 0.55, lfoMul: 0.8, noiseMul: 0.4, melodyOcts: [3, 4, 5], melodyWaves: ['marimba', 'crystal_chimes', 'granular_cloud'], octScale: 3, fmRatio: 3.14, fmIndex: 50, grainDensity: 4.0, grainPitchScatter: 10, grainSize: 40, chorusWet: 0.50, chorusDepth: 8, sidechainAmt: 0.10, swing: 0.05, velocityVar: 0.20, chordProb: 0.50, arpProb: 0.35, pitchBend: 5, percVoices: ['cowbell', 'clave'], melFiltFreq: 6500, melFiltQ: 1.2, stepCount: 16, melodyDensity: 0.12 },
 };
 
+export const V2_RICHNESS_BASELINE = {
+    crystalline: { harmonicity: 0.84, brightness: 0.72, density: 0.56 },
+    crystalloid: { harmonicity: 0.82, brightness: 0.7, density: 0.62 },
+    glacial: { harmonicity: 0.74, brightness: 0.66, density: 0.32 },
+    arctic: { harmonicity: 0.7, brightness: 0.64, density: 0.34 },
+    oceanic: { harmonicity: 0.78, brightness: 0.52, density: 0.58 },
+    ethereal: { harmonicity: 0.82, brightness: 0.68, density: 0.52 },
+    nebula: { harmonicity: 0.8, brightness: 0.66, density: 0.5 },
+    organic: { harmonicity: 0.68, brightness: 0.48, density: 0.62 },
+    fungal: { harmonicity: 0.6, brightness: 0.42, density: 0.64 },
+    desert: { harmonicity: 0.46, brightness: 0.4, density: 0.34 },
+    barren: { harmonicity: 0.34, brightness: 0.28, density: 0.24 },
+    volcanic: { harmonicity: 0.38, brightness: 0.3, density: 0.56 },
+    storm: { harmonicity: 0.32, brightness: 0.26, density: 0.7 },
+    corrupted: { harmonicity: 0.28, brightness: 0.22, density: 0.72 },
+    abyssal: { harmonicity: 0.36, brightness: 0.18, density: 0.52 },
+    psychedelic: { harmonicity: 0.62, brightness: 0.52, density: 0.64 },
+    quantum: { harmonicity: 0.56, brightness: 0.44, density: 0.68 },
+    default: { harmonicity: 0.58, brightness: 0.5, density: 0.5 },
+};
+
+export const V2_FX_LANE_BASELINE = {
+    crystalline: { organic: 0.28, harmonic: 0.72, synthetic: 0.36, contrast: 0.42 },
+    crystalloid: { organic: 0.24, harmonic: 0.76, synthetic: 0.44, contrast: 0.44 },
+    glacial: { organic: 0.2, harmonic: 0.64, synthetic: 0.28, contrast: 0.32 },
+    arctic: { organic: 0.22, harmonic: 0.62, synthetic: 0.3, contrast: 0.34 },
+    oceanic: { organic: 0.72, harmonic: 0.42, synthetic: 0.26, contrast: 0.3 },
+    organic: { organic: 0.78, harmonic: 0.34, synthetic: 0.2, contrast: 0.28 },
+    fungal: { organic: 0.76, harmonic: 0.36, synthetic: 0.22, contrast: 0.26 },
+    desert: { organic: 0.62, harmonic: 0.32, synthetic: 0.22, contrast: 0.32 },
+    volcanic: { organic: 0.38, harmonic: 0.24, synthetic: 0.68, contrast: 0.52 },
+    storm: { organic: 0.52, harmonic: 0.24, synthetic: 0.78, contrast: 0.58 },
+    corrupted: { organic: 0.34, harmonic: 0.18, synthetic: 0.84, contrast: 0.66 },
+    abyssal: { organic: 0.26, harmonic: 0.42, synthetic: 0.58, contrast: 0.5 },
+    ethereal: { organic: 0.3, harmonic: 0.66, synthetic: 0.38, contrast: 0.36 },
+    nebula: { organic: 0.26, harmonic: 0.62, synthetic: 0.54, contrast: 0.48 },
+    psychedelic: { organic: 0.36, harmonic: 0.48, synthetic: 0.72, contrast: 0.52 },
+    quantum: { organic: 0.22, harmonic: 0.52, synthetic: 0.86, contrast: 0.62 },
+    barren: { organic: 0.12, harmonic: 0.28, synthetic: 0.18, contrast: 0.2 },
+    default: { organic: 0.4, harmonic: 0.44, synthetic: 0.44, contrast: 0.4 },
+};
+
 
 export const BIOMES = [
     { id: 'crystalline', name: 'CRYSTALLINE VOID', desc: 'A world of permanent winter where time moves differently. Mathematical crystal formations stretch kilometres high.', colors: ['#0a1a3a', '#0d2f5c', '#1a4a7a', '#2a6aa5', '#4fc3f7'], glowColor: '#4fc3f7', soundProfile: 'SPARSE · GLACIAL · RESONANT', atmosphere: 'THIN  NITROGEN-METHANE', reverbLabel: 'CATHEDRAL — 12s' },
@@ -117,7 +159,14 @@ export const CHORD_TEMPLATES = {
     'IV': [5, 9, 12],   // Subdominant
     'V': [7, 11, 14],   // Dominant
     'vi': [9, 12, 16],   // Submediant
-    'vii°': [11, 14, 17] // Leading tone (diminished)
+    'vii°': [11, 14, 17], // Leading tone (diminished)
+    'i': [0, 3, 7],     // Tonic minor
+    'III': [4, 8, 11],  // Major mediant
+    'iv': [5, 8, 12],   // Subdominant minor
+    'v': [7, 10, 14],   // Dominant minor
+    'VI': [9, 13, 16],  // Submediant major
+    'bVI': [8, 12, 15], // Flat Submediant
+    'bVII': [10, 14, 17] // Flat Subtonic
 };
 
 export const PROGRESSIONS = [
@@ -128,4 +177,14 @@ export const PROGRESSIONS = [
     ['vi', 'IV', 'I', 'V'],   // Emotional/Melancholic
     ['I', 'V', 'ii', 'IV'],   // Modern ethereal
     ['I', 'iii', 'vi', 'IV'], // Uplifting
+
+    // Extended & 8-chord sequences
+    ['I', 'vi', 'IV', 'iv', 'I', 'III', 'vi', 'V'],
+    ['vi', 'v', 'IV', 'I', 'ii', 'vi', 'bVII', 'V'],
+    ['I', 'IV', 'vi', 'V', 'bVI', 'bVII', 'I', 'I'],
+    ['i', 'bVI', 'III', 'bVII', 'iv', 'i', 'VI', 'V'],
+    ['I', 'iii', 'IV', 'iv', 'I', 'V', 'vi', 'IV'],
+
+    // Long generative arks
+    ['I', 'V', 'vi', 'iii', 'IV', 'I', 'ii', 'V', 'I', 'vi', 'IV', 'V', 'iii', 'vi', 'ii', 'V'],
 ];

@@ -1,10 +1,21 @@
 // ============================================================
 // PLANET GENERATOR
 // ============================================================
-import { GLYPHS, BIOMES, SCALES, ROOT_NOTES, AUDIO_CONFIGS, TUNING_SYSTEMS, PROGRESSIONS } from './data.js';
+import {
+    GLYPHS,
+    BIOMES,
+    SCALES,
+    ROOT_NOTES,
+    AUDIO_CONFIGS,
+    TUNING_SYSTEMS,
+    PROGRESSIONS,
+    V2_RICHNESS_BASELINE,
+    V2_FX_LANE_BASELINE,
+} from './data.js';
 import { RNG, hashAddress } from './rng.js';
 import { computePlanetRarity } from './rarity.js';
 import { buildIdentityProfile } from './audio/v1-plus/identity-profile.js';
+import { mapDroneMacrosToExpert, DEFAULT_DRONE_EXPERT } from './audio/v2/drone/drone-macro-map.js';
 
 const BIOME_MOON_BIAS = {
     abyssal: 0.26,
@@ -38,6 +49,9 @@ const ADVANCED_MELODY_VOICE_POOLS = {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const round3 = (value) => Math.round(value * 1000) / 1000;
+const HARSH_BIOMES = new Set(['storm', 'volcanic', 'corrupted']);
+const DARK_BIOMES = new Set(['abyssal', 'storm', 'corrupted', 'volcanic', 'barren']);
 
 function deriveMoonCount(rng, biomeId) {
     const roll = clamp(rng.range(0, 1) + (BIOME_MOON_BIAS[biomeId] || 0), 0, 1);
@@ -79,9 +93,161 @@ function injectAdvancedVoices(ac, biomeId, rarityScore, rng) {
     ac.melodyWaves = Array.from(uniqueWaves).slice(0, 7);
 }
 
-function buildV2Genes(seed, biomeId, rarityScore, moonSystem, rng) {
+function buildRichnessProfile(seed, biomeId, rarityScore, moonSystem) {
+    const base = V2_RICHNESS_BASELINE[biomeId] || V2_RICHNESS_BASELINE.default;
+    const rng = new RNG((seed + 245003) >>> 0);
+    const moonDensity = clamp(moonSystem?.density ?? 0.5, 0, 1);
+    const moonResonance = clamp(moonSystem?.resonance ?? 0.45, 0, 1);
+    const moonDrift = clamp(moonSystem?.temporalDrift ?? 0.25, 0, 1);
+    const harmonicity = clamp(
+        base.harmonicity
+        + rarityScore * 0.2
+        + (moonResonance - 0.5) * 0.24
+        + rng.range(-0.06, 0.06),
+        0,
+        1,
+    );
+    const brightness = clamp(
+        base.brightness
+        + (rarityScore - 0.5) * 0.16
+        + (moonDrift - 0.35) * 0.18
+        + rng.range(-0.07, 0.07),
+        0,
+        1,
+    );
+    const density = clamp(
+        base.density
+        + (moonDensity - 0.5) * 0.34
+        + rarityScore * 0.16
+        + rng.range(-0.08, 0.08),
+        0,
+        1,
+    );
+
+    let richnessScore = harmonicity * 0.42 + density * 0.4 + brightness * 0.18;
+    if (DARK_BIOMES.has(biomeId)) richnessScore -= 0.04;
+    const tier = richnessScore < 0.42 ? 'sparse' : richnessScore > 0.68 ? 'lush' : 'balanced';
+
+    return {
+        tier,
+        harmonicity: round3(harmonicity),
+        brightness: round3(brightness),
+        density: round3(density),
+    };
+}
+
+function buildFxProfile(seed, biomeId, richnessProfile, moonSystem) {
+    const base = V2_FX_LANE_BASELINE[biomeId] || V2_FX_LANE_BASELINE.default;
+    const rng = new RNG((seed + 257111) >>> 0);
+    const phaseWarp = clamp(moonSystem?.phaseWarp ?? 0.4, 0, 1);
+    const orbitSpread = clamp(moonSystem?.orbitSpread ?? 0.45, 0, 1);
+    const temporalDrift = clamp(moonSystem?.temporalDrift ?? 0.25, 0, 1);
+    const tier = richnessProfile?.tier || 'balanced';
+
+    let organic = base.organic + (orbitSpread - 0.5) * 0.24 + rng.range(-0.06, 0.06);
+    let harmonic = base.harmonic + (richnessProfile?.harmonicity ?? 0.5) * 0.22 + rng.range(-0.05, 0.05);
+    let synthetic = base.synthetic + (phaseWarp - 0.4) * 0.3 + rng.range(-0.06, 0.06);
+    let contrast = base.contrast + (temporalDrift - 0.35) * 0.2 + rng.range(-0.05, 0.05);
+
+    if (tier === 'lush') {
+        organic += 0.06;
+        harmonic += 0.1;
+        synthetic += 0.05;
+        contrast += 0.04;
+    } else if (tier === 'sparse') {
+        organic -= 0.06;
+        harmonic -= 0.08;
+        synthetic -= 0.06;
+        contrast -= 0.06;
+    }
+
+    return {
+        organic: round3(clamp(organic, 0, 1)),
+        harmonic: round3(clamp(harmonic, 0, 1)),
+        synthetic: round3(clamp(synthetic, 0, 1)),
+        contrast: round3(clamp(contrast, 0, 1)),
+    };
+}
+
+function generateExpertSeeds(biomeId, rng, richnessTier = 'balanced') {
+    const isDark = DARK_BIOMES.has(biomeId);
+    const isHarsh = HARSH_BIOMES.has(biomeId);
+    const isEthereal = ['ethereal', 'nebula', 'quantum', 'psychedelic'].includes(biomeId);
+    const sourcePool = isHarsh
+        ? (richnessTier === 'lush' ? ['supersaw', 'hybrid', 'wavetable'] : ['hybrid', 'supersaw', 'sine'])
+        : (richnessTier === 'sparse'
+            ? (isEthereal ? ['wavetable', 'sine', 'hybrid'] : ['sine', 'hybrid', 'wavetable'])
+            : (isEthereal ? ['wavetable', 'hybrid', 'sine'] : ['hybrid', 'sine', 'wavetable']));
+
+    return {
+        expertPriority: 'macro', // Default to macro mix
+        sourceMode: rng.pick(sourcePool),
+        filterType: isDark
+            ? (isHarsh ? rng.pick(['bandpass', 'notch', 'lowpass']) : rng.pick(['lowpass', 'notch']))
+            : isEthereal
+                ? 'notch'
+                : 'lowpass',
+        looperSource: rng.range(0, 1) > 0.7 ? 'post' : 'pre',
+        varispeed: rng.range(0.85, 1.15) * (isDark ? 0.82 : 1) * (richnessTier === 'sparse' ? 0.94 : 1),
+        echoTone: rng.range(0.3, 0.7),
+        ambienceDecay: clamp((isEthereal ? 0.8 : 0.52) + (richnessTier === 'lush' ? 0.08 : richnessTier === 'sparse' ? -0.06 : 0), 0.3, 0.92),
+    };
+}
+
+function buildV2Genes(seed, biomeId, rarityScore, moonSystem, richnessProfile, fxProfile, rng) {
     const bias = (biomeId === 'quantum' || biomeId === 'corrupted' || biomeId === 'storm') ? 0.14 : 0;
     const clampGene = (value) => Math.round(clamp(value, 0, 1) * 1000) / 1000;
+    const tier = richnessProfile?.tier || 'balanced';
+    const densityBias = tier === 'lush' ? 0.1 : tier === 'sparse' ? -0.1 : 0;
+    const harmonicBias = (richnessProfile?.harmonicity ?? 0.5) * 0.16 - 0.08;
+    const fxSyntheticBias = (fxProfile?.synthetic ?? 0.4) * 0.18 - 0.09;
+
+    let dream = 0.5, texture = 0.5, motion = 0.5, resonance = 0.5, diffusion = 0.5, tail = 0.5;
+    switch (biomeId) {
+        case 'volcanic':
+        case 'storm':
+            motion = 0.8; texture = 0.7; dream = 0.2; diffusion = 0.3; resonance = 0.8; tail = 0.4;
+            break;
+        case 'oceanic':
+        case 'abyssal':
+            dream = 0.9; diffusion = 0.9; tail = 0.8; motion = 0.4; texture = 0.2; resonance = 0.3;
+            break;
+        case 'crystalline':
+        case 'crystalloid':
+            resonance = 0.9; texture = 0.8; dream = 0.6; motion = 0.3; diffusion = 0.7; tail = 0.9;
+            break;
+        case 'glacial':
+        case 'arctic':
+            dream = 0.8; texture = 0.3; motion = 0.2; resonance = 0.7; diffusion = 0.8; tail = 0.7;
+            break;
+        case 'quantum':
+        case 'corrupted':
+        case 'psychedelic':
+            motion = 0.9; texture = 0.9; resonance = 0.6; diffusion = 0.6; dream = 0.4; tail = 0.5;
+            break;
+        case 'barren':
+        case 'desert':
+            dream = 0.3; texture = 0.8; motion = 0.1; resonance = 0.4; diffusion = 0.2; tail = 0.3;
+            break;
+        case 'organic':
+        case 'fungal':
+            texture = 0.7; motion = 0.6; resonance = 0.6; dream = 0.5; diffusion = 0.4; tail = 0.4;
+            break;
+        case 'ethereal':
+        case 'nebula':
+        default:
+            dream = 0.8; diffusion = 0.8; resonance = 0.5; motion = 0.5; texture = 0.4; tail = 0.8;
+            break;
+    }
+    const defaultDroneMacros = {
+        dream: clampGene(dream + harmonicBias + rng.range(-0.12, 0.12)),
+        texture: clampGene(texture + densityBias * 0.8 + rng.range(-0.12, 0.12)),
+        motion: clampGene(motion + fxSyntheticBias + rng.range(-0.12, 0.12)),
+        resonance: clampGene(resonance + harmonicBias * 0.7 + rng.range(-0.12, 0.12)),
+        diffusion: clampGene(diffusion + (tier === 'lush' ? 0.08 : tier === 'sparse' ? -0.05 : 0) + rng.range(-0.12, 0.12)),
+        tail: clampGene(tail + (tier === 'lush' ? 0.06 : tier === 'sparse' ? -0.06 : 0) + rng.range(-0.12, 0.12)),
+    };
+
     return {
         formGenome: clampGene(0.24 + rarityScore * 0.52 + rng.range(-0.08, 0.12)),
         timbreGenome: clampGene(0.3 + rarityScore * 0.48 + rng.range(-0.1, 0.14)),
@@ -100,6 +266,16 @@ function buildV2Genes(seed, biomeId, rarityScore, moonSystem, rng) {
             mod: clampGene(0.2 + (moonSystem?.phaseWarp || 0.4) * 0.5 + rng.range(-0.1, 0.12) + bias * 0.2),
             randomizer: clampGene(0.12 + rarityScore * 0.4 + rng.range(-0.08, 0.14)),
         },
+        defaultDroneMacros,
+        defaultDroneExpert: mapDroneMacrosToExpert(defaultDroneMacros, DEFAULT_DRONE_EXPERT, {
+            profile: clampGene(0.26 + rarityScore * 0.42 + rng.range(-0.1, 0.14)),
+            mod: clampGene(0.2 + (moonSystem?.phaseWarp || 0.4) * 0.5 + rng.range(-0.1, 0.12)),
+            resonator: clampGene(0.2 + (moonSystem?.resonance || 0.4) * 0.44 + rng.range(-0.1, 0.14)),
+            ambience: clampGene(0.28 + (moonSystem?.temporalDrift || 0.25) * 0.42 + rng.range(-0.08, 0.12)),
+            echo: clampGene(0.24 + (moonSystem?.orbitSpread || 0.45) * 0.38 + rng.range(-0.1, 0.16)),
+        }),
+        richnessProfile,
+        fxProfile,
     };
 }
 
@@ -177,6 +353,12 @@ export function generatePlanet(address) {
     for (let i = 0; i < percCount; i++) uniquePercs.add(rng.pick(extraPercPool));
     ac.percVoices = Array.from(uniquePercs);
 
+    // Initial draft melody density for subsystems
+    const rawMelodyDensity = clamp((baseAc.melodyDensity || 0.05) * rng.range(0.5, 2.0), 0.01, 0.35);
+
+    // Finalize synthesis before rarity
+    injectAdvancedVoices(ac, biome.id, 0.5, rng); // Use 0.5 as proxy for first pass
+
     const rarity = computePlanetRarity({
         seed,
         address: safeAddress,
@@ -184,16 +366,24 @@ export function generatePlanet(address) {
         numMoons,
         scale,
         progression,
-        ac,
+        ac, // Uses finalized voices
         tuningSystem,
         quarterToneProb,
         octaveStretch,
     });
 
-    const melodyDensity = clamp((baseAc.melodyDensity || 0.05) * rng.range(0.5, 2.0) * (0.96 + rarity.score * 0.14), 0.01, 0.35);
-    injectAdvancedVoices(ac, biome.id, rarity.score, rng);
+    const melodyDensity = clamp(rawMelodyDensity * (0.96 + rarity.score * 0.14), 0.01, 0.35);
     const moonSystem = buildMoonSystem(seed, biome.id, numMoons, rarity.score);
-    const v2 = buildV2Genes(seed, biome.id, rarity.score, moonSystem, new RNG(seed + 220003));
+    const richnessProfile = buildRichnessProfile(seed, biome.id, rarity.score, moonSystem);
+    const fxProfile = buildFxProfile(seed, biome.id, richnessProfile, moonSystem);
+    const v2 = buildV2Genes(seed, biome.id, rarity.score, moonSystem, richnessProfile, fxProfile, new RNG(seed + 220003));
+
+    // LINK PACE TO MOD RATE
+    const paceScore = moonSystem?.temporalDrift || 0.5;
+    v2.droneGenome.mod = clamp(v2.droneGenome.mod * 0.7 + paceScore * 0.3, 0, 1);
+
+    const expertSeeds = generateExpertSeeds(biome.id, new RNG(seed + 44005), richnessProfile.tier);
+
     const identityProfile = buildIdentityProfile({
         seed,
         biome,
@@ -265,6 +455,7 @@ export function generatePlanet(address) {
         rarityKey: rarity.key,
         rarityScore: rarity.score,
         v2,
+        expertSeeds,
         useJI: tuningRatios !== null,
         jiRatios: tuningRatios || TUNING_SYSTEMS.Just,
         motifBank,

@@ -63,6 +63,7 @@ describe('AudioEngine API contract', () => {
         expect(lastState).toHaveProperty('chord');
         expect(lastState).toHaveProperty('engineMode');
         expect(lastState).toHaveProperty('section');
+        expect(lastState).toHaveProperty('sectionProgress');
         expect(lastState).toHaveProperty('arrangementEnergy');
         expect(lastState).toHaveProperty('voiceBudget');
         expect(lastState).toHaveProperty('voiceStealCount');
@@ -91,6 +92,7 @@ describe('AudioEngine API contract', () => {
         expect(lastState.debug).toHaveProperty('schedulerHorizonMs');
         expect(lastState.debug).toHaveProperty('schedulerLateCallbacks');
         expect(lastState.debug).toHaveProperty('schedulerMaxLateMs');
+        expect(lastState.debug).toHaveProperty('sectionProgress');
         expect(lastState.debug).toHaveProperty('paceClass');
         expect(lastState.debug).toHaveProperty('microtonalDepth');
         expect(lastState.debug).toHaveProperty('droneAudibilityDb');
@@ -148,7 +150,12 @@ describe('AudioEngine API contract', () => {
         engine.setDroneVolume(0.88);
         const randomized = engine.setDroneRandomizer({ target: 'fx', intensity: 0.3, action: 'apply' });
         expect(randomized).toBeTruthy();
-        expect(engine.getDroneState()).toBeTruthy();
+        const droneState = engine.getDroneState();
+        expect(droneState).toBeTruthy();
+        expect(droneState).toHaveProperty('continuityHealth');
+        expect(droneState).toHaveProperty('bedMode');
+        expect(droneState).toHaveProperty('supersawShare');
+        expect(droneState).toHaveProperty('richnessTier');
         expect(events.some((event) => event.type === 'drone-macros')).toBe(true);
         expect(events.some((event) => event.type === 'drone-expert')).toBe(true);
         expect(events.some((event) => event.type === 'drone-volume')).toBe(true);
@@ -188,5 +195,60 @@ describe('AudioEngine API contract', () => {
         expect(diagV2).toBeTruthy();
         expect(diagV2.overlayFlags.adaptivePercussion).toBe(false);
         expect(diagV2.paceOverride).toBe('fast');
+    });
+
+    it('uses smoothed tension telemetry state when running in v2 mode', () => {
+        const engine = new AudioEngine();
+        engine.setEngineMode('v2');
+        const syntheticV2State = {
+            section: 'SURGE',
+            sectionProgress: 0.58,
+            arrangementEnergy: 0.84,
+            voiceBudget: 64,
+            voiceStealCount: 0,
+            eventRate: 0,
+            cpuClass: 'desktop-mid',
+            cpuTier: 'desktop-mid',
+            degradeStage: 'full',
+            backgroundMode: 'foreground-realtime',
+            backgroundPolicy: 'realtime',
+            backgroundTimelineRemainingMs: 0,
+            featureFlags: {
+                granular: true,
+                percussion: true,
+                chords: true,
+                arp: true,
+                motif: true,
+            },
+            effectiveFlags: {
+                granular: true,
+                percussion: true,
+                chords: true,
+                arp: true,
+                motif: true,
+            },
+            identityProfileId: 'synthetic',
+            paceClass: 'medium',
+            microtonalDepth: 0.2,
+            droneAudibilityDb: -18,
+            moonActivityRate: 0.1,
+            harmonyHoldBarsCurrent: 3,
+            compositionDensity: 0.42,
+            drone: { ...engine._droneState },
+            mix: { ...engine._mixTelemetry },
+            quality: { ...engine._qualityTelemetry },
+        };
+        engine._tensionState = { phase: 'BUILD', energy: 0.52, cyclePos: 0.4, pocket: 0.5 };
+        engine._v2Engine.getState = () => syntheticV2State;
+
+        const state = engine._snapshotState();
+        const debug = engine.getDebugState();
+
+        expect(state.tension.phase).toBe('BUILD');
+        expect(state.tension.energy).toBeCloseTo(0.52, 6);
+        expect(state.sectionProgress).toBeCloseTo(0.58, 6);
+        expect(debug.tensionPhase).toBe('BUILD');
+        expect(debug.tensionEnergy).toBeCloseTo(0.52, 6);
+        expect(debug.sectionProgress).toBeCloseTo(0.58, 6);
     });
 });

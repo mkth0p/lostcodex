@@ -64,6 +64,18 @@ const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
 const SCHEDULER_HORIZON_SEC = 0.12;
 
+function mapV2SectionToLegacyTensionPhase(section = 'INTRO') {
+    switch (section) {
+        case 'GROWTH': return 'BUILD';
+        case 'SURGE': return 'SURGE';
+        case 'RELEASE': return 'BUILD';
+        case 'AFTERGLOW': return 'DORMANT';
+        case 'INTRO':
+        default:
+            return 'DORMANT';
+    }
+}
+
 const NATIVE_OSC_TYPES = new Set(['sine', 'square', 'sawtooth', 'triangle']);
 const OSC_TYPE_FALLBACKS = {
     bell: 'sine',
@@ -165,6 +177,10 @@ export class AudioEngine {
             ambienceDepth: 0,
             modAmount: 0,
             randomizerDepth: 0,
+            continuityHealth: 1,
+            bedMode: 'persistent',
+            supersawShare: 0,
+            richnessTier: 'balanced',
             degradeStage: 'full',
         };
         this._mixTelemetry = {
@@ -330,11 +346,18 @@ export class AudioEngine {
             cpuTier: v2State.cpuTier || this._qualityTelemetry.cpuTier,
             degradeStage: v2State.degradeStage || this._qualityTelemetry.degradeStage,
         };
+        const tensionPhase = this._engineMode === 'v2'
+            ? (this._tensionState?.phase || mapV2SectionToLegacyTensionPhase(v2State.section || 'INTRO'))
+            : (this._tensionState?.phase || 'DORMANT');
+        const tensionEnergy = this._engineMode === 'v2'
+            ? (Number.isFinite(this._tensionState?.energy) ? this._tensionState.energy : (Number.isFinite(v2State.arrangementEnergy) ? v2State.arrangementEnergy : 0))
+            : (this._tensionState?.energy || 0);
 
         return {
             transport,
             engineMode: this._engineMode,
             section: v2State.section,
+            sectionProgress: v2State.sectionProgress ?? 0,
             arrangementEnergy: v2State.arrangementEnergy,
             voiceBudget: v2State.voiceBudget,
             voiceStealCount: v2State.voiceStealCount,
@@ -358,8 +381,8 @@ export class AudioEngine {
             mix: this._mixTelemetry,
             quality: this._qualityTelemetry,
             tension: {
-                phase: this._tensionState?.phase || 'DORMANT',
-                energy: this._tensionState?.energy || 0,
+                phase: tensionPhase,
+                energy: tensionEnergy,
             },
             melody: this.getMelodyState(),
             debug: this.getDebugState(),
@@ -1506,6 +1529,12 @@ export class AudioEngine {
         const moonLastProcAgoMs = Number.isFinite(this._lastMoonProcAt)
             ? Math.max(0, Math.round((now - this._lastMoonProcAt) * 1000))
             : null;
+        const tensionPhase = this._engineMode === 'v2'
+            ? (this._tensionState?.phase || mapV2SectionToLegacyTensionPhase(v2State.section || 'INTRO'))
+            : (this._tensionState?.phase || 'DORMANT');
+        const tensionEnergy = this._engineMode === 'v2'
+            ? (Number.isFinite(this._tensionState?.energy) ? this._tensionState.energy : (Number.isFinite(v2State.arrangementEnergy) ? v2State.arrangementEnergy : 0))
+            : (this._tensionState?.energy || 0);
         return {
             activeNodes: this.nodes?.size || 0,
             load: perf?.pressure || 0,
@@ -1517,6 +1546,7 @@ export class AudioEngine {
             schedulerLateCallbacks: schedulerStats?.lateCallbacks || 0,
             schedulerMaxLateMs: schedulerStats ? Math.round(schedulerStats.maxLateMs || 0) : 0,
             section: v2State.section,
+            sectionProgress: v2State.sectionProgress ?? 0,
             arrangementEnergy: v2State.arrangementEnergy,
             voiceBudget: v2State.voiceBudget,
             voiceStealCount: v2State.voiceStealCount,
@@ -1524,8 +1554,8 @@ export class AudioEngine {
             cpuClass: v2State.cpuClass,
             cpuTier: v2State.cpuTier || this._qualityTelemetry.cpuTier,
             degradeStage: v2State.degradeStage || this._qualityTelemetry.degradeStage,
-            tensionPhase: this._tensionState?.phase || 'DORMANT',
-            tensionEnergy: this._tensionState?.energy || 0,
+            tensionPhase,
+            tensionEnergy,
             cycleSteps: transport?.cycleSteps || 0,
             stepMs: transport ? Math.round(transport.stepMs) : 0,
             bpm: transport?.bpm || 0,

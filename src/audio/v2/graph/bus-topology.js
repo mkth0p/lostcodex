@@ -32,13 +32,13 @@ export function createBusTopology(host, planet, { layerMix = {}, macroSpace = 0.
     dry.gain.value = clamp(0.58 + (1 - host._reverb) * 0.18, 0.48, 0.84);
 
     const layerTrim = {
-        drones: 0.92,
-        pads: 0.82,
-        melody: 0.82,
-        bass: 0.68,
-        percussion: 0.3,
-        ambience: 0.76,
-        fx: 0.3,
+        drones: 0.76,
+        pads: 0.9,
+        melody: 0.96,
+        bass: 0.74,
+        percussion: 0.5,
+        ambience: 0.82,
+        fx: 0.46,
     };
 
     const makeLayer = (name, base = 0.6) => {

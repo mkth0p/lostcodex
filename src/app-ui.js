@@ -6,7 +6,7 @@ import { Starfield } from './starfield.js';
 import { AudioReactiveEcosystem } from './visualizer.js';
 import { WarpRenderer } from './warp.js';
 import { encodeAddress, decodeAddress } from './ui/shared/address-codec.js';
-import { bindAudioEngineControls } from './ui/shared/audio-controls.js';
+import { bindAudioEngineControls, syncDroneUiToPlanet } from './ui/shared/audio-controls.js';
 import { createAudioStateRenderer } from './ui/shared/audio-state-ui.js';
 import { createAudioEventConsole } from './ui/shared/audio-event-console.js';
 import { fillSlider } from './ui/shared/slider-fill.js';
@@ -139,6 +139,7 @@ export class App {
         this.tensionEls = {
             fill: document.getElementById('tension-fill'),
             icon: document.getElementById('tension-icon'),
+            val: document.getElementById('tension-val'),
         };
         this._renderAudioState = createAudioStateRenderer({
             audio: this.audio,
@@ -152,13 +153,10 @@ export class App {
                 dbgNodes: this.debugEls.nodes,
                 dbgLoad: this.debugEls.load,
                 dbgStep: this.debugEls.step,
-                dbgPace: document.getElementById('dbg-pace'),
-                dbgHold: document.getElementById('dbg-hold'),
-                dbgMicro: document.getElementById('dbg-micro'),
-                dbgDroneAud: document.getElementById('dbg-drone-aud'),
-                dbgMoonRate: document.getElementById('dbg-moon-rate'),
                 tensionFill: this.tensionEls.fill,
                 tensionIcon: this.tensionEls.icon,
+                tensionVal: this.tensionEls.val,
+                container: document.querySelector('.main'),
             },
             options: {
                 chordScale: 1.2,
@@ -212,6 +210,7 @@ export class App {
         if (!this.address) this._randomAddress();
         const planet = generatePlanet(this.address);
         this.planet = planet;
+        syncDroneUiToPlanet(planet, (id) => document.getElementById(id), this.audio, (el) => this._fillSlider(el));
 
         // Warp animation tied to biome color
         if (this.warpR) this.warpR.trigger(planet.biome.glowColor);
@@ -350,7 +349,7 @@ export class App {
         const url = window.location.href;
         const icon = document.getElementById('share-icon');
         const text = document.getElementById('share-text');
-        
+
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url).then(() => {
                 // Success feedback

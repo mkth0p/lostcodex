@@ -4,7 +4,7 @@ import { GLYPHS } from './data.js';
 import { decodeAddress, encodeAddress } from './ui/shared/address-codec.js';
 import { randomAddress as buildRandomAddress } from './ui/shared/address-utils.js';
 import { isBookmarked, loadBookmarks, saveBookmarks, toggleBookmark } from './ui/shared/bookmarks.js';
-import { bindAudioEngineControls } from './ui/shared/audio-controls.js';
+import { bindAudioEngineControls, syncDroneUiToPlanet } from './ui/shared/audio-controls.js';
 import { createAudioStateRenderer } from './ui/shared/audio-state-ui.js';
 import { createAudioEventConsole } from './ui/shared/audio-event-console.js';
 import { fillSlider } from './ui/shared/slider-fill.js';
@@ -157,6 +157,7 @@ function navigate() {
     if (!address) randomAddress();
     planet = generatePlanet(address);
     updatePlanetInfo(planet);
+    syncDroneUiToPlanet(planet, $, audio, fillSlider);
 
     if (!history.includes(address)) {
         history.unshift(address);
@@ -491,6 +492,8 @@ function initStateSubscription() {
                 dbgMoon: $('dbg-moon'),
                 tensionFill: $('tension-fill'),
                 tensionIcon: $('tension-icon'),
+                tensionVal: $('tension-val'),
+                container: document.body,
             },
             options: {
                 chordScale: 1.1,

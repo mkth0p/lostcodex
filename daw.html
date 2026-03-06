@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LostCodex Workstation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./daw.css">
+</head>
+
+<body>
+    <div class="bg-orb bg-orb-a"></div>
+    <div class="bg-orb bg-orb-b"></div>
+    <main class="workstation">
+        <header class="panel topbar">
+            <div>
+                <p class="eyebrow">LostCodex</p>
+                <h1>Voice Workstation</h1>
+            </div>
+            <div class="project-block">
+                <label for="project-name">Project</label>
+                <input id="project-name" type="text" value="Untitled Orbit">
+            </div>
+            <div class="playhead-block">
+                <span id="playhead-step">Step 01 / 16</span>
+                <span id="transport-status">Stopped</span>
+            </div>
+        </header>
+
+        <section class="panel transport-grid" aria-label="Transport and mix controls">
+            <button id="transport-toggle" class="btn btn-primary" type="button">Play</button>
+            <button id="transport-stop" class="btn" type="button">Stop</button>
+            <button id="transport-panic" class="btn" type="button">Panic</button>
+
+            <label class="control">
+                <span>BPM</span>
+                <input id="bpm" type="range" min="50" max="180" step="1" value="112">
+                <output id="bpm-value">112</output>
+            </label>
+
+            <label class="control">
+                <span>Swing</span>
+                <input id="swing" type="range" min="0" max="0.4" step="0.01" value="0.08">
+                <output id="swing-value">8%</output>
+            </label>
+
+            <label class="control">
+                <span>Master</span>
+                <input id="master-volume" type="range" min="0" max="1.2" step="0.01" value="0.88">
+                <output id="master-volume-value">88%</output>
+            </label>
+
+            <label class="control">
+                <span>Master Drive</span>
+                <input id="master-drive" type="range" min="0" max="1" step="0.01" value="0.15">
+                <output id="master-drive-value">15%</output>
+            </label>
+
+            <label class="control">
+                <span>Compressor</span>
+                <input id="master-compress" type="range" min="0" max="1" step="0.01" value="0.4">
+                <output id="master-compress-value">40%</output>
+            </label>
+        </section>
+
+        <section class="panel fx-grid" aria-label="Global FX">
+            <h2>Global FX</h2>
+            <label class="control">
+                <span>Delay Time</span>
+                <input id="fx-delay-time" type="range" min="0.08" max="0.75" step="0.01" value="0.28">
+                <output id="fx-delay-time-value">0.28s</output>
+            </label>
+            <label class="control">
+                <span>Delay Feedback</span>
+                <input id="fx-delay-feedback" type="range" min="0" max="0.92" step="0.01" value="0.35">
+                <output id="fx-delay-feedback-value">35%</output>
+            </label>
+            <label class="control">
+                <span>Delay Tone</span>
+                <input id="fx-delay-tone" type="range" min="400" max="12000" step="10" value="4800">
+                <output id="fx-delay-tone-value">4.8kHz</output>
+            </label>
+            <label class="control">
+                <span>Reverb Mix</span>
+                <input id="fx-reverb-mix" type="range" min="0" max="1" step="0.01" value="0.28">
+                <output id="fx-reverb-mix-value">28%</output>
+            </label>
+            <label class="control">
+                <span>Reverb Size</span>
+                <input id="fx-reverb-size" type="range" min="0.8" max="4.8" step="0.1" value="2.8">
+                <output id="fx-reverb-size-value">2.8s</output>
+            </label>
+            <label class="control">
+                <span>Reverb Tone</span>
+                <input id="fx-reverb-tone" type="range" min="1200" max="12000" step="10" value="5200">
+                <output id="fx-reverb-tone-value">5.2kHz</output>
+            </label>
+        </section>
+
+        <section class="panel action-bar" aria-label="Project actions">
+            <button id="add-track" class="btn btn-primary" type="button">Add Track</button>
+            <button id="randomize" class="btn" type="button">Randomize</button>
+            <button id="clear-patterns" class="btn" type="button">Clear Patterns</button>
+            <button id="save-project" class="btn" type="button">Save Local</button>
+            <button id="load-project" class="btn" type="button">Load Local</button>
+            <button id="copy-json" class="btn" type="button">Copy JSON</button>
+            <button id="apply-json" class="btn" type="button">Apply JSON</button>
+            <span id="action-status" class="action-status">Ready</span>
+        </section>
+
+        <section id="track-list" class="track-list" aria-label="Tracks"></section>
+
+        <section class="panel json-panel">
+            <h2>Project JSON</h2>
+            <textarea id="project-json" spellcheck="false"></textarea>
+        </section>
+    </main>
+
+    <script type="module" src="./src/daw-workstation.js"></script>
+</body>
+
+</html>

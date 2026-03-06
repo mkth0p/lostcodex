@@ -7,6 +7,8 @@ import {
     normalizeDroneMacros,
     toDroneGenome,
 } from '../src/audio/v2/drone/drone-macro-map.js';
+import { DroneEngine } from '../src/audio/v2/drone/drone-engine.js';
+import { DroneQualityPolicy } from '../src/audio/v2/drone/drone-quality-policy.js';
 
 describe('v2 drone api utilities', () => {
     it('normalizes drone macro and expert control ranges', () => {
@@ -86,5 +88,53 @@ describe('v2 drone api utilities', () => {
         expect(genome.source).toBe(0);
         expect(genome.loop).toBe(0.5);
         expect(genome.filter).toBeGreaterThanOrEqual(0);
+    });
+
+    it('applies continuity-first degrade policy ordering', () => {
+        const policy = new DroneQualityPolicy();
+        const full = policy.resolve({ qualityScalar: 1, backgroundMode: 'foreground-realtime', cpuClass: 'desktop-high', richnessTier: 'lush' });
+        const reduced = policy.resolve({ qualityScalar: 0.48, backgroundMode: 'background-continuity', cpuClass: 'mobile-balanced', richnessTier: 'lush' });
+
+        expect(full.accentDensityMul).toBeGreaterThan(reduced.accentDensityMul);
+        expect(full.supersawMul).toBeGreaterThan(reduced.supersawMul);
+        expect(full.noiseMul).toBeGreaterThan(reduced.noiseMul);
+        expect(reduced.bedComplexity).toBeGreaterThan(0.45);
+    });
+
+    it('keeps continuity health stable for long sparse holds while penalizing true gaps', () => {
+        const healthyStub = {
+            ctx: { currentTime: 120 },
+            floor: { bus: { gain: { value: 0.08 } } },
+            continuity: { dropouts: 0, lastDropoutAt: Number.NEGATIVE_INFINITY, health: 1 },
+            lastScheduleTime: 88,
+            lastSection: 'AFTERGLOW',
+            richnessTier: 'sparse',
+        };
+        const poorStub = {
+            ctx: { currentTime: 140 },
+            floor: { bus: { gain: { value: 0.004 } } },
+            continuity: { dropouts: 2, lastDropoutAt: Number.NEGATIVE_INFINITY, health: 1 },
+            lastScheduleTime: 88,
+            lastSection: 'SURGE',
+            richnessTier: 'lush',
+        };
+
+        const healthy = DroneEngine.prototype._computeContinuityHealth.call(healthyStub, {
+            scheduleTime: 108,
+            previousScheduleTime: 88,
+            sceneCrossfadeSec: 2.2,
+            durationSec: 22,
+            sectionProgress: 0.8,
+        });
+        const poor = DroneEngine.prototype._computeContinuityHealth.call(poorStub, {
+            scheduleTime: 136,
+            previousScheduleTime: 88,
+            sceneCrossfadeSec: 0.8,
+            durationSec: 6,
+            sectionProgress: 0.2,
+        });
+
+        expect(healthy).toBeGreaterThan(0.7);
+        expect(poor).toBeLessThan(healthy);
     });
 });

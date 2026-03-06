@@ -8,9 +8,23 @@ import { AdaptiveQualityGovernor } from './quality/adaptive-quality.js';
 import { SpatialEngine } from './spatial/spatial-engine.js';
 import { VoiceFactory } from './synthesis/voice-factory.js';
 import { DroneEngine } from './drone/drone-engine.js';
-import { V1ComposerCore } from '../v1-plus/composer-core.js';
+import { V2ComposerCore } from './composition/v2-composer-core.js';
 import { buildIdentityProfile } from '../v1-plus/identity-profile.js';
 import { enforceLayerContracts, normalizeOverlayFlags } from '../v1-plus/layer-contracts.js';
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function mapSectionToTensionPhase(section = 'INTRO') {
+    switch (section) {
+        case 'GROWTH': return 'BUILD';
+        case 'SURGE': return 'SURGE';
+        case 'RELEASE': return 'BUILD';
+        case 'AFTERGLOW': return 'DORMANT';
+        case 'INTRO':
+        default:
+            return 'DORMANT';
+    }
+}
 
 export class AudioEngineV2 {
     constructor(host) {
@@ -21,6 +35,7 @@ export class AudioEngineV2 {
         this.stepIndex = 0;
         this.barIndex = 0;
         this.section = 'INTRO';
+        this.sectionProgress = 0;
         this.arrangementEnergy = 0.2;
         this.lastQuality = null;
         this.currentMod = null;
@@ -38,6 +53,7 @@ export class AudioEngineV2 {
         this.lastMix = null;
         this.lastDrone = null;
         this.nextHarmonyBar = 0;
+        this.nextFxPulseStep = 0;
         this.moonNodes = [];
         this.identityProfile = null;
         this.identityDiagnostics = null;
@@ -72,17 +88,6 @@ export class AudioEngineV2 {
             layerMix: host._layerMix || {},
             macroSpace: host._macroControls?.space || 0.5,
         });
-        this.voicePool = new VoicePool({ maxVoices: 64 });
-        this.voiceFactory = new VoiceFactory(host, this.buses, this.voicePool, this.spatialEngine);
-        this._setupMoonSubsystem(planet);
-        this.droneEngine = new DroneEngine({ host, buses: this.buses, eventBus: this.eventBus });
-        this.formEngine = new FormEngine(planet, { arrangement: host._arrangement });
-        this.composerCore = new V1ComposerCore(host, planet, {
-            identityProfile: this.identityProfile,
-            overlayFlags: this.overlayFlags,
-            paceOverride: this.paceOverride,
-        });
-        this.modMatrix = new ModMatrix(host._macroControls);
         this.qualityGovernor = new AdaptiveQualityGovernor();
         this.lastQuality = this.qualityGovernor.evaluate({
             activeNodes: host.nodes?.size || 0,
@@ -90,6 +95,23 @@ export class AudioEngineV2 {
             macroComplexity: host._macroControls?.complexity || 0.5,
             backgroundMode: host._backgroundMode || 'foreground-realtime',
         });
+
+        const vktCap = this.lastQuality.cpuClass === 'desktop-high' ? 128
+            : this.lastQuality.cpuClass === 'desktop-mid' ? 96
+                : ['mobile-high', 'mobile-mid', 'mobile-low'].includes(this.lastQuality.cpuClass) ? 48
+                    : 64;
+
+        this.voicePool = new VoicePool({ maxVoices: vktCap });
+        this.voiceFactory = new VoiceFactory(host, this.buses, this.voicePool, this.spatialEngine);
+        this._setupMoonSubsystem(planet);
+        this.droneEngine = new DroneEngine({ host, buses: this.buses, eventBus: this.eventBus });
+        this.formEngine = new FormEngine(planet, { arrangement: host._arrangement });
+        this.composerCore = new V2ComposerCore(host, planet, {
+            identityProfile: this.identityProfile,
+            overlayFlags: this.overlayFlags,
+            paceOverride: this.paceOverride,
+        });
+        this.modMatrix = new ModMatrix(host._macroControls);
         this.currentMod = this.modMatrix.resolve({
             sectionEnergy: this.arrangementEnergy,
             section: this.section,
@@ -120,8 +142,16 @@ export class AudioEngineV2 {
         this.stepIndex = 0;
         this.barIndex = 0;
         this.nextHarmonyBar = 0;
+        this.nextFxPulseStep = 0;
         this.section = 'INTRO';
+        this.sectionProgress = 0;
         this.arrangementEnergy = 0.2;
+        this._syncHostTensionState({
+            section: this.section,
+            arrangementEnergy: this.arrangementEnergy,
+            sectionProgress: this.sectionProgress,
+            immediate: true,
+        });
         this.identityDiagnostics = this.composerCore.getDiagnostics();
         host._startStateStream();
         host._emitState();
@@ -269,10 +299,15 @@ export class AudioEngineV2 {
             ambienceDepth: 0,
             modAmount: 0,
             randomizerDepth: 0,
+            continuityHealth: 1,
+            bedMode: 'persistent',
+            supersawShare: 0,
+            richnessTier: this.host?.planet?.v2?.richnessProfile?.tier || 'balanced',
             degradeStage: 'full',
         };
         return {
             section: this.section,
+            sectionProgress: this.sectionProgress,
             arrangementEnergy: this.arrangementEnergy,
             voiceBudget: poolState.voiceBudget,
             voiceStealCount: poolState.voiceStealCount,
@@ -309,12 +344,18 @@ export class AudioEngineV2 {
         const runStep = ({ scheduleTime }) => {
             if (!this.active || !host.playing) return;
             const cycleStep = this.stepIndex % cycleSteps;
-            if (cycleStep === 0) this.barIndex++;
+            if (this.stepIndex > 0 && cycleStep === 0) this.barIndex++;
 
             const form = this.formEngine.update(this.barIndex);
             const sectionChanged = form.section !== this.section;
             this.section = form.section;
             this.arrangementEnergy = form.arrangementEnergy;
+            this.sectionProgress = form.sectionProgress;
+            this._syncHostTensionState({
+                section: this.section,
+                arrangementEnergy: this.arrangementEnergy,
+                sectionProgress: this.sectionProgress,
+            });
 
             const schedulerStats = host._transportScheduler?.getStats?.() || {};
             this.lastQuality = this.qualityGovernor.evaluate({
@@ -335,6 +376,7 @@ export class AudioEngineV2 {
                 this.eventBus.emit({
                     type: 'section-change',
                     section: this.section,
+                    sectionProgress: this.sectionProgress,
                     arrangementEnergy: this.arrangementEnergy,
                     barIndex: this.barIndex,
                     engineMode: 'v2',
@@ -347,6 +389,7 @@ export class AudioEngineV2 {
                 cycleSteps,
                 scheduleTime,
                 section: this.section,
+                sectionProgress: this.sectionProgress,
                 currentMod: this.currentMod,
                 quality: this.lastQuality,
                 voiceFactory: this.voiceFactory,
@@ -372,10 +415,29 @@ export class AudioEngineV2 {
 
             if (anyLayerEnabled
                 && featureFlags.chords
-                && (this.stepIndex % Math.max(4, Math.round(cycleSteps / 2))) === 0
-                && this.currentMod.dissonance > 0.56) {
-                this.voiceFactory.playFxPulse(scheduleTime + stepSec * 0.1, this.currentMod);
-                host.stepFX++;
+                && this.stepIndex >= this.nextFxPulseStep) {
+                const inPulseSection = this.section === 'SURGE' || this.section === 'GROWTH';
+                const dissonanceGate = this.section === 'SURGE' ? 0.62 : 0.7;
+                const pulseChance = this.section === 'SURGE'
+                    ? clamp(0.1 + this.sectionProgress * 0.34 + (this.currentMod.motion || 0.5) * 0.16, 0.08, 0.66)
+                    : clamp(0.03 + this.sectionProgress * 0.16 + (this.currentMod.motion || 0.5) * 0.08, 0.02, 0.3);
+                const pulseRoll = typeof host._random === 'function' ? host._random('v2-fx-pulse') : Math.random();
+                const qualityAllowsPulse = (this.lastQuality?.qualityScalar ?? 1) > 0.46;
+                if (inPulseSection
+                    && qualityAllowsPulse
+                    && this.currentMod.dissonance > dissonanceGate
+                    && pulseRoll < pulseChance) {
+                    this.voiceFactory.playFxPulse(scheduleTime + stepSec * 0.1, {
+                        ...this.currentMod,
+                        section: this.section,
+                        sectionProgress: this.sectionProgress,
+                    });
+                    host.stepFX++;
+                    const cooldownSteps = this.section === 'SURGE'
+                        ? Math.max(10, Math.round(cycleSteps * 0.92))
+                        : Math.max(16, Math.round(cycleSteps * 1.45));
+                    this.nextFxPulseStep = this.stepIndex + cooldownSteps;
+                }
             }
 
             this.buses.setMacroSpace(this.currentMod.space);
@@ -584,5 +646,45 @@ export class AudioEngineV2 {
             policy: this.backgroundController?.policy || 'realtime',
             engineMode: 'v2',
         });
+    }
+
+    _syncHostTensionState({
+        section = 'INTRO',
+        arrangementEnergy = 0.2,
+        sectionProgress = 0,
+        immediate = false,
+    } = {}) {
+        const phase = mapSectionToTensionPhase(section);
+        const targetEnergy = clamp(arrangementEnergy, 0, 1);
+        const prevEnergy = clamp(
+            Number.isFinite(this.host.tension)
+                ? this.host.tension
+                : (Number.isFinite(this.host?._tensionState?.energy) ? this.host._tensionState.energy : targetEnergy),
+            0,
+            1,
+        );
+        const progress = clamp(sectionProgress, 0, 1);
+        const riseRate = section === 'SURGE'
+            ? (0.016 + progress * 0.026)
+            : section === 'GROWTH'
+                ? (0.012 + progress * 0.018)
+                : (0.01 + progress * 0.012);
+        const fallRate = section === 'RELEASE'
+            ? (0.014 + progress * 0.02)
+            : section === 'AFTERGLOW'
+                ? (0.012 + progress * 0.02)
+                : (0.011 + progress * 0.012);
+        const delta = targetEnergy - prevEnergy;
+        const maxStep = delta >= 0 ? riseRate : fallRate;
+        const energy = immediate
+            ? targetEnergy
+            : clamp(prevEnergy + Math.sign(delta) * Math.min(Math.abs(delta), maxStep), 0, 1);
+        this.host.tension = energy;
+        this.host._tensionState = {
+            phase,
+            energy,
+            cyclePos: clamp(sectionProgress, 0, 1),
+            pocket: clamp(0.34 + energy * 0.5, 0, 1),
+        };
     }
 }
