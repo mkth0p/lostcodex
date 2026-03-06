@@ -13,9 +13,12 @@ export const DEFAULT_TIMBRE_DELTA_LIMITS = {
         drone_morph: 4.4,
         gong: 7.4,
         granular_cloud: 1.25,
+        modal_resonator: 4.8,
+        phase_cluster: 3.9,
         strings: 5.2,
         subpad: 5.8,
         vowel_morph: 4.6,
+        wavetable_morph: 4.9,
     },
 };
 
@@ -65,4 +68,3 @@ export function resolveTimbreDeltaLimits(biomeId = 'default') {
         },
     };
 }
-

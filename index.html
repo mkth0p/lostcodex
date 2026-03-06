@@ -105,6 +105,26 @@
                         <span class="melody-label">STEP</span>
                         <span class="melody-value" id="dbg-step">--</span>
                     </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">PACE</span>
+                        <span class="melody-value" id="dbg-pace">--</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">HOLD</span>
+                        <span class="melody-value" id="dbg-hold">--</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">MICRO</span>
+                        <span class="melody-value" id="dbg-micro">--</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">DRONE</span>
+                        <span class="melody-value" id="dbg-drone-aud">--</span>
+                    </div>
+                    <div class="melody-metric">
+                        <span class="melody-label">MOON RT</span>
+                        <span class="melody-value" id="dbg-moon-rate">--</span>
+                    </div>
                 </div>
             </div>
             <div class="chord-display" id="chord-display"></div>
@@ -186,6 +206,22 @@
         <!-- Bottom: Controls -->
         <footer class="controls-panel panel">
             <button class="play-btn" id="play-btn" title="Play / Stop">▶</button>
+            <div class="control-group control-group-select">
+                <span class="control-label">ENGINE</span>
+                <select id="ctrl-engine-mode">
+                    <option value="v1">V1 LEGACY</option>
+                    <option value="v2">V2 EVOLVED</option>
+                </select>
+            </div>
+            <div class="control-group control-group-select">
+                <span class="control-label">PACE</span>
+                <select id="ctrl-pace-override">
+                    <option value="auto">AUTO</option>
+                    <option value="slow">SLOW</option>
+                    <option value="medium">MEDIUM</option>
+                    <option value="fast">FAST</option>
+                </select>
+            </div>
             <div class="control-group">
                 <span class="control-label">VOL</span>
                 <input type="range" id="ctrl-vol" min="0" max="1" step="0.01" value="0.7">
@@ -218,6 +254,83 @@
                 <span class="control-label">HIGH</span>
                 <input type="range" id="ctrl-eq-high" min="-12" max="12" step="0.1" value="0">
             </div>
+            <details class="drone-panel">
+                <summary class="control-label">DRONE V2</summary>
+                <div class="drone-grid">
+                    <label class="drone-item"><span class="control-label">DREAM</span><input type="range" id="ctrl-drone-dream" min="0" max="1" step="0.01" value="0.58"></label>
+                    <label class="drone-item"><span class="control-label">TEXTURE</span><input type="range" id="ctrl-drone-texture" min="0" max="1" step="0.01" value="0.56"></label>
+                    <label class="drone-item"><span class="control-label">MOTION</span><input type="range" id="ctrl-drone-motion" min="0" max="1" step="0.01" value="0.42"></label>
+                    <label class="drone-item"><span class="control-label">RESONANCE</span><input type="range" id="ctrl-drone-resonance" min="0" max="1" step="0.01" value="0.48"></label>
+                    <label class="drone-item"><span class="control-label">DIFFUSION</span><input type="range" id="ctrl-drone-diffusion" min="0" max="1" step="0.01" value="0.6"></label>
+                    <label class="drone-item"><span class="control-label">TAIL</span><input type="range" id="ctrl-drone-tail" min="0" max="1" step="0.01" value="0.64"></label>
+                    <label class="drone-item"><span class="control-label">DRONE VOL</span><input type="range" id="ctrl-drone-volume" min="0" max="1.4" step="0.01" value="0.92"></label>
+
+                    <label class="drone-item"><span class="control-label">SOURCE</span>
+                        <select id="ctrl-drone-source-mode">
+                            <option value="hybrid">HYBRID</option>
+                            <option value="sine">SINE</option>
+                            <option value="supersaw">SUPERSAW</option>
+                            <option value="wavetable">WAVETABLE</option>
+                        </select>
+                    </label>
+                    <label class="drone-item"><span class="control-label">PRIORITY</span>
+                        <select id="ctrl-drone-priority">
+                            <option value="expert">EXPERT</option>
+                            <option value="hybrid">HYBRID</option>
+                            <option value="macro">MACRO</option>
+                        </select>
+                    </label>
+                    <label class="drone-item"><span class="control-label">LOOPER SRC</span>
+                        <select id="ctrl-drone-looper-source">
+                            <option value="pre">PRE</option>
+                            <option value="post">POST</option>
+                        </select>
+                    </label>
+                    <label class="drone-item"><span class="control-label">FILTER</span>
+                        <select id="ctrl-drone-filter-type">
+                            <option value="lowpass">LOWPASS</option>
+                            <option value="bandpass">BANDPASS</option>
+                            <option value="highpass">HIGHPASS</option>
+                            <option value="notch">NOTCH</option>
+                        </select>
+                    </label>
+
+                    <label class="drone-item"><span class="control-label">LOOP ST</span><input type="range" id="ctrl-drone-loop-start" min="0" max="1" step="0.01" value="0"></label>
+                    <label class="drone-item"><span class="control-label">LOOP LEN</span><input type="range" id="ctrl-drone-loop-length" min="0" max="1" step="0.01" value="0.62"></label>
+                    <label class="drone-item"><span class="control-label">VARISP</span><input type="range" id="ctrl-drone-varispeed" min="-2" max="2" step="0.01" value="1"></label>
+                    <label class="drone-item"><span class="control-label">SOS</span><input type="range" id="ctrl-drone-sos" min="0" max="0.96" step="0.01" value="0.42"></label>
+                    <label class="drone-item"><span class="control-label">CUT</span><input type="range" id="ctrl-drone-filter-cutoff" min="0" max="1" step="0.01" value="0.58"></label>
+                    <label class="drone-item"><span class="control-label">Q</span><input type="range" id="ctrl-drone-filter-q" min="0" max="1" step="0.01" value="0.32"></label>
+                    <label class="drone-item"><span class="control-label">F POS</span><input type="range" id="ctrl-drone-filter-position" min="0" max="3" step="1" value="1"></label>
+
+                    <label class="drone-item"><span class="control-label">R TUNE</span><input type="range" id="ctrl-drone-resonator-tune" min="0" max="1" step="0.01" value="0.45"></label>
+                    <label class="drone-item"><span class="control-label">R FEED</span><input type="range" id="ctrl-drone-resonator-feedback" min="0" max="1" step="0.01" value="0.22"></label>
+                    <label class="drone-item"><span class="control-label">R SPR</span><input type="range" id="ctrl-drone-resonator-spread" min="0" max="1" step="0.01" value="0.36"></label>
+                    <label class="drone-item"><span class="control-label">E TIME</span><input type="range" id="ctrl-drone-echo-time" min="0" max="1" step="0.01" value="0.42"></label>
+                    <label class="drone-item"><span class="control-label">E FEED</span><input type="range" id="ctrl-drone-echo-feedback" min="0" max="1" step="0.01" value="0.32"></label>
+                    <label class="drone-item"><span class="control-label">E TONE</span><input type="range" id="ctrl-drone-echo-tone" min="0" max="1" step="0.01" value="0.5"></label>
+                    <label class="drone-item"><span class="control-label">SPACE</span><input type="range" id="ctrl-drone-ambience-spacetime" min="0" max="1" step="0.01" value="0.62"></label>
+                    <label class="drone-item"><span class="control-label">DECAY</span><input type="range" id="ctrl-drone-ambience-decay" min="0" max="1" step="0.01" value="0.58"></label>
+                    <label class="drone-item"><span class="control-label">M MASTER</span><input type="range" id="ctrl-drone-mod-master" min="0" max="1" step="0.01" value="0.5"></label>
+                    <label class="drone-item"><span class="control-label">M RATE</span><input type="range" id="ctrl-drone-mod-rate" min="0" max="1" step="0.01" value="0.42"></label>
+                    <label class="drone-item"><span class="control-label">M ROUTE</span><input type="range" id="ctrl-drone-mod-routing" min="0" max="1" step="0.01" value="0.5"></label>
+
+                    <div class="drone-actions">
+                        <button type="button" class="mini-btn" id="ctrl-drone-capture-toggle">CAPTURE</button>
+                        <button type="button" class="mini-btn" id="ctrl-drone-capture-momentary">MOMENT</button>
+                        <select id="ctrl-drone-rand-target">
+                            <option value="all">RAND ALL</option>
+                            <option value="sources">SOURCES</option>
+                            <option value="fx">FX</option>
+                            <option value="mod">MOD</option>
+                        </select>
+                        <input type="range" id="ctrl-drone-rand-intensity" min="0" max="1" step="0.01" value="0.5">
+                        <button type="button" class="mini-btn" id="ctrl-drone-rand-apply">APPLY</button>
+                        <button type="button" class="mini-btn" id="ctrl-drone-rand-undo">UNDO</button>
+                        <button type="button" class="mini-btn" id="ctrl-drone-rand-redo">REDO</button>
+                    </div>
+                </div>
+            </details>
             <label class="control-toggle">
                 <input type="checkbox" id="ctrl-granular" checked>
                 <span class="toggle-track"></span>
@@ -260,6 +373,50 @@
                 <span class="toggle-track"></span>
                 <span class="control-label">FILLS</span>
             </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-harmony" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">V2 HARMONY</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-counterpoint" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">COUNTERPOINT</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-microtonal" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">MICRO WARP</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-drone" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">DRONE LAYER</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-moon" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">MOON CANONS</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-perc" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">ADAPT PERC</span>
+            </label>
+            <label class="control-toggle">
+                <input type="checkbox" id="ctrl-v2-overlay-ecosystem" checked>
+                <span class="toggle-track"></span>
+                <span class="control-label">ECOSYSTEM</span>
+            </label>
+            <div class="layer-toolbar">
+                <button type="button" class="mini-btn" id="ctrl-layers-all-off">ALL LAYERS OFF</button>
+            </div>
+            <div class="layer-help">
+                GRANULAR: ambient grains | RHYTHM: percussion engine | CHORDS: harmonic bed | ARP: bass pulse line | BEND: pitch accents | MOTIF: lead phrases | GHOST/FILLS: percussion detail
+            </div>
+            <div class="layer-help">
+                V2 HARMONY: extended cadence logic | COUNTERPOINT: secondary melodic lane | MICRO WARP: microtonal color | DRONE LAYER: Oneiroi drone stack | MOON CANONS: moon voices | ADAPT PERC: tension-coupled rhythm | ECOSYSTEM: ambient events
+            </div>
             <div class="tension-group">
                 <span class="control-label">TENSION</span>
                 <div class="tension-bar">
@@ -268,6 +425,13 @@
                 <span class="tension-icon tension-low" id="tension-icon">♥</span>
             </div>
             <canvas id="waveform-canvas" width="400" height="36"></canvas>
+            <details class="audio-console-panel">
+                <summary class="control-label">AUDIO CONSOLE</summary>
+                <div class="audio-console-actions">
+                    <button type="button" class="mini-btn" id="audio-console-clear">CLEAR</button>
+                </div>
+                <pre id="audio-console" class="audio-console-output" aria-live="polite"></pre>
+            </details>
             <div class="footer-hint">Type glyphs or click keys ↑ — each address is a unique world</div>
         </footer>
     </main>

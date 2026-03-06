@@ -9,7 +9,9 @@
     "smoke:engine": "node scripts/engine-smoke-runner.mjs",
     "smoke:engine:full": "node scripts/engine-smoke-runner.mjs http://127.0.0.1:8080/synth.html 60000 30 250 5 10000 10000",
     "smoke:compare": "node scripts/compare-engine-smoke.mjs",
-    "baseline:report": "node scripts/generate-baseline-report.mjs"
+    "baseline:report": "node scripts/generate-baseline-report.mjs",
+    "diag:identity:v1": "node scripts/v2-sonic-diagnostics.mjs http://127.0.0.1:8765/synth.html?engine=v1 12000 30 300 docs/sonic-diagnostics-v1.json",
+    "diag:identity:v2": "node scripts/v2-sonic-diagnostics.mjs http://127.0.0.1:8765/synth.html?engine=v2 12000 30 300 docs/sonic-diagnostics-v2.json"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",

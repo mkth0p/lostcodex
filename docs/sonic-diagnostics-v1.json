@@ -1,0 +1,338 @@
+{
+  "generatedAt": "2026-03-06T09:41:55.147Z",
+  "url": "http://127.0.0.1:8765/synth.html?engine=v1",
+  "durationMs": 12000,
+  "intervalMs": 300,
+  "corpusSize": 10,
+  "planets": [
+    {
+      "code": "01234",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 161.07692307692307,
+        "activeNodePeak": 243,
+        "loadMean": 0.04484964401805734,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "vi"
+        ],
+        "melodyModeCount": 3,
+        "melodyModes": [
+          "GENERATIVE",
+          "MOTIF",
+          "RESPONSE"
+        ],
+        "arrangementEnergyMean": 0.10227849814975885,
+        "arrangementEnergyStd": 0.04429154060498476,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.13333333333333341,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "56789",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 244.05128205128204,
+        "activeNodePeak": 322,
+        "loadMean": 0.4209385525099474,
+        "sectionCount": 2,
+        "sections": [
+          "DORMANT",
+          "STIR"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "IV"
+        ],
+        "melodyModeCount": 3,
+        "melodyModes": [
+          "GENERATIVE",
+          "MOTIF",
+          "RESPONSE"
+        ],
+        "arrangementEnergyMean": 0.2352948095770275,
+        "arrangementEnergyStd": 0.07586680232527886,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.23076923076923078,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "abcde",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 81.7948717948718,
+        "activeNodePeak": 110,
+        "loadMean": 0.11236816874400773,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 3,
+        "chords": [
+          "ii",
+          "V",
+          "I"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "GENERATIVE",
+          "MOTIF"
+        ],
+        "arrangementEnergyMean": 0.09317045160754016,
+        "arrangementEnergyStd": 0.04892369402267667,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.2461538461538461,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "fghij",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 204.7948717948718,
+        "activeNodePeak": 239,
+        "loadMean": 0.44940664358472576,
+        "sectionCount": 3,
+        "sections": [
+          "DORMANT",
+          "STIR",
+          "BUILD"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "V"
+        ],
+        "melodyModeCount": 3,
+        "melodyModes": [
+          "GENERATIVE",
+          "MOTIF",
+          "RESPONSE"
+        ],
+        "arrangementEnergyMean": 0.2562898776871212,
+        "arrangementEnergyStd": 0.09641992091475966,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.24786324786324782,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "klmno",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 112,
+        "activeNodePeak": 141,
+        "loadMean": 0,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 1,
+        "chords": [
+          "I"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "GENERATIVE",
+          "MOTIF"
+        ],
+        "arrangementEnergyMean": 0.07543491686140173,
+        "arrangementEnergyStd": 0.043605212042409906,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.2461538461538461,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "pqrst",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 90.17948717948718,
+        "activeNodePeak": 125,
+        "loadMean": 0,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "vi"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "MOTIF",
+          "GENERATIVE"
+        ],
+        "arrangementEnergyMean": 0.10805232950183352,
+        "arrangementEnergyStd": 0.04981594533767678,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.2461538461538461,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "00000",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 153.56410256410257,
+        "activeNodePeak": 216,
+        "loadMean": 0.027711955068660074,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "IV"
+        ],
+        "melodyModeCount": 3,
+        "melodyModes": [
+          "MOTIF",
+          "GENERATIVE",
+          "RESPONSE"
+        ],
+        "arrangementEnergyMean": 0.10027511178182277,
+        "arrangementEnergyStd": 0.04565776927140766,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.2461538461538461,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "ttttt",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 160.23076923076923,
+        "activeNodePeak": 218,
+        "loadMean": 0.1671299288946348,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "IV",
+          "I",
+          "ii",
+          "V"
+        ],
+        "melodyModeCount": 3,
+        "melodyModes": [
+          "RESPONSE",
+          "MOTIF",
+          "GENERATIVE"
+        ],
+        "arrangementEnergyMean": 0.07707414470065538,
+        "arrangementEnergyStd": 0.039613231004679963,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.2461538461538461,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "02468ace",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 197.76923076923077,
+        "activeNodePeak": 274,
+        "loadMean": 0.2344878297688862,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "IV"
+        ],
+        "melodyModeCount": 3,
+        "melodyModes": [
+          "RESPONSE",
+          "GENERATIVE",
+          "MOTIF"
+        ],
+        "arrangementEnergyMean": 0.11884962156999479,
+        "arrangementEnergyStd": 0.05765365364952574,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.24786324786324782,
+        "dronePresenceRatio": 0
+      }
+    },
+    {
+      "code": "13579bdf",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 123.07692307692308,
+        "activeNodePeak": 155,
+        "loadMean": 0,
+        "sectionCount": 1,
+        "sections": [
+          "DORMANT"
+        ],
+        "chordCount": 2,
+        "chords": [
+          "I",
+          "IV"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "GENERATIVE",
+          "MOTIF"
+        ],
+        "arrangementEnergyMean": 0.11395686937823853,
+        "arrangementEnergyStd": 0.04486491885029155,
+        "lufsMean": -24,
+        "peakDbMean": -60,
+        "eventRateMean": 0.24786324786324782,
+        "dronePresenceRatio": 0
+      }
+    }
+  ],
+  "aggregate": {
+    "sampleCount": 390,
+    "activeNodeMean": 152.85384615384564,
+    "activeNodePeak": 244.05128205128204,
+    "loadMean": 0.14568927225889186,
+    "sectionCount": 1,
+    "sections": [
+      "DORMANT"
+    ],
+    "chordCount": 3,
+    "chords": [
+      "I",
+      "ii",
+      "IV"
+    ],
+    "melodyModeCount": 3,
+    "melodyModes": [
+      "GENERATIVE",
+      "MOTIF",
+      "RESPONSE"
+    ],
+    "arrangementEnergyMean": 0.12806766308153797,
+    "arrangementEnergyStd": 0.0605385536879592,
+    "lufsMean": -24,
+    "peakDbMean": -60,
+    "eventRateMean": 0.2338461538461539,
+    "dronePresenceRatio": 0
+  }
+}

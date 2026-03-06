@@ -21,6 +21,26 @@ describe('AudioEngine API contract', () => {
             'setDeterminismMode',
             'subscribeState',
             'triggerNavigationFx',
+            'setEngineMode',
+            'getEngineMode',
+            'setMacroControls',
+            'setArrangement',
+            'setV2OverlayFlags',
+            'setPlanetPaceOverride',
+            'getIdentityDiagnostics',
+            'setLayerMix',
+            'setSpatial',
+            'setBackgroundPolicy',
+            'enterBackgroundMode',
+            'exitBackgroundMode',
+            'subscribeEvents',
+            'setDroneMacros',
+            'setDroneExpert',
+            'captureDroneLoop',
+            'setDroneRandomizer',
+            'setDroneVariationSeed',
+            'setDroneVolume',
+            'getDroneState',
         ];
 
         methods.forEach((name) => {
@@ -41,12 +61,44 @@ describe('AudioEngine API contract', () => {
         expect(lastState).toHaveProperty('melody');
         expect(lastState).toHaveProperty('debug');
         expect(lastState).toHaveProperty('chord');
+        expect(lastState).toHaveProperty('engineMode');
+        expect(lastState).toHaveProperty('section');
+        expect(lastState).toHaveProperty('arrangementEnergy');
+        expect(lastState).toHaveProperty('voiceBudget');
+        expect(lastState).toHaveProperty('voiceStealCount');
+        expect(lastState).toHaveProperty('eventRate');
+        expect(lastState).toHaveProperty('cpuClass');
+        expect(lastState).toHaveProperty('backgroundMode');
+        expect(lastState).toHaveProperty('backgroundPolicy');
+        expect(lastState).toHaveProperty('backgroundTimelineRemainingMs');
+        expect(lastState).toHaveProperty('identityProfileId');
+        expect(lastState).toHaveProperty('paceClass');
+        expect(lastState).toHaveProperty('microtonalDepth');
+        expect(lastState).toHaveProperty('droneAudibilityDb');
+        expect(lastState).toHaveProperty('moonActivityRate');
+        expect(lastState).toHaveProperty('harmonyHoldBarsCurrent');
+        expect(lastState).toHaveProperty('compositionDensity');
+        expect(lastState).toHaveProperty('drone');
+        expect(lastState).toHaveProperty('mix');
+        expect(lastState).toHaveProperty('quality');
+        expect(lastState.drone).toHaveProperty('loopFill');
+        expect(lastState.mix).toHaveProperty('preLimiterPeakDb');
+        expect(lastState.quality).toHaveProperty('degradeStage');
         expect(lastState.debug).toHaveProperty('determinismMode');
         expect(lastState.debug).toHaveProperty('engineRefactorV2');
+        expect(lastState.debug).toHaveProperty('engineMode');
         expect(lastState.debug).toHaveProperty('schedulerTickMs');
         expect(lastState.debug).toHaveProperty('schedulerHorizonMs');
         expect(lastState.debug).toHaveProperty('schedulerLateCallbacks');
         expect(lastState.debug).toHaveProperty('schedulerMaxLateMs');
+        expect(lastState.debug).toHaveProperty('paceClass');
+        expect(lastState.debug).toHaveProperty('microtonalDepth');
+        expect(lastState.debug).toHaveProperty('droneAudibilityDb');
+        expect(lastState.debug).toHaveProperty('moonActivityRate');
+        expect(lastState.debug).toHaveProperty('harmonyHoldBarsCurrent');
+        expect(lastState.debug).toHaveProperty('compositionDensity');
+        expect(lastState.debug).toHaveProperty('v2OverlayFlags');
+        expect(lastState.debug).toHaveProperty('paceOverride');
         unsubscribe();
     });
 
@@ -60,5 +112,81 @@ describe('AudioEngine API contract', () => {
         engine.planet = { seed: 12345 };
         const runB = [engine._random('melody'), engine._random('melody'), engine._random('melody')];
         expect(runB).toEqual(runA);
+    });
+
+    it('supports engine mode and background policy controls', () => {
+        const engine = new AudioEngine();
+        const modes = [];
+        const unsubscribe = engine.subscribeEvents((event) => {
+            if (event?.type === 'engine-mode') modes.push(event.mode);
+        });
+
+        expect(engine.getEngineMode()).toBe('v1');
+        engine.setEngineMode('v2');
+        expect(engine.getEngineMode()).toBe('v2');
+        engine.setBackgroundPolicy('continuity');
+        expect(engine.enterBackgroundMode()).toMatch(/background|paused/);
+        expect(engine.exitBackgroundMode()).toBe('foreground-realtime');
+        engine.setEngineMode('v1');
+        unsubscribe();
+        expect(modes).toContain('v2');
+        expect(modes).toContain('v1');
+    });
+
+    it('supports drone APIs in v2 and safe no-op in v1', () => {
+        const engine = new AudioEngine();
+        const events = [];
+        const unsubscribe = engine.subscribeEvents((event) => events.push(event));
+
+        const v1State = engine.captureDroneLoop({ mode: 'toggle', source: 'pre' });
+        expect(v1State).toBeTruthy();
+        expect(events.some((event) => event.type === 'unsupported-feature')).toBe(true);
+
+        engine.setEngineMode('v2');
+        engine.setDroneMacros({ dream: 0.7, tail: 0.6 });
+        engine.setDroneExpert({ sourceMode: 'wavetable', filterPosition: 2 });
+        engine.setDroneVolume(0.88);
+        const randomized = engine.setDroneRandomizer({ target: 'fx', intensity: 0.3, action: 'apply' });
+        expect(randomized).toBeTruthy();
+        expect(engine.getDroneState()).toBeTruthy();
+        expect(events.some((event) => event.type === 'drone-macros')).toBe(true);
+        expect(events.some((event) => event.type === 'drone-expert')).toBe(true);
+        expect(events.some((event) => event.type === 'drone-volume')).toBe(true);
+        expect(events.some((event) => event.type === 'drone-randomizer')).toBe(true);
+        unsubscribe();
+    });
+
+    it('emits feature and overlay flag events', () => {
+        const engine = new AudioEngine();
+        const events = [];
+        const unsubscribe = engine.subscribeEvents((event) => events.push(event));
+        engine.setFeatureFlags({ granular: false, percussion: false, chords: false, arp: false, motif: false });
+        engine.setV2OverlayFlags({ droneLayer: true, counterpoint: true });
+        engine.setPlanetPaceOverride('slow');
+        unsubscribe();
+        expect(events.some((event) => event.type === 'feature-flags')).toBe(true);
+        expect(events.some((event) => event.type === 'v2-overlay-flags')).toBe(true);
+        expect(events.some((event) => event.type === 'pace-override')).toBe(true);
+    });
+
+    it('supports v2 overlay and pace override diagnostics APIs', () => {
+        const engine = new AudioEngine();
+        engine.setV2OverlayFlags({
+            counterpoint: false,
+            droneLayer: true,
+        });
+        engine.setPlanetPaceOverride('slow');
+        const diagV1 = engine.getIdentityDiagnostics();
+        expect(diagV1).toBeTruthy();
+        expect(diagV1.paceClass).toBe('slow');
+        expect(diagV1.overlayFlags.counterpoint).toBe(false);
+
+        engine.setEngineMode('v2');
+        engine.setV2OverlayFlags({ adaptivePercussion: false });
+        engine.setPlanetPaceOverride('fast');
+        const diagV2 = engine.getIdentityDiagnostics();
+        expect(diagV2).toBeTruthy();
+        expect(diagV2.overlayFlags.adaptivePercussion).toBe(false);
+        expect(diagV2.paceOverride).toBe('fast');
     });
 });

@@ -7,7 +7,8 @@
 export const ADDITIVE_VOICE_NAMES = [
     'strings', 'choir', 'marimba', 'metallic', 'theremin', 'subpad',
     'crystal_chimes', 'brass_pad', 'hollow_pipe', 'gong', 'vowel_morph',
-    'bowed_metal', 'drone_morph', 'granular_cloud'
+    'bowed_metal', 'drone_morph', 'granular_cloud',
+    'wavetable_morph', 'phase_cluster', 'modal_resonator'
 ];
 
 export function buildVoice(name, ctx, freq, dest, rng, atk, dur, nodes) {
@@ -26,6 +27,9 @@ export function buildVoice(name, ctx, freq, dest, rng, atk, dur, nodes) {
         case 'bowed_metal': _bowed_metal(ctx, freq, dest, rng, atk, dur, nodes); break;
         case 'drone_morph': _drone_morph(ctx, freq, dest, rng, atk, dur, nodes); break;
         case 'granular_cloud': _granular_cloud(ctx, freq, dest, rng, atk, dur, nodes); break;
+        case 'wavetable_morph': _wavetable_morph(ctx, freq, dest, rng, atk, dur, nodes); break;
+        case 'phase_cluster': _phase_cluster(ctx, freq, dest, rng, atk, dur, nodes); break;
+        case 'modal_resonator': _modal_resonator(ctx, freq, dest, rng, atk, dur, nodes); break;
     }
 }
 
@@ -35,6 +39,19 @@ function pushTransientNodes(nodes, duration, ...items) {
     } else {
         nodes.push(...items);
     }
+}
+
+function createSoftClipper(ctx, drive = 1) {
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(1024);
+    const k = Math.max(1, drive * 24);
+    for (let i = 0; i < curve.length; i++) {
+        const x = (i / (curve.length - 1)) * 2 - 1;
+        curve[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+    shaper.curve = curve;
+    shaper.oversample = '2x';
+    return shaper;
 }
 
 function getNodeLoad(nodes) {
@@ -556,42 +573,250 @@ function _drone_morph(ctx, freq, dest, rng, atk, dur, nodes) {
 // Synthesized pitched grains distributed randomly across the duration
 function _granular_cloud(ctx, freq, dest, rng, atk, dur, nodes) {
     const now = ctx.currentTime;
-    const outBus = ctx.createGain();
-    outBus.gain.setValueAtTime(0, now);
-    outBus.gain.linearRampToValueAtTime(0.25, now + atk);
-    outBus.gain.linearRampToValueAtTime(0, now + atk + dur);
-    outBus.connect(dest);
-    pushTransientNodes(nodes, atk + dur + 0.2, outBus);
-
-    const totalDur = atk + dur;
+    const totalDur = Math.max(0.35, atk + dur);
     const nodeLoad = getNodeLoad(nodes);
     const loadPressure = Math.max(0, Math.min(1, (nodeLoad - 220) / 220));
-    const density = rng.range(6, 12) * (1 - loadPressure * 0.55);
-    const grainCap = loadPressure > 0.55 ? 18 : 36;
-    const totalGrains = Math.max(8, Math.min(grainCap, Math.floor(totalDur * density)));
+
+    const outBus = ctx.createGain();
+    const cloudFilter = ctx.createBiquadFilter();
+    const cloudPan = ctx.createStereoPanner();
+    const fadeIn = Math.max(0.12, Math.min(0.9, atk * 0.65));
+    const nyquist = ctx.sampleRate / 2;
+
+    outBus.gain.setValueAtTime(0.0001, now);
+    outBus.gain.linearRampToValueAtTime(0.18, now + fadeIn);
+    outBus.gain.setValueAtTime(0.16, now + totalDur * 0.72);
+    outBus.gain.exponentialRampToValueAtTime(0.0009, now + totalDur);
+
+    cloudFilter.type = 'lowpass';
+    cloudFilter.frequency.value = Math.min(nyquist - 220, Math.max(420, freq * rng.range(3.2, 5.2)));
+    cloudFilter.Q.value = rng.range(0.25, 0.95);
+    cloudPan.pan.value = rng.range(-0.35, 0.35);
+
+    cloudFilter.connect(outBus);
+    outBus.connect(cloudPan);
+    cloudPan.connect(dest);
+    pushTransientNodes(nodes, totalDur + 0.45, outBus, cloudFilter, cloudPan);
+
+    const density = rng.range(5.2, 9.8) * (1 - loadPressure * 0.35);
+    const grainCap = loadPressure > 0.55 ? 16 : 30;
+    const totalGrains = Math.max(7, Math.min(grainCap, Math.floor(totalDur * density)));
+    const spacing = totalDur / Math.max(1, totalGrains);
 
     for (let i = 0; i < totalGrains; i++) {
-        const grainTime = now + rng.range(0, totalDur);
-        const gFreq = freq * Math.pow(2, rng.pick([0, 0, 7, 12, 19, 24]) / 12);
-        const detuneCents = rng.range(-20, 20);
+        const nominal = now + (i + rng.range(-0.35, 0.35)) * spacing;
+        const grainTime = Math.max(now, Math.min(now + totalDur - 0.09, nominal));
+        const gFreq = freq * Math.pow(2, rng.pick([0, 0, 2, 4, 7, 9, 12, 14]) / 12);
+        const detuneCents = rng.range(-14, 14);
 
         const o = ctx.createOscillator();
+        const grainFilter = ctx.createBiquadFilter();
         const g = ctx.createGain();
         const pan = ctx.createStereoPanner();
 
-        o.type = 'sine';
+        o.type = rng.pick(['sine', 'triangle', 'triangle']);
         o.frequency.value = gFreq * Math.pow(2, detuneCents / 1200);
-        pan.pan.value = rng.range(-1, 1);
+        pan.pan.value = rng.range(-0.85, 0.85);
 
-        // Very short grain envelope: 30-80ms
-        const gDur = rng.range(0.03, 0.08);
-        g.gain.setValueAtTime(0, grainTime);
-        g.gain.linearRampToValueAtTime(0.4, grainTime + gDur / 2);
-        g.gain.linearRampToValueAtTime(0, grainTime + gDur);
+        grainFilter.type = 'bandpass';
+        grainFilter.frequency.value = Math.min(nyquist - 200, Math.max(220, gFreq * rng.range(1.2, 2.8)));
+        grainFilter.Q.value = rng.range(0.25, 1.2);
 
-        o.connect(g); g.connect(pan); pan.connect(outBus);
-        o.start(grainTime); o.stop(grainTime + gDur + 0.01);
-        nodes.push(o, g, pan);
+        const gDur = rng.range(0.035, 0.12) * (1 - loadPressure * 0.15);
+        const atkDur = Math.max(0.012, gDur * 0.32);
+        const relDur = Math.max(0.012, gDur * 0.38);
+        const holdDur = Math.max(0, gDur - atkDur - relDur);
+        const peak = 0.036 + rng.range(0, 0.028);
+
+        g.gain.setValueAtTime(0.0001, grainTime);
+        g.gain.linearRampToValueAtTime(peak * 0.6, grainTime + atkDur * 0.6);
+        g.gain.linearRampToValueAtTime(peak, grainTime + atkDur);
+        if (holdDur > 0.003) g.gain.setValueAtTime(peak, grainTime + atkDur + holdDur);
+        g.gain.linearRampToValueAtTime(peak * 0.5, grainTime + atkDur + holdDur + relDur * 0.5);
+        g.gain.exponentialRampToValueAtTime(0.0001, grainTime + gDur);
+
+        o.connect(grainFilter);
+        grainFilter.connect(g);
+        g.connect(pan);
+        pan.connect(cloudFilter);
+        o.start(grainTime);
+        o.stop(grainTime + gDur + 0.03);
+        pushTransientNodes(nodes, gDur + 0.2, o, grainFilter, g, pan);
     }
+}
+
+// WAVETABLE MORPH
+// A hybrid tone that crossfades two shaped spectra while tracking a moving formant.
+function _wavetable_morph(ctx, freq, dest, rng, atk, dur, nodes) {
+    const now = ctx.currentTime;
+    const total = Math.max(0.35, atk + dur);
+    const bus = ctx.createGain();
+    const morph = ctx.createGain();
+    const invMorph = ctx.createGain();
+    const formant = ctx.createBiquadFilter();
+    const saturator = createSoftClipper(ctx, 1.05);
+
+    bus.gain.setValueAtTime(0, now);
+    bus.gain.linearRampToValueAtTime(0.22, now + Math.max(0.04, atk * 0.5));
+    bus.gain.linearRampToValueAtTime(0.18, now + total * 0.66);
+    bus.gain.exponentialRampToValueAtTime(0.0008, now + total);
+
+    formant.type = 'bandpass';
+    formant.frequency.setValueAtTime(Math.max(240, freq * 1.6), now);
+    formant.frequency.exponentialRampToValueAtTime(Math.min(ctx.sampleRate / 2 - 250, freq * rng.range(2.3, 4.4)), now + total * 0.58);
+    formant.frequency.exponentialRampToValueAtTime(Math.max(220, freq * rng.range(1.1, 2.2)), now + total);
+    formant.Q.value = rng.range(0.9, 4.2);
+
+    const oscA = ctx.createOscillator();
+    const oscB = ctx.createOscillator();
+    const aReal = new Float32Array([0, 1, 0.45, 0.22, 0.1, 0.06, 0.03, 0.01]);
+    const bReal = new Float32Array([0, 1, 0.15, 0.58, 0.02, 0.31, 0.01, 0.14, 0, 0.06]);
+    const aImag = new Float32Array(aReal.length);
+    const bImag = new Float32Array(bReal.length);
+    oscA.setPeriodicWave(ctx.createPeriodicWave(aReal, aImag));
+    oscB.setPeriodicWave(ctx.createPeriodicWave(bReal, bImag));
+    oscA.frequency.value = freq;
+    oscB.frequency.value = freq * (1 + rng.range(-0.003, 0.003));
+
+    morph.gain.setValueAtTime(1, now);
+    morph.gain.linearRampToValueAtTime(0.18, now + total);
+    invMorph.gain.setValueAtTime(0, now);
+    invMorph.gain.linearRampToValueAtTime(0.82, now + total);
+
+    const drift = ctx.createOscillator();
+    const driftGain = ctx.createGain();
+    drift.type = 'sine';
+    drift.frequency.value = rng.range(0.04, 0.16);
+    driftGain.gain.value = freq * rng.range(0.0015, 0.0035);
+    drift.connect(driftGain);
+    driftGain.connect(oscA.frequency);
+    driftGain.connect(oscB.frequency);
+
+    oscA.connect(morph);
+    oscB.connect(invMorph);
+    morph.connect(formant);
+    invMorph.connect(formant);
+    formant.connect(saturator);
+    saturator.connect(bus);
+    bus.connect(dest);
+
+    oscA.start(now);
+    oscB.start(now);
+    drift.start(now);
+    oscA.stop(now + total + 0.05);
+    oscB.stop(now + total + 0.05);
+    drift.stop(now + total + 0.05);
+    pushTransientNodes(nodes, total + 0.3, oscA, oscB, drift, driftGain, morph, invMorph, formant, saturator, bus);
+}
+
+// PHASE CLUSTER
+// Three phase-offset carriers plus subtle PM for dense animated texture.
+function _phase_cluster(ctx, freq, dest, rng, atk, dur, nodes) {
+    const now = ctx.currentTime;
+    const total = Math.max(0.28, atk + dur);
+    const out = ctx.createGain();
+    const pan = ctx.createStereoPanner();
+    const hp = ctx.createBiquadFilter();
+    const clip = createSoftClipper(ctx, 1.2);
+
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.2, now + Math.max(0.03, atk * 0.45));
+    out.gain.linearRampToValueAtTime(0.14, now + total * 0.6);
+    out.gain.exponentialRampToValueAtTime(0.0009, now + total);
+
+    pan.pan.value = rng.range(-0.65, 0.65);
+    hp.type = 'highpass';
+    hp.frequency.value = Math.max(80, freq * 0.55);
+
+    const mod = ctx.createOscillator();
+    const modGain = ctx.createGain();
+    mod.type = 'sine';
+    mod.frequency.value = rng.range(0.7, 2.2);
+    modGain.gain.value = freq * rng.range(0.005, 0.014);
+    mod.connect(modGain);
+
+    [-1, 0, 1].forEach((idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = idx === 0 ? 'sawtooth' : 'triangle';
+        osc.frequency.value = freq * Math.pow(2, (idx * rng.range(5, 14)) / 1200);
+        modGain.connect(osc.frequency);
+        gain.gain.value = idx === 0 ? 0.42 : 0.29;
+        osc.connect(gain);
+        gain.connect(hp);
+        osc.start(now);
+        osc.stop(now + total + 0.05);
+        pushTransientNodes(nodes, total + 0.2, osc, gain);
+    });
+
+    mod.start(now);
+    mod.stop(now + total + 0.05);
+
+    hp.connect(clip);
+    clip.connect(out);
+    out.connect(pan);
+    pan.connect(dest);
+    pushTransientNodes(nodes, total + 0.25, mod, modGain, hp, clip, out, pan);
+}
+
+// MODAL RESONATOR
+// Excites a bank of tuned resonances to emulate struck bars and shells.
+function _modal_resonator(ctx, freq, dest, rng, atk, dur, nodes) {
+    const now = ctx.currentTime;
+    const total = Math.max(0.35, atk + dur);
+    const exciterLen = Math.max(0.04, Math.min(0.12, total * 0.24));
+    const resonances = [1, 2.02, 2.84, 3.9, 5.06];
+    const levels = [1, 0.52, 0.31, 0.2, 0.11];
+
+    const output = ctx.createGain();
+    output.gain.setValueAtTime(0, now);
+    output.gain.linearRampToValueAtTime(0.24, now + Math.max(0.02, atk * 0.35));
+    output.gain.linearRampToValueAtTime(0.18, now + total * 0.58);
+    output.gain.exponentialRampToValueAtTime(0.0009, now + total);
+    output.connect(dest);
+
+    const noiseSize = Math.max(64, Math.floor(ctx.sampleRate * exciterLen));
+    const noiseBuffer = ctx.createBuffer(1, noiseSize, ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < noiseSize; i++) {
+        const t = i / noiseSize;
+        data[i] = ((nextVoiceRandom(rng) * 2) - 1) * Math.pow(1 - t, 2.4);
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const noiseEnv = ctx.createGain();
+    noiseEnv.gain.setValueAtTime(0, now);
+    noiseEnv.gain.linearRampToValueAtTime(0.4, now + 0.004);
+    noiseEnv.gain.exponentialRampToValueAtTime(0.0009, now + exciterLen);
+    noise.connect(noiseEnv);
+
+    resonances.forEach((ratio, i) => {
+        const filt = ctx.createBiquadFilter();
+        const gain = ctx.createGain();
+        filt.type = 'bandpass';
+        filt.frequency.value = Math.min(ctx.sampleRate / 2 - 180, freq * ratio * Math.pow(2, rng.range(-4, 4) / 1200));
+        filt.Q.value = 6 + i * 3.4 + rng.range(-0.8, 1.4);
+        gain.gain.value = levels[i] * 0.28;
+        noiseEnv.connect(filt);
+        filt.connect(gain);
+        gain.connect(output);
+        pushTransientNodes(nodes, total + 0.2, filt, gain);
+    });
+
+    const body = ctx.createOscillator();
+    const bodyGain = ctx.createGain();
+    body.type = 'sine';
+    body.frequency.value = freq * 0.5;
+    bodyGain.gain.setValueAtTime(0, now);
+    bodyGain.gain.linearRampToValueAtTime(0.08, now + 0.03);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0009, now + total * 0.92);
+    body.connect(bodyGain);
+    bodyGain.connect(output);
+
+    noise.start(now);
+    noise.stop(now + exciterLen + 0.02);
+    body.start(now);
+    body.stop(now + total + 0.05);
+    pushTransientNodes(nodes, total + 0.25, noise, noiseEnv, body, bodyGain, output);
 }
 

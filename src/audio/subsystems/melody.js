@@ -42,6 +42,9 @@ export function getAdditiveVoiceLifetime(name, atk, dur) {
         case 'metallic': return 10.5;
         case 'crystal_chimes': return 15.8;
         case 'gong': return 20.8;
+        case 'wavetable_morph': return Math.max(baseLifetime, 2.6) + 1.2;
+        case 'phase_cluster': return Math.max(baseLifetime, 2.1) + 0.9;
+        case 'modal_resonator': return Math.max(baseLifetime, 2.8) + 1.1;
         case 'brass_pad': return Math.max(atk || 0, 1.5) + (dur || 0) + 0.9;
         default: return baseLifetime + 0.8;
     }

@@ -88,6 +88,11 @@ export function createAudioStateRenderer({ audio, elements = {}, options = {} } 
             dbgLoad: dbgLoadEl,
             dbgStep: dbgStepEl,
             dbgMoon: dbgMoonEl,
+            dbgPace: dbgPaceEl,
+            dbgHold: dbgHoldEl,
+            dbgMicro: dbgMicroEl,
+            dbgDroneAud: dbgDroneAudEl,
+            dbgMoonRate: dbgMoonRateEl,
             tensionFill: tensionFillEl,
             tensionIcon: tensionIconEl,
         } = elements;
@@ -121,6 +126,17 @@ export function createAudioStateRenderer({ audio, elements = {}, options = {} } 
                     ? `${debug.tensionPhase} | ${debug.cycleSteps}/${debug.stepMs}ms`
                     : '--';
             }
+            if (dbgPaceEl) dbgPaceEl.textContent = `${state?.paceClass || debug.paceClass || '--'}`.toUpperCase();
+            if (dbgHoldEl) dbgHoldEl.textContent = `${state?.harmonyHoldBarsCurrent ?? debug.harmonyHoldBarsCurrent ?? '--'}`;
+            if (dbgMicroEl) dbgMicroEl.textContent = `${Math.round(((state?.microtonalDepth ?? debug.microtonalDepth ?? 0) * 100))}%`;
+            if (dbgDroneAudEl) {
+                const aud = state?.droneAudibilityDb ?? debug.droneAudibilityDb;
+                dbgDroneAudEl.textContent = Number.isFinite(aud) ? `${aud.toFixed(1)} dB` : '--';
+            }
+            if (dbgMoonRateEl) {
+                const moonRate = state?.moonActivityRate ?? debug.moonActivityRate;
+                dbgMoonRateEl.textContent = Number.isFinite(moonRate) ? `${moonRate.toFixed(2)}/step` : '--';
+            }
             setMoonDebug(dbgMoonEl, debug, opts);
 
             if (melBankEl) {
@@ -147,6 +163,11 @@ export function createAudioStateRenderer({ audio, elements = {}, options = {} } 
         if (dbgNodesEl) dbgNodesEl.textContent = '0';
         if (dbgLoadEl) dbgLoadEl.textContent = '0%';
         if (dbgStepEl) dbgStepEl.textContent = '--';
+        if (dbgPaceEl) dbgPaceEl.textContent = '--';
+        if (dbgHoldEl) dbgHoldEl.textContent = '--';
+        if (dbgMicroEl) dbgMicroEl.textContent = '--';
+        if (dbgDroneAudEl) dbgDroneAudEl.textContent = '--';
+        if (dbgMoonRateEl) dbgMoonRateEl.textContent = '--';
         setIdleMoonDebug(dbgMoonEl, opts);
 
         if (melModeEl) {

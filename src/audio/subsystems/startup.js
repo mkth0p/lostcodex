@@ -175,12 +175,51 @@ export function startEnginePlayback(engine, planet) {
     engine.melodyFilter = melodyFilter;
     engine._moonProfile = engine._buildMoonProfile(p);
     if (engine._moonProfile.length) {
-        const moonBus = ctx.createGain();
-        moonBus.gain.setValueAtTime(0, ctx.currentTime);
-        moonBus.gain.linearRampToValueAtTime(engine._clamp(0.16 + engine._moonProfile.length * 0.06, 0.18, 0.36), ctx.currentTime + 12);
-        moonBus.connect(melodyFilter);
-        engine.nodes.push(moonBus);
-        engine._moonBus = moonBus;
+        const moonSystem = p.moonSystem || {};
+        const moonInput = ctx.createGain();
+        const moonTone = ctx.createBiquadFilter();
+        const moonAir = ctx.createBiquadFilter();
+        const moonDry = ctx.createGain();
+        const moonDelay = ctx.createDelay(1.8);
+        const moonFeedback = ctx.createGain();
+        const moonDelayMix = ctx.createGain();
+
+        moonInput.gain.setValueAtTime(0, ctx.currentTime);
+        const moonGainTarget = engine._clamp(
+            0.13 + engine._moonProfile.length * 0.055 + (moonSystem.density || 0.4) * 0.08,
+            0.14,
+            0.38
+        );
+        moonInput.gain.linearRampToValueAtTime(moonGainTarget, ctx.currentTime + 10);
+
+        moonTone.type = 'bandpass';
+        moonTone.frequency.setValueAtTime(
+            engine._clamp((ac.melFiltFreq || p.filterFreq || 1600) * (0.58 + (moonSystem.resonance || 0.5) * 0.42), 220, ctx.sampleRate / 2 - 400),
+            ctx.currentTime
+        );
+        moonTone.Q.value = engine._clamp(0.9 + (moonSystem.resonance || 0.4) * 2.4, 0.6, 4.2);
+
+        moonAir.type = 'highshelf';
+        moonAir.frequency.value = 2600;
+        moonAir.gain.value = engine._clamp(-2 + (moonSystem.phaseWarp || 0.3) * 5.5, -3.5, 2.5);
+
+        moonDry.gain.value = engine._clamp(0.8 - (moonSystem.phaseWarp || 0.2) * 0.25, 0.52, 0.86);
+        moonDelay.delayTime.value = engine._clamp(transport.stepSeconds * (1.45 + (moonSystem.orbitSpread || 0.5) * 0.72), 0.12, 1.05);
+        moonFeedback.gain.value = engine._clamp(0.2 + (moonSystem.temporalDrift || 0.2) * 0.36, 0.16, 0.44);
+        moonDelayMix.gain.value = engine._clamp(0.16 + (moonSystem.phaseWarp || 0.2) * 0.28, 0.12, 0.38);
+
+        moonInput.connect(moonTone);
+        moonTone.connect(moonAir);
+        moonAir.connect(moonDry);
+        moonDry.connect(melodyFilter);
+        moonAir.connect(moonDelay);
+        moonDelay.connect(moonFeedback);
+        moonFeedback.connect(moonDelay);
+        moonDelay.connect(moonDelayMix);
+        moonDelayMix.connect(melodyFilter);
+
+        engine.nodes.push(moonInput, moonTone, moonAir, moonDry, moonDelay, moonFeedback, moonDelayMix);
+        engine._moonBus = moonInput;
     } else {
         engine._moonBus = null;
     }

@@ -8,9 +8,13 @@ import { WarpRenderer } from './warp.js';
 import { encodeAddress, decodeAddress } from './ui/shared/address-codec.js';
 import { bindAudioEngineControls } from './ui/shared/audio-controls.js';
 import { createAudioStateRenderer } from './ui/shared/audio-state-ui.js';
+import { createAudioEventConsole } from './ui/shared/audio-event-console.js';
 import { fillSlider } from './ui/shared/slider-fill.js';
 import { randomAddress } from './ui/shared/address-utils.js';
 import { isBookmarked, loadBookmarks, saveBookmarks, toggleBookmark } from './ui/shared/bookmarks.js';
+import { resolvePlanetRarity } from './ui/shared/rarity.js';
+
+const ENGINE_MODE_STORAGE_KEY = 'lc_engine_mode';
 
 export class App {
     constructor() {
@@ -24,9 +28,18 @@ export class App {
         this.tensionEls = null;
         this._unsubscribeState = null;
         this._renderAudioState = null;
+        this._audioConsole = null;
     }
 
     init() {
+        const queryMode = new URLSearchParams(window.location.search).get('engine');
+        let storedMode = null;
+        try { storedMode = localStorage.getItem(ENGINE_MODE_STORAGE_KEY); } catch { }
+        const forcedMode = window.__LC_ENGINE_MODE__ || queryMode || storedMode;
+        if (forcedMode === 'v2' || forcedMode === 'v1') {
+            this.audio.setEngineMode(forcedMode);
+            try { localStorage.setItem(ENGINE_MODE_STORAGE_KEY, forcedMode); } catch { }
+        }
         // Canvases
         this.starfield = new Starfield(document.getElementById('bg-canvas'));
         this.starfield.isMobile = this.isMobile;
@@ -78,6 +91,13 @@ export class App {
             audio: this.audio,
             fillSliderFn: (el) => this._fillSlider(el),
             defaultArpChecked: true,
+            onEngineModeChange: (mode) => {
+                this.audio.setEngineMode(mode);
+                try { localStorage.setItem(ENGINE_MODE_STORAGE_KEY, mode); } catch { }
+                if (this.planet && this.audio.playing) {
+                    this.audio.crossfadeTo(this.planet, () => this.waveViz.setAnalyser(this.audio.getAnalyser()));
+                }
+            },
         });
         this.warpR = new WarpRenderer(document.getElementById('warp-canvas'));
         this.warpR.isMobile = this.isMobile;
@@ -132,6 +152,11 @@ export class App {
                 dbgNodes: this.debugEls.nodes,
                 dbgLoad: this.debugEls.load,
                 dbgStep: this.debugEls.step,
+                dbgPace: document.getElementById('dbg-pace'),
+                dbgHold: document.getElementById('dbg-hold'),
+                dbgMicro: document.getElementById('dbg-micro'),
+                dbgDroneAud: document.getElementById('dbg-drone-aud'),
+                dbgMoonRate: document.getElementById('dbg-moon-rate'),
                 tensionFill: this.tensionEls.fill,
                 tensionIcon: this.tensionEls.icon,
             },
@@ -148,14 +173,21 @@ export class App {
                 accentColor: 'var(--accent)',
             },
         });
+        this._audioConsole = createAudioEventConsole({
+            audio: this.audio,
+            outputEl: document.getElementById('audio-console'),
+            clearBtnEl: document.getElementById('audio-console-clear'),
+        });
         this._unsubscribeState = this.audio.subscribeState((state) => this._updateAudioUI(state));
         window.addEventListener('beforeunload', () => {
             if (this._unsubscribeState) this._unsubscribeState();
+            if (this._audioConsole) this._audioConsole.dispose();
         });
     }
 
     _updateAudioUI(state = null) {
         if (this._renderAudioState) this._renderAudioState(state);
+        if (this._audioConsole) this._audioConsole.onState(state);
     }
 
     _fillSlider(el) {
@@ -225,7 +257,14 @@ export class App {
         const descEl = document.getElementById('planet-desc');
         if (descEl) descEl.textContent = planet.biome.desc;
         const moonsEl = document.getElementById('info-moons');
-        if (moonsEl) moonsEl.textContent = planet.numMoons === 0 ? 'NONE' : `${planet.numMoons} SATELLITE${planet.numMoons > 1 ? 'S' : ''}`;
+        if (moonsEl) {
+            if (!planet.numMoons) {
+                moonsEl.textContent = 'NONE';
+            } else {
+                const moonDensity = Math.round((planet.moonSystem?.density || 0) * 100);
+                moonsEl.textContent = `${planet.numMoons} SATELLITE${planet.numMoons > 1 ? 'S' : ''} | DENS ${moonDensity}%`;
+            }
+        }
 
         // Sector · System · Planet coordinate split
         const glyphs = [...this.address];
@@ -234,11 +273,10 @@ export class App {
             `${glyphs.slice(0, third).join('') || '?'} · ${glyphs.slice(third, third * 2).join('') || '?'} · ${glyphs.slice(third * 2).join('') || '?'}`;
 
         // Rarity class
-        const len = glyphs.length;
-        const RARITY = len <= 3 ? 'common' : len <= 6 ? 'standard' : len <= 10 ? 'uncommon' : len <= 15 ? 'rare' : 'anomalous';
+        const rarity = resolvePlanetRarity(planet, this.address);
         const rarityEl = document.getElementById('info-rarity');
-        rarityEl.textContent = RARITY.toUpperCase();
-        rarityEl.className = `rarity-tag rarity-${RARITY}`;
+        rarityEl.textContent = rarity.label;
+        rarityEl.className = `rarity-tag ${rarity.className}`;
 
         const st = document.getElementById('info-sonic');
         st.style.borderColor = planet.biome.glowColor;

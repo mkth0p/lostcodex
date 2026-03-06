@@ -8,13 +8,23 @@ export function startGranularCloud(engine, p, dest) {
     const densityCap = 2.5 + (1 - perf.density) * 8.5;
     const effectiveDensity = Math.min(ac.grainDensity, densityCap);
     if (effectiveDensity < 0.05) return;
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const pushTransient = (ttlSec, ...nodes) => {
+        if (typeof engine.nodes?.pushTransient === 'function') engine.nodes.pushTransient(ttlSec, ...nodes);
+        else engine.nodes.push(...nodes);
+    };
 
     // A single bus gain for the whole cloud - toggle ramps this
     const granularBus = ctx.createGain();
+    const granularTone = ctx.createBiquadFilter();
     granularBus.gain.setValueAtTime(0, ctx.currentTime);
-    granularBus.gain.linearRampToValueAtTime(1, ctx.currentTime + 1.5); // fade in to stop clicks
-    granularBus.connect(dest);
-    engine.nodes.push(granularBus);
+    granularBus.gain.linearRampToValueAtTime(0.85, ctx.currentTime + 1.8); // gentle fade-in to avoid startup clicks
+    granularTone.type = 'lowpass';
+    granularTone.frequency.value = Math.min(sr / 2 - 260, Math.max(820, (p.filterFreq || 1200) * 2.2));
+    granularTone.Q.value = 0.4;
+    granularBus.connect(granularTone);
+    granularTone.connect(dest);
+    engine.nodes.push(granularBus, granularTone);
     engine._granularBus = granularBus;
 
     const bufLen = sr * 2;
@@ -34,42 +44,76 @@ export function startGranularCloud(engine, p, dest) {
     }
 
     const intervalMs = 1000 / effectiveDensity;
-    const peak = 0.012 * Math.sqrt(Math.min(effectiveDensity, 9));
+    const peak = 0.009 * Math.sqrt(Math.min(effectiveDensity, 9));
+    const reference = buf.getChannelData(0);
+
+    const findZeroCrossing = (approxSeconds) => {
+        const target = Math.max(1, Math.min(reference.length - 2, Math.floor(approxSeconds * sr)));
+        const radius = Math.min(280, Math.max(36, Math.floor(sr * 0.004)));
+        const start = Math.max(1, target - radius);
+        const end = Math.min(reference.length - 2, target + radius);
+        let best = target;
+        let bestAbs = Math.abs(reference[target]);
+        for (let i = start; i <= end; i++) {
+            const a = reference[i];
+            const b = reference[i + 1];
+            const absA = Math.abs(a);
+            if ((a <= 0 && b >= 0) || (a >= 0 && b <= 0)) return i / sr;
+            if (absA < bestAbs) {
+                bestAbs = absA;
+                best = i;
+            }
+        }
+        return best / sr;
+    };
 
     const scheduleGrain = (rng) => {
-        const nominalDur = ac.grainSize * 0.001 * (0.8 + rng.range(0, 0.5));
+        const nominalDur = clamp(ac.grainSize * 0.001 * (0.74 + rng.range(0, 0.52)), 0.035, 0.12);
 
         // Click-free envelope
-        const atkDur = Math.max(0.012, nominalDur * 0.30);
-        const relDur = Math.max(0.018, nominalDur * 0.55);
+        const atkDur = Math.max(0.012, nominalDur * 0.32);
+        const relDur = Math.max(0.012, nominalDur * 0.38);
         const holdDur = Math.max(0, nominalDur - atkDur - relDur);
         const totalEnv = atkDur + holdDur + relDur;
 
         const maxStart = Math.max(0, (bufLen / sr) - totalEnv - 0.05);
-        const startPos = rng.range(0, maxStart);
-        const centsOff = rng.range(-1, 1) * ac.grainPitchScatter;
+        const roughStartPos = rng.range(0, maxStart);
+        const startPos = findZeroCrossing(roughStartPos);
+        const centsOff = rng.range(-1, 1) * ac.grainPitchScatter * 0.75;
         const playRate = Math.pow(2, centsOff / 1200);
-        const pan = rng.range(-0.9, 0.9);
+        const pan = rng.range(-0.75, 0.75);
+
+        const startIdx = Math.max(1, Math.min(reference.length - 2, Math.floor(startPos * sr)));
+        const transient = Math.max(Math.abs(reference[startIdx - 1]), Math.abs(reference[startIdx]), Math.abs(reference[startIdx + 1]));
+        if (transient > 0.88) return;
 
         const gs = ctx.createBufferSource();
+        const tone = ctx.createBiquadFilter();
         const env = ctx.createGain();
         const pn = ctx.createStereoPanner();
         gs.buffer = buf;
         gs.playbackRate.value = playRate;
         pn.pan.value = pan;
+        tone.type = 'bandpass';
+        tone.frequency.value = clamp((p.filterFreq || 900) * rng.range(0.55, 1.5), 180, 5200);
+        tone.Q.value = 0.35 + rng.range(0, 1.05);
 
         // Hann-like curve
-        const now = ctx.currentTime;
-        env.gain.setValueAtTime(0, now);
-        env.gain.linearRampToValueAtTime(peak * 0.5, now + atkDur * 0.5);
-        env.gain.linearRampToValueAtTime(peak, now + atkDur);
-        if (holdDur > 0.004) env.gain.setValueAtTime(peak, now + atkDur + holdDur);
-        env.gain.linearRampToValueAtTime(peak * 0.5, now + atkDur + holdDur + relDur * 0.5);
-        env.gain.linearRampToValueAtTime(0, now + totalEnv);
+        const launch = ctx.currentTime + rng.range(0.003, 0.012);
+        const peakLevel = peak * rng.range(0.68, 1.08);
+        env.gain.setValueAtTime(0.0001, launch);
+        env.gain.linearRampToValueAtTime(peakLevel * 0.6, launch + atkDur * 0.55);
+        env.gain.linearRampToValueAtTime(peakLevel, launch + atkDur);
+        if (holdDur > 0.004) env.gain.setValueAtTime(peakLevel, launch + atkDur + holdDur);
+        env.gain.linearRampToValueAtTime(peakLevel * 0.5, launch + atkDur + holdDur + relDur * 0.5);
+        env.gain.exponentialRampToValueAtTime(0.0001, launch + totalEnv);
 
-        gs.connect(env); env.connect(pn); pn.connect(granularBus);
-        gs.start(now, startPos, totalEnv + 0.06);
-        engine.nodes.push(gs, env, pn);
+        gs.connect(tone);
+        tone.connect(env);
+        env.connect(pn);
+        pn.connect(granularBus);
+        gs.start(launch, startPos, totalEnv + 0.04);
+        pushTransient(totalEnv + 0.2, gs, tone, env, pn);
     };
 
     // Wait before firing grains to let the bus fade in and avoid load clicks.
@@ -81,7 +125,7 @@ export function startGranularCloud(engine, p, dest) {
             const activeNodes = engine.nodes?.size || 0;
             if (activeNodes > 320 && grng.range(0, 1) < 0.65) return;
             scheduleGrain(grng);
-            if (effectiveDensity > 4 && activeNodes < 280 && grng.range(0, 1) < 0.24) {
+            if (effectiveDensity > 5 && activeNodes < 280 && grng.range(0, 1) < 0.12) {
                 engine._setManagedTimeout(() => {
                     if (engine.playing) scheduleGrain(grng);
                 }, intervalMs * 0.35);

@@ -50,6 +50,15 @@ import {
     startBassLine,
     updateChordProgression
 } from './audio/subsystems/harmony.js';
+import { AudioEngineV2 } from './audio/v2/engine-v2.js';
+import { DEFAULT_MACRO_CONTROLS, normalizeMacroControls } from './audio/v2/modulation/mod-matrix.js';
+import { normalizeOverlayFlags } from './audio/v1-plus/layer-contracts.js';
+import {
+    DEFAULT_DRONE_EXPERT,
+    DEFAULT_DRONE_MACROS,
+    normalizeDroneExpert,
+    normalizeDroneMacros,
+} from './audio/v2/drone/drone-macro-map.js';
 
 const STATE_UPDATE_INTERVAL_MS = 100;
 const SCHEDULER_TICK_MS = 25;
@@ -77,9 +86,12 @@ const MELODY_VOICE_COSTS = {
     gong: 0.95,
     granular_cloud: 1.0,
     metallic: 0.4,
+    modal_resonator: 0.54,
+    phase_cluster: 0.62,
     strings: 0.5,
     subpad: 0.6,
     vowel_morph: 0.65,
+    wavetable_morph: 0.58,
 };
 
 const MELODY_VOICE_COOLDOWNS = {
@@ -89,9 +101,12 @@ const MELODY_VOICE_COOLDOWNS = {
     gong: 1.8,
     granular_cloud: 1.25,
     metallic: 0.45,
+    modal_resonator: 0.72,
+    phase_cluster: 0.92,
     strings: 0.7,
     subpad: 1.0,
     vowel_morph: 0.9,
+    wavetable_morph: 0.8,
 };
 
 export class AudioEngine {
@@ -115,6 +130,59 @@ export class AudioEngine {
         this._transportScheduler = null;
         this._engineRefactorV2 = true;
         this._noiseBuffer = null; // Cached noise buffer for percussion
+        this._engineMode = 'v1';
+        this._macroControls = { ...DEFAULT_MACRO_CONTROLS };
+        this._arrangement = {
+            formDepth: 0.5,
+            variationRate: 0.5,
+            phraseLengthBias: 0.5,
+            cadenceStrength: 0.5,
+        };
+        this._layerMix = {
+            drones: 0.7,
+            pads: 0.7,
+            melody: 0.84,
+            bass: 0.72,
+            percussion: 0.8,
+            ambience: 0.66,
+            fx: 0.65,
+        };
+        this._spatial = {
+            width: 0.5,
+            depth: 0.5,
+            movement: 0.5,
+        };
+        this._droneMacros = { ...DEFAULT_DRONE_MACROS };
+        this._droneExpert = { ...DEFAULT_DRONE_EXPERT };
+        this._droneRandomizerDepth = 0;
+        this._droneVolume = 0.92;
+        this._droneState = {
+            loopFill: 0,
+            loopDirection: 'forward',
+            filterPosition: 1,
+            resonatorEnergy: 0,
+            echoDensity: 0,
+            ambienceDepth: 0,
+            modAmount: 0,
+            randomizerDepth: 0,
+            degradeStage: 'full',
+        };
+        this._mixTelemetry = {
+            preLimiterPeakDb: -60,
+            integratedLufs: -24,
+        };
+        this._qualityTelemetry = {
+            cpuTier: 'legacy',
+            degradeStage: 'full',
+        };
+        this._backgroundPolicy = 'realtime';
+        this._backgroundMode = 'foreground-realtime';
+        this._backgroundTimelineRemainingMs = 0;
+        this._v2OverlayFlags = normalizeOverlayFlags();
+        this._planetPaceOverride = 'auto';
+        this._eventListeners = new Set();
+        this._eventTimes = [];
+        this._eventWindowMs = 15000;
         // Melody feature flags (toggled live from UI)
         this._chordEnabled = true;
         this._arpEnabled = true;
@@ -153,6 +221,7 @@ export class AudioEngine {
         this._moonProcCount = 0;
         this._moonLastBurst = 0;
         this._lastMoonProcAt = Number.NEGATIVE_INFINITY;
+        this._v2Engine = new AudioEngineV2(this);
 
         this._resetSteps();
     }
@@ -179,6 +248,32 @@ export class AudioEngine {
         return this._strictRngs[label].next();
     }
 
+    _eventRate() {
+        const nowMs = Date.now();
+        const cutoff = nowMs - this._eventWindowMs;
+        while (this._eventTimes.length && this._eventTimes[0] < cutoff) {
+            this._eventTimes.shift();
+        }
+        return (this._eventTimes.length / this._eventWindowMs) * 1000;
+    }
+
+    _emitEvent(event = {}) {
+        const nowMs = Date.now();
+        this._eventTimes.push(nowMs);
+        const payload = {
+            ts: nowMs,
+            engineMode: this._engineMode,
+            ...event,
+        };
+        this._eventListeners.forEach((listener) => {
+            try {
+                listener(payload);
+            } catch (err) {
+                console.warn('AudioEngine event listener failed:', err);
+            }
+        });
+    }
+
     _snapshotState() {
         const transport = this.transport
             ? {
@@ -188,9 +283,80 @@ export class AudioEngine {
                 cycleMs: Math.round(this.transport.cycleMs),
             }
             : null;
+        const v2State = this._engineMode === 'v2'
+            ? this._v2Engine.getState()
+            : {
+                section: this._tensionState?.phase || 'DORMANT',
+                arrangementEnergy: this._tensionState?.energy || 0,
+                voiceBudget: 0,
+                voiceStealCount: 0,
+                eventRate: this._eventRate(),
+                cpuClass: 'legacy',
+                cpuTier: 'legacy',
+                degradeStage: 'full',
+                backgroundMode: this._backgroundMode,
+                backgroundPolicy: this._backgroundPolicy,
+                backgroundTimelineRemainingMs: this._backgroundTimelineRemainingMs || 0,
+                featureFlags: {
+                    granular: this._granularEnabled,
+                    percussion: this._percussionEnabled,
+                    chords: this._chordEnabled,
+                    arp: this._arpEnabled,
+                    motif: this._motifEnabled,
+                },
+                effectiveFlags: {
+                    granular: this._granularEnabled,
+                    percussion: this._percussionEnabled,
+                    chords: this._chordEnabled,
+                    arp: this._arpEnabled,
+                    motif: this._motifEnabled,
+                },
+                identityProfileId: this.planet?.identityProfile?.id || null,
+                paceClass: this._planetPaceOverride === 'auto'
+                    ? (this.planet?.identityProfile?.paceClass || 'medium')
+                    : this._planetPaceOverride,
+                microtonalDepth: this.planet?.identityProfile?.microtonalWarp || this.planet?.quarterToneProb || 0,
+                droneAudibilityDb: -60,
+                moonActivityRate: 0,
+                harmonyHoldBarsCurrent: 0,
+                compositionDensity: this.planet?.melodyDensity || 0,
+                drone: this._droneState,
+                mix: this._mixTelemetry,
+                quality: this._qualityTelemetry,
+            };
+        this._droneState = v2State.drone || this._droneState;
+        this._mixTelemetry = v2State.mix || this._mixTelemetry;
+        this._qualityTelemetry = v2State.quality || {
+            cpuTier: v2State.cpuTier || this._qualityTelemetry.cpuTier,
+            degradeStage: v2State.degradeStage || this._qualityTelemetry.degradeStage,
+        };
 
         return {
             transport,
+            engineMode: this._engineMode,
+            section: v2State.section,
+            arrangementEnergy: v2State.arrangementEnergy,
+            voiceBudget: v2State.voiceBudget,
+            voiceStealCount: v2State.voiceStealCount,
+            eventRate: v2State.eventRate,
+            cpuClass: v2State.cpuClass,
+            cpuTier: v2State.cpuTier || this._qualityTelemetry.cpuTier,
+            degradeStage: v2State.degradeStage || this._qualityTelemetry.degradeStage,
+            backgroundMode: v2State.backgroundMode,
+            backgroundPolicy: v2State.backgroundPolicy,
+            backgroundTimelineRemainingMs: v2State.backgroundTimelineRemainingMs,
+            featureFlags: v2State.featureFlags,
+            effectiveFlags: v2State.effectiveFlags,
+            identityProfileId: v2State.identityProfileId,
+            paceClass: v2State.paceClass,
+            microtonalDepth: v2State.microtonalDepth,
+            droneAudibilityDb: v2State.droneAudibilityDb,
+            moonActivityRate: v2State.moonActivityRate,
+            harmonyHoldBarsCurrent: v2State.harmonyHoldBarsCurrent,
+            compositionDensity: v2State.compositionDensity,
+            drone: this._droneState,
+            mix: this._mixTelemetry,
+            quality: this._qualityTelemetry,
             tension: {
                 phase: this._tensionState?.phase || 'DORMANT',
                 energy: this._tensionState?.energy || 0,
@@ -605,10 +771,13 @@ export class AudioEngine {
             case 'granular_cloud': return { atk: rng.range(0.03, 0.18), dur: rng.range(0.5, 1.6) };
             case 'marimba': return { atk: 0.02, dur: rng.range(0.4, 1.0) };
             case 'metallic': return { atk: 0.04, dur: rng.range(1.4, 3.6) };
+            case 'modal_resonator': return { atk: rng.range(0.03, 0.12), dur: rng.range(2.1, 4.5) };
+            case 'phase_cluster': return { atk: rng.range(0.05, 0.2), dur: rng.range(1.2, 3.4) };
             case 'strings': return { atk: rng.range(0.8, 2.0), dur: rng.range(3.0, 6.5) };
             case 'subpad': return { atk: rng.range(1.2, 2.5), dur: rng.range(3.5, 6.5) };
             case 'theremin': return { atk: rng.range(0.12, 0.45), dur: rng.range(1.4, 3.5) };
             case 'vowel_morph': return { atk: rng.range(0.5, 1.5), dur: rng.range(2.0, 4.5) };
+            case 'wavetable_morph': return { atk: rng.range(0.18, 0.7), dur: rng.range(1.8, 4.8) };
             default: return { atk, dur };
         }
     }
@@ -828,10 +997,20 @@ export class AudioEngine {
     }
 
     start(planet) {
+        if (this._engineMode === 'v2') {
+            this._v2Engine.setV2OverlayFlags(this._v2OverlayFlags);
+            this._v2Engine.setPlanetPaceOverride(this._planetPaceOverride);
+            this._v2Engine.start(planet);
+            return;
+        }
         startEnginePlayback(this, planet);
+        this._emitEvent({ type: 'engine-start', mode: 'v1', seed: planet?.seed || 0 });
     }
 
     stop() {
+        if (this._engineMode === 'v2') {
+            this._v2Engine.beforeStop();
+        }
         this._stopTransportScheduler();
         this.intervals.forEach(clearInterval);
         this.intervals = [];
@@ -863,7 +1042,12 @@ export class AudioEngine {
         this._lastTensionPhase = 'DORMANT';
         this._lastPhaseEventTime = 0;
         this._macroEventCooldownUntil = 0;
+        this._backgroundMode = 'foreground-realtime';
+        this._backgroundTimelineRemainingMs = 0;
         this.playing = false;
+        if (this._engineMode !== 'v2') {
+            this._emitEvent({ type: 'engine-stop', mode: this._engineMode });
+        }
         this._emitState();
     }
 
@@ -927,7 +1111,254 @@ export class AudioEngine {
         if (typeof motif === 'boolean') this._motifEnabled = motif;
         if (typeof ghost === 'boolean') this._ghostEnabled = ghost;
         if (typeof fills === 'boolean') this._fillsEnabled = fills;
+        if (this._engineMode === 'v2') this._v2Engine.setFeatureFlags();
+        this._emitEvent({
+            type: 'feature-flags',
+            featureFlags: {
+                granular: this._granularEnabled,
+                percussion: this._percussionEnabled,
+                chords: this._chordEnabled,
+                arp: this._arpEnabled,
+                motif: this._motifEnabled,
+            },
+        });
         this._emitState();
+    }
+    setEngineMode(mode = 'v1') {
+        const nextMode = mode === 'v2' ? 'v2' : 'v1';
+        if (nextMode === this._engineMode) return;
+        const shouldRestart = this.playing && !!this.planet;
+        this._engineMode = nextMode;
+        this._emitEvent({ type: 'engine-mode', mode: nextMode });
+        if (shouldRestart) {
+            const currentPlanet = this.planet;
+            this.stop();
+            this.start(currentPlanet);
+        }
+        this._emitState();
+    }
+    getEngineMode() {
+        return this._engineMode;
+    }
+    setMacroControls(next = {}) {
+        this._macroControls = normalizeMacroControls({
+            ...this._macroControls,
+            ...next,
+        });
+        if (this._engineMode === 'v2') this._v2Engine.setMacroControls(this._macroControls);
+        this._emitState();
+    }
+    setArrangement({ formDepth, variationRate, phraseLengthBias, cadenceStrength } = {}) {
+        if (Number.isFinite(formDepth)) this._arrangement.formDepth = this._clamp(formDepth, 0, 1);
+        if (Number.isFinite(variationRate)) this._arrangement.variationRate = this._clamp(variationRate, 0, 1);
+        if (Number.isFinite(phraseLengthBias)) this._arrangement.phraseLengthBias = this._clamp(phraseLengthBias, 0, 1);
+        if (Number.isFinite(cadenceStrength)) this._arrangement.cadenceStrength = this._clamp(cadenceStrength, 0, 1);
+        if (this._engineMode === 'v2') this._v2Engine.setArrangement(this._arrangement);
+        this._emitState();
+    }
+    setV2OverlayFlags({ extendedHarmony, counterpoint, microtonalWarp, droneLayer, moonCanons, adaptivePercussion, ambientEcosystem } = {}) {
+        this._v2OverlayFlags = normalizeOverlayFlags({
+            ...this._v2OverlayFlags,
+            ...(typeof extendedHarmony === 'boolean' ? { extendedHarmony } : {}),
+            ...(typeof counterpoint === 'boolean' ? { counterpoint } : {}),
+            ...(typeof microtonalWarp === 'boolean' ? { microtonalWarp } : {}),
+            ...(typeof droneLayer === 'boolean' ? { droneLayer } : {}),
+            ...(typeof moonCanons === 'boolean' ? { moonCanons } : {}),
+            ...(typeof adaptivePercussion === 'boolean' ? { adaptivePercussion } : {}),
+            ...(typeof ambientEcosystem === 'boolean' ? { ambientEcosystem } : {}),
+        });
+        if (this._engineMode === 'v2') this._v2Engine.setV2OverlayFlags(this._v2OverlayFlags);
+        this._emitEvent({
+            type: 'v2-overlay-flags',
+            overlays: { ...this._v2OverlayFlags },
+        });
+        this._emitState();
+    }
+    setPlanetPaceOverride(mode = 'auto') {
+        this._planetPaceOverride = ['slow', 'medium', 'fast'].includes(mode) ? mode : 'auto';
+        if (this._engineMode === 'v2') this._v2Engine.setPlanetPaceOverride(this._planetPaceOverride);
+        this._emitEvent({
+            type: 'pace-override',
+            paceOverride: this._planetPaceOverride,
+        });
+        this._emitState();
+    }
+    getIdentityDiagnostics() {
+        if (this._engineMode === 'v2') {
+            return this._v2Engine.getIdentityDiagnostics?.() || {
+                identityProfileId: this.planet?.identityProfile?.id || null,
+                paceClass: this.planet?.identityProfile?.paceClass || 'medium',
+                microtonalDepth: 0,
+                droneAudibilityDb: -60,
+                moonActivityRate: 0,
+                harmonyHoldBarsCurrent: 0,
+                compositionDensity: 0,
+                overlayFlags: { ...this._v2OverlayFlags },
+                paceOverride: this._planetPaceOverride,
+            };
+        }
+        return {
+            identityProfileId: this.planet?.identityProfile?.id || null,
+            paceClass: this._planetPaceOverride === 'auto'
+                ? (this.planet?.identityProfile?.paceClass || 'medium')
+                : this._planetPaceOverride,
+            microtonalDepth: this.planet?.identityProfile?.microtonalWarp || this.planet?.quarterToneProb || 0,
+            droneAudibilityDb: -60,
+            moonActivityRate: 0,
+            harmonyHoldBarsCurrent: 0,
+            compositionDensity: this.planet?.melodyDensity || 0,
+            overlayFlags: { ...this._v2OverlayFlags },
+            paceOverride: this._planetPaceOverride,
+        };
+    }
+    setLayerMix({ drones, pads, melody, bass, percussion, ambience, fx } = {}) {
+        if (Number.isFinite(drones)) this._layerMix.drones = this._clamp(drones, 0, 1.4);
+        if (Number.isFinite(pads)) this._layerMix.pads = this._clamp(pads, 0, 1.4);
+        if (Number.isFinite(melody)) this._layerMix.melody = this._clamp(melody, 0, 1.4);
+        if (Number.isFinite(bass)) this._layerMix.bass = this._clamp(bass, 0, 1.4);
+        if (Number.isFinite(percussion)) this._layerMix.percussion = this._clamp(percussion, 0, 1.4);
+        if (Number.isFinite(ambience)) this._layerMix.ambience = this._clamp(ambience, 0, 1.4);
+        if (Number.isFinite(fx)) this._layerMix.fx = this._clamp(fx, 0, 1.4);
+        if (this._engineMode === 'v2') this._v2Engine.setLayerMix(this._layerMix);
+        this._emitState();
+    }
+    setSpatial({ width, depth, movement } = {}) {
+        if (Number.isFinite(width)) this._spatial.width = this._clamp(width, 0, 1);
+        if (Number.isFinite(depth)) this._spatial.depth = this._clamp(depth, 0, 1);
+        if (Number.isFinite(movement)) this._spatial.movement = this._clamp(movement, 0, 1);
+        if (this._engineMode === 'v2') this._v2Engine.setSpatial(this._spatial);
+        this._emitState();
+    }
+    setDroneMacros(next = {}) {
+        this._droneMacros = normalizeDroneMacros({
+            ...this._droneMacros,
+            ...next,
+        });
+        if (this._engineMode === 'v2') this._v2Engine.setDroneMacros(this._droneMacros);
+        else this._emitEvent({ type: 'unsupported-feature', feature: 'drone-v2', engineMode: 'v1' });
+        this._emitEvent({
+            type: 'drone-macros',
+            macros: { ...this._droneMacros },
+        });
+        this._emitState();
+    }
+    setDroneExpert(next = {}) {
+        this._droneExpert = normalizeDroneExpert({
+            ...this._droneExpert,
+            ...next,
+        });
+        if (this._engineMode === 'v2') this._v2Engine.setDroneExpert(this._droneExpert);
+        else this._emitEvent({ type: 'unsupported-feature', feature: 'drone-v2', engineMode: 'v1' });
+        this._emitEvent({
+            type: 'drone-expert',
+            expert: { ...this._droneExpert },
+        });
+        this._emitState();
+    }
+    captureDroneLoop({ mode = 'toggle', source = 'pre' } = {}) {
+        if (this._engineMode !== 'v2') {
+            this._emitEvent({ type: 'unsupported-feature', feature: 'drone-v2', engineMode: 'v1' });
+            return this._droneState;
+        }
+        this._droneState = this._v2Engine.captureDroneLoop({ mode, source }) || this._droneState;
+        this._emitEvent({
+            type: 'drone-capture',
+            mode,
+            source,
+            state: { ...this._droneState },
+        });
+        this._emitState();
+        return this._droneState;
+    }
+    setDroneRandomizer({ target = 'all', intensity = 0.5, action = 'apply' } = {}) {
+        this._droneRandomizerDepth = this._clamp(Number.isFinite(intensity) ? intensity : this._droneRandomizerDepth, 0, 1);
+        if (this._engineMode !== 'v2') {
+            this._emitEvent({ type: 'unsupported-feature', feature: 'drone-v2', engineMode: 'v1' });
+            return this._droneState;
+        }
+        this._droneState = this._v2Engine.setDroneRandomizer({ target, intensity: this._droneRandomizerDepth, action }) || this._droneState;
+        this._emitEvent({
+            type: 'drone-randomizer',
+            target,
+            intensity: this._droneRandomizerDepth,
+            action,
+            state: { ...this._droneState },
+        });
+        this._emitState();
+        return this._droneState;
+    }
+    setDroneVariationSeed(seed) {
+        if (!Number.isFinite(seed)) return;
+        const rounded = Math.round(seed);
+        if (this._engineMode === 'v2') this._v2Engine.setDroneVariationSeed(rounded);
+        else this._emitEvent({ type: 'unsupported-feature', feature: 'drone-v2', engineMode: 'v1' });
+        this._emitEvent({
+            type: 'drone-seed',
+            seed: rounded,
+        });
+    }
+    setDroneVolume(level = 0.92) {
+        if (!Number.isFinite(level)) return;
+        this._droneVolume = this._clamp(level, 0, 1.4);
+        if (this._engineMode === 'v2') this._v2Engine.setDroneVolume(this._droneVolume);
+        else this._emitEvent({ type: 'unsupported-feature', feature: 'drone-v2', engineMode: 'v1' });
+        this._emitEvent({
+            type: 'drone-volume',
+            level: this._droneVolume,
+        });
+        this._emitState();
+    }
+    getDroneState() {
+        if (this._engineMode === 'v2') {
+            const state = this._v2Engine.getDroneState();
+            if (state) this._droneState = state;
+        }
+        return { ...this._droneState };
+    }
+    setBackgroundPolicy(policy = 'realtime') {
+        const normalized = ['realtime', 'continuity', 'pause'].includes(policy) ? policy : 'realtime';
+        this._backgroundPolicy = normalized;
+        if (this._engineMode === 'v2') this._v2Engine.setBackgroundPolicy(normalized);
+        this._emitState();
+    }
+    enterBackgroundMode() {
+        if (this._engineMode === 'v2') {
+            if (!this._v2Engine?.backgroundController) {
+                if (this._backgroundPolicy === 'pause') this._backgroundMode = 'paused-by-focus';
+                else if (this._backgroundPolicy === 'continuity') {
+                    this._backgroundMode = 'background-continuity';
+                    this._backgroundTimelineRemainingMs = 15 * 60 * 1000;
+                } else {
+                    this._backgroundMode = 'background-realtime';
+                }
+                this._emitState();
+                return this._backgroundMode;
+            }
+            this._backgroundMode = this._v2Engine.enterBackgroundMode();
+            this._backgroundTimelineRemainingMs = this._v2Engine.getState().backgroundTimelineRemainingMs || 0;
+            this._emitState();
+            return this._backgroundMode;
+        }
+        this._backgroundMode = 'background-realtime';
+        this._emitState();
+        return this._backgroundMode;
+    }
+    exitBackgroundMode() {
+        if (this._engineMode === 'v2') {
+            if (!this._v2Engine?.backgroundController) {
+                this._backgroundMode = 'foreground-realtime';
+                this._backgroundTimelineRemainingMs = 0;
+                this._emitState();
+                return this._backgroundMode;
+            }
+            this._backgroundMode = this._v2Engine.exitBackgroundMode();
+            this._backgroundTimelineRemainingMs = this._v2Engine.getState().backgroundTimelineRemainingMs || 0;
+            this._emitState();
+            return this._backgroundMode;
+        }
+        this._backgroundMode = 'foreground-realtime';
+        this._emitState();
+        return this._backgroundMode;
     }
     setDeterminismMode(mode = 'identity') {
         const nextMode = mode === 'strict' ? 'strict' : 'identity';
@@ -941,8 +1372,18 @@ export class AudioEngine {
         try { listener(this._snapshotState()); } catch { }
         return () => this._listeners.delete(listener);
     }
+    subscribeEvents(listener) {
+        if (typeof listener !== 'function') return () => { };
+        this._eventListeners.add(listener);
+        return () => this._eventListeners.delete(listener);
+    }
     triggerNavigationFx() {
         if (!this.playing) return;
+        this._emitEvent({ type: 'navigation-fx', mode: this._engineMode });
+        if (this._engineMode === 'v2' && this._v2Engine?.voiceFactory) {
+            this._v2Engine.voiceFactory.playFxPulse(this.ctx?.currentTime || 0, this._v2Engine.currentMod || {});
+            return;
+        }
         this._dopplerWhoosh();
     }
     getAnalyser() { return this.analyser; }
@@ -992,6 +1433,18 @@ export class AudioEngine {
         return this._chordName || 'I';
     }
     getMelodyState() {
+        if (this._engineMode === 'v2') {
+            const v2 = this._v2Engine.getState();
+            return {
+                mode: this._melodyMode || `V2_${v2.section || 'INTRO'}`,
+                phraseLength: this.stepNote || 0,
+                restProb: 0,
+                motifEnabled: true,
+                motifIndex: 0,
+                motifCount: 0,
+                step: this._lastMelodyStep,
+            };
+        }
         const motifCount = this.planet?.motifBank?.length || 0;
         return {
             mode: this._melodyMode,
@@ -1009,28 +1462,101 @@ export class AudioEngine {
         const perf = this.planet ? this._getPerformanceProfile(this.planet) : null;
         const now = this.ctx?.currentTime || 0;
         const schedulerStats = this._transportScheduler?.getStats ? this._transportScheduler.getStats() : null;
+        const v2State = this._engineMode === 'v2'
+            ? this._v2Engine.getState()
+            : {
+                section: this._tensionState?.phase || 'DORMANT',
+                arrangementEnergy: this._tensionState?.energy || 0,
+                voiceBudget: 0,
+                voiceStealCount: 0,
+                eventRate: this._eventRate(),
+                cpuClass: 'legacy',
+                cpuTier: 'legacy',
+                degradeStage: 'full',
+                backgroundMode: this._backgroundMode,
+                backgroundPolicy: this._backgroundPolicy,
+                backgroundTimelineRemainingMs: this._backgroundTimelineRemainingMs || 0,
+                featureFlags: {
+                    granular: this._granularEnabled,
+                    percussion: this._percussionEnabled,
+                    chords: this._chordEnabled,
+                    arp: this._arpEnabled,
+                    motif: this._motifEnabled,
+                },
+                effectiveFlags: {
+                    granular: this._granularEnabled,
+                    percussion: this._percussionEnabled,
+                    chords: this._chordEnabled,
+                    arp: this._arpEnabled,
+                    motif: this._motifEnabled,
+                },
+                identityProfileId: this.planet?.identityProfile?.id || null,
+                paceClass: this._planetPaceOverride === 'auto'
+                    ? (this.planet?.identityProfile?.paceClass || 'medium')
+                    : this._planetPaceOverride,
+                microtonalDepth: this.planet?.identityProfile?.microtonalWarp || this.planet?.quarterToneProb || 0,
+                droneAudibilityDb: -60,
+                moonActivityRate: 0,
+                harmonyHoldBarsCurrent: 0,
+                compositionDensity: this.planet?.melodyDensity || 0,
+                drone: this._droneState,
+                mix: this._mixTelemetry,
+                quality: this._qualityTelemetry,
+            };
         const moonLastProcAgoMs = Number.isFinite(this._lastMoonProcAt)
             ? Math.max(0, Math.round((now - this._lastMoonProcAt) * 1000))
             : null;
         return {
             activeNodes: this.nodes?.size || 0,
             load: perf?.pressure || 0,
+            engineMode: this._engineMode,
             determinismMode: this._determinismMode,
             engineRefactorV2: this._engineRefactorV2,
             schedulerTickMs: schedulerStats?.tickMs || 0,
             schedulerHorizonMs: schedulerStats ? Math.round((schedulerStats.horizonSec || 0) * 1000) : 0,
             schedulerLateCallbacks: schedulerStats?.lateCallbacks || 0,
             schedulerMaxLateMs: schedulerStats ? Math.round(schedulerStats.maxLateMs || 0) : 0,
+            section: v2State.section,
+            arrangementEnergy: v2State.arrangementEnergy,
+            voiceBudget: v2State.voiceBudget,
+            voiceStealCount: v2State.voiceStealCount,
+            eventRate: v2State.eventRate,
+            cpuClass: v2State.cpuClass,
+            cpuTier: v2State.cpuTier || this._qualityTelemetry.cpuTier,
+            degradeStage: v2State.degradeStage || this._qualityTelemetry.degradeStage,
             tensionPhase: this._tensionState?.phase || 'DORMANT',
             tensionEnergy: this._tensionState?.energy || 0,
             cycleSteps: transport?.cycleSteps || 0,
             stepMs: transport ? Math.round(transport.stepMs) : 0,
             bpm: transport?.bpm || 0,
+            moonProfileCount: this._moonProfile?.length || 0,
+            moonPlanetCount: this.planet?.numMoons || 0,
             moonCount: this._moonProfile?.length || this.planet?.numMoons || 0,
             moonProcCount: this._moonProcCount || 0,
             moonLastBurst: this._moonLastBurst || 0,
             moonLastProcAgoMs,
             moonProcActive: moonLastProcAgoMs !== null && moonLastProcAgoMs < 900,
+            moonDensity: this.planet?.moonSystem?.density || 0,
+            moonResonance: this.planet?.moonSystem?.resonance || 0,
+            rarityKey: this.planet?.rarityKey || null,
+            rarityScore: this.planet?.rarityScore ?? null,
+            backgroundMode: v2State.backgroundMode,
+            backgroundPolicy: v2State.backgroundPolicy,
+            backgroundTimelineRemainingMs: v2State.backgroundTimelineRemainingMs,
+            featureFlags: v2State.featureFlags,
+            effectiveFlags: v2State.effectiveFlags,
+            identityProfileId: v2State.identityProfileId,
+            paceClass: v2State.paceClass,
+            microtonalDepth: v2State.microtonalDepth,
+            droneAudibilityDb: v2State.droneAudibilityDb,
+            moonActivityRate: v2State.moonActivityRate,
+            harmonyHoldBarsCurrent: v2State.harmonyHoldBarsCurrent,
+            compositionDensity: v2State.compositionDensity,
+            drone: v2State.drone || this._droneState,
+            mix: v2State.mix || this._mixTelemetry,
+            quality: v2State.quality || this._qualityTelemetry,
+            v2OverlayFlags: this._v2OverlayFlags,
+            paceOverride: this._planetPaceOverride,
         };
     }
 }

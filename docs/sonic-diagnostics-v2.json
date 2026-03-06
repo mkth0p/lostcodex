@@ -1,0 +1,351 @@
+{
+  "generatedAt": "2026-03-06T09:44:09.799Z",
+  "url": "http://127.0.0.1:8765/synth.html?engine=v2",
+  "durationMs": 12000,
+  "intervalMs": 300,
+  "corpusSize": 10,
+  "planets": [
+    {
+      "code": "01234",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 151.25641025641025,
+        "activeNodePeak": 230,
+        "loadMean": 0.03093938760780093,
+        "sectionCount": 1,
+        "sections": [
+          "INTRO"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "I",
+          "V",
+          "vi",
+          "IV"
+        ],
+        "melodyModeCount": 1,
+        "melodyModes": [
+          "V2_INTRO"
+        ],
+        "arrangementEnergyMean": 0.20000000000000012,
+        "arrangementEnergyStd": 1.1102230246251565e-16,
+        "lufsMean": -39.776496199679485,
+        "peakDbMean": -34.110310162834395,
+        "eventRateMean": 0.5264957264957264,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "56789",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 171.28205128205127,
+        "activeNodePeak": 214,
+        "loadMean": 0.2581180396894345,
+        "sectionCount": 2,
+        "sections": [
+          "INTRO",
+          "GROWTH"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "I",
+          "V",
+          "vi",
+          "IV"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "V2_INTRO",
+          "V2_GROWTH"
+        ],
+        "arrangementEnergyMean": 0.32897435897435895,
+        "arrangementEnergyStd": 0.1551343330782336,
+        "lufsMean": -38.77569757105719,
+        "peakDbMean": -31.923939827230026,
+        "eventRateMean": 1.1914529914529919,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "abcde",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 210.5897435897436,
+        "activeNodePeak": 251,
+        "loadMean": 0.22615022002605892,
+        "sectionCount": 4,
+        "sections": [
+          "INTRO",
+          "GROWTH",
+          "SURGE",
+          "RELEASE"
+        ],
+        "chordCount": 5,
+        "chords": [
+          "I",
+          "V",
+          "vi",
+          "ii",
+          "IV"
+        ],
+        "melodyModeCount": 4,
+        "melodyModes": [
+          "V2_INTRO",
+          "V2_GROWTH",
+          "V2_SURGE",
+          "V2_RELEASE"
+        ],
+        "arrangementEnergyMean": 0.4694139194139195,
+        "arrangementEnergyStd": 0.25648275313864377,
+        "lufsMean": -31.24037298205671,
+        "peakDbMean": -23.873836728804196,
+        "eventRateMean": 2.3145299145299147,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "fghij",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 171.74358974358975,
+        "activeNodePeak": 306,
+        "loadMean": 0.39094510512318725,
+        "sectionCount": 2,
+        "sections": [
+          "INTRO",
+          "GROWTH"
+        ],
+        "chordCount": 3,
+        "chords": [
+          "I",
+          "IV",
+          "V"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "V2_INTRO",
+          "V2_GROWTH"
+        ],
+        "arrangementEnergyMean": 0.25342948717948727,
+        "arrangementEnergyStd": 0.11426735615121361,
+        "lufsMean": -39.40034173791311,
+        "peakDbMean": -30.724795984905157,
+        "eventRateMean": 2.5145299145299154,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "klmno",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 117.61538461538461,
+        "activeNodePeak": 144,
+        "loadMean": 0,
+        "sectionCount": 1,
+        "sections": [
+          "INTRO"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "I",
+          "vi",
+          "IV",
+          "V"
+        ],
+        "melodyModeCount": 1,
+        "melodyModes": [
+          "V2_INTRO"
+        ],
+        "arrangementEnergyMean": 0.20000000000000012,
+        "arrangementEnergyStd": 1.1102230246251565e-16,
+        "lufsMean": -40.51435459534957,
+        "peakDbMean": -34.4298899544155,
+        "eventRateMean": 1.3589743589743597,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "pqrst",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 127.28205128205128,
+        "activeNodePeak": 152,
+        "loadMean": 0,
+        "sectionCount": 1,
+        "sections": [
+          "INTRO"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "I",
+          "vi",
+          "IV",
+          "V"
+        ],
+        "melodyModeCount": 1,
+        "melodyModes": [
+          "V2_INTRO"
+        ],
+        "arrangementEnergyMean": 0.20000000000000012,
+        "arrangementEnergyStd": 1.1102230246251565e-16,
+        "lufsMean": -42.04827280818502,
+        "peakDbMean": -37.17360112356219,
+        "eventRateMean": 0.9846153846153849,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "00000",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 143.56410256410257,
+        "activeNodePeak": 199,
+        "loadMean": 0.012711955068660085,
+        "sectionCount": 1,
+        "sections": [
+          "INTRO"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "I",
+          "V",
+          "ii",
+          "IV"
+        ],
+        "melodyModeCount": 1,
+        "melodyModes": [
+          "V2_INTRO"
+        ],
+        "arrangementEnergyMean": 0.20000000000000012,
+        "arrangementEnergyStd": 1.1102230246251565e-16,
+        "lufsMean": -45.07545089746476,
+        "peakDbMean": -38.86128924347693,
+        "eventRateMean": 1.0290598290598292,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "ttttt",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 235.74358974358975,
+        "activeNodePeak": 343,
+        "loadMean": 0.3275145442792502,
+        "sectionCount": 4,
+        "sections": [
+          "INTRO",
+          "GROWTH",
+          "SURGE",
+          "RELEASE"
+        ],
+        "chordCount": 5,
+        "chords": [
+          "I",
+          "V",
+          "ii",
+          "IV",
+          "iii"
+        ],
+        "melodyModeCount": 4,
+        "melodyModes": [
+          "V2_INTRO",
+          "V2_GROWTH",
+          "V2_SURGE",
+          "V2_RELEASE"
+        ],
+        "arrangementEnergyMean": 0.5693199023199025,
+        "arrangementEnergyStd": 0.2783794803142445,
+        "lufsMean": -35.14333398557829,
+        "peakDbMean": -28.77117670190086,
+        "eventRateMean": 1.7299145299145304,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "02468ace",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 143.87179487179486,
+        "activeNodePeak": 184,
+        "loadMean": 0.1421160348970913,
+        "sectionCount": 2,
+        "sections": [
+          "INTRO",
+          "GROWTH"
+        ],
+        "chordCount": 3,
+        "chords": [
+          "I",
+          "IV",
+          "V"
+        ],
+        "melodyModeCount": 2,
+        "melodyModes": [
+          "V2_INTRO",
+          "V2_GROWTH"
+        ],
+        "arrangementEnergyMean": 0.22506410256410264,
+        "arrangementEnergyStd": 0.08773181230808624,
+        "lufsMean": -41.98135960063576,
+        "peakDbMean": -36.24680516349958,
+        "eventRateMean": 2.2803418803418807,
+        "dronePresenceRatio": 1
+      }
+    },
+    {
+      "code": "13579bdf",
+      "summary": {
+        "sampleCount": 39,
+        "activeNodeMean": 131.66666666666666,
+        "activeNodePeak": 262,
+        "loadMean": 0.006474358974358974,
+        "sectionCount": 1,
+        "sections": [
+          "INTRO"
+        ],
+        "chordCount": 4,
+        "chords": [
+          "I",
+          "iii",
+          "vi",
+          "IV"
+        ],
+        "melodyModeCount": 1,
+        "melodyModes": [
+          "V2_INTRO"
+        ],
+        "arrangementEnergyMean": 0.20000000000000012,
+        "arrangementEnergyStd": 1.1102230246251565e-16,
+        "lufsMean": -44.51024113318194,
+        "peakDbMean": -38.479772376971326,
+        "eventRateMean": 1.3743589743589755,
+        "dronePresenceRatio": 1
+      }
+    }
+  ],
+  "aggregate": {
+    "sampleCount": 390,
+    "activeNodeMean": 160.46153846153797,
+    "activeNodePeak": 235.74358974358975,
+    "loadMean": 0.1394969645665847,
+    "sectionCount": 1,
+    "sections": [
+      "INTRO"
+    ],
+    "chordCount": 1,
+    "chords": [
+      "I"
+    ],
+    "melodyModeCount": 1,
+    "melodyModes": [
+      "V2_INTRO"
+    ],
+    "arrangementEnergyMean": 0.28462017704517867,
+    "arrangementEnergyStd": 0.12549606017817233,
+    "lufsMean": -39.8465921511101,
+    "peakDbMean": -33.45954172676006,
+    "eventRateMean": 1.5304273504273496,
+    "dronePresenceRatio": 1
+  }
+}
