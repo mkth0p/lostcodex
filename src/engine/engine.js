@@ -13,8 +13,10 @@ const LOOKAHEAD = 0.1;
 // Renders one piece, block by block. Identical input (code, sample rate,
 // block size) gives identical output, in the browser worklet or in Node.
 export class Engine {
-    constructor(code, sampleRate, { maxVoices = 48, quality = 'full', sceneOverride = null } = {}) {
+    constructor(code, sampleRate, { maxVoices = 48, quality = 'full', sceneOverride = null, samples = null } = {}) {
         this.sr = sampleRate;
+        // optional SampleBank; without it every sampled instrument falls back to its synth voice
+        this.samples = samples;
         this.piece = createPiece(code);
         this.score = new Score(this.piece, { sceneOverride });
         this.voiceRng = new Rng(this.piece.seed).fork('voices');
@@ -57,6 +59,10 @@ export class Engine {
     }
 
     _spawn(ev, offset) {
+        if (ev.sample) {
+            if (this.samples?.has(ev.sample)) ev = { ...ev, type: 'sample', bank: this.samples };
+            else if (ev.type === 'sample') return;
+        }
         const Type = VOICE_TYPES[ev.type];
         if (!Type) return;
         // every pitch goes through the piece's tuning here

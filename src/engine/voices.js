@@ -594,6 +594,107 @@ export class ResonantNoiseVoice extends Voice {
     }
 }
 
+// ---------------------------------------------------------------- sampled
+
+// Plays a zone of the sample pack, repitched to the tuned note with cubic
+// interpolation. One-shots ring out (a damper shortens them after `dur`);
+// loops hold on their crossfaded loop under an attack / hold / release
+// envelope. Optional tape wow, low-pass, drive and bit crush.
+export class SampleVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        const bank = ev.bank;
+        const ins = bank.instruments[ev.sample];
+        const hz = hzOf(ev);
+        const zone = bank.zone(ev.sample, ev.midi ?? 60);
+        this.data = zone.data;
+        this.len = zone.data.length;
+        this.loopStart = zone.loopStart;
+        this.loop = zone.loopStart >= 0;
+        this.inc = (hz / zone.hz) * (bank.sampleRate / sr);
+        this.fromInc = ev.fromHz ? (ev.fromHz / zone.hz) * (bank.sampleRate / sr) : this.inc;
+        this.glide = Math.round((ev.glide ?? 0.08) * sr);
+        // loops can start somewhere inside the loop, so held notes never sound copied
+        this.pos = this.loop && ev.scatter ? zone.loopStart + (this.len - zone.loopStart) * rng.next() : 0;
+        // every instrument comes out at about the loudness of the synth voice
+        // it stands in for, at the same gain
+        this.gain *= (ev.trim ?? 1) * Math.min(16, (this.loop ? 0.4 : 0.25) / ins.rms) / 32768;
+        // the meter (analysis only) tells sampled layers apart
+        this.layer = `${this.layer}:${ev.sample}`;
+        if (this.loop) {
+            this.env = new Envelope(sr, ev.attack ?? 0.02, ev.dur ?? 4, ev.release ?? 2);
+        } else {
+            this.env = null;
+            this.damp = ev.dur ? Math.round(ev.dur * sr) : Infinity;
+            this.dampCoef = Math.exp(-6.9 / ((ev.release ?? 1.2) * sr));
+            this.dampLevel = 1;
+        }
+        this.t = 0;
+        this.wow = (ev.wow ?? 0) / 1200;
+        this.wowPhase = rng.next();
+        this.wowInc = rng.range(0.3, 0.6) / sr;
+        this.lp = ev.cutoff ? new OnePole(sr, ev.cutoff) : null;
+        this.drive = ev.drive ?? 0;
+        this.crush = ev.crush ?? 0;
+        this.crushBits = Math.pow(2, (ev.bits ?? 8) - 1);
+        this.held = 0;
+        this.rate = this.fromInc;
+        this.counter = 0;
+    }
+
+    tick() {
+        const t = this.t++;
+        if ((this.counter++ & 15) === 0) {
+            const g = t < this.glide ? t / this.glide : 1;
+            let inc = this.fromInc + (this.inc - this.fromInc) * g;
+            if (this.wow) {
+                this.wowPhase += this.wowInc * 16;
+                inc *= 1 + this.wow * Math.sin(TAU * this.wowPhase);
+            }
+            this.rate = inc;
+        }
+        let e = 1;
+        if (this.env) {
+            e = this.env.next();
+            if (this.env.done) this.done = true;
+        } else if (t > this.damp) {
+            this.dampLevel *= this.dampCoef;
+            e = this.dampLevel;
+            if (e < 1e-4) this.done = true;
+        }
+        // cubic (Catmull-Rom) read between samples
+        const d = this.data;
+        const i = this.pos | 0;
+        const f = this.pos - i;
+        const a = d[i > 0 ? i - 1 : 0];
+        const b = d[i];
+        let c;
+        let n;
+        if (i + 2 < this.len) {
+            c = d[i + 1];
+            n = d[i + 2];
+        } else {
+            // past the end a loop continues from its loop start, a one-shot from silence
+            c = i + 1 < this.len ? d[i + 1] : this.loop ? d[this.loopStart] : 0;
+            n = this.loop ? d[this.loopStart + i + 2 - this.len] : 0;
+        }
+        let y = b + 0.5 * f * (c - a + f * (2 * a - 5 * b + 4 * c - n + f * (3 * (b - c) + n - a)));
+        this.pos += this.rate;
+        if (this.pos >= this.len) {
+            if (this.loop) this.pos -= this.len - this.loopStart;
+            else this.done = true;
+        }
+        y *= this.gain;
+        if (this.lp) y = this.lp.lp(y);
+        if (this.drive > 0) y = soft(y * (1 + this.drive * 4)) / (1 + this.drive);
+        if (this.crush) {
+            if (t % this.crush === 0) this.held = Math.round(y * this.crushBits) / this.crushBits;
+            y = this.held;
+        }
+        return y * e;
+    }
+}
+
 export const VOICE_TYPES = {
     modal: ModalVoice,
     pad: PadVoice,
@@ -606,4 +707,5 @@ export const VOICE_TYPES = {
     lead: LeadVoice,
     bed: NoiseBedVoice,
     snare: SnareVoice,
+    sample: SampleVoice,
 };

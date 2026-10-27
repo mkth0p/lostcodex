@@ -5,6 +5,7 @@ import { Field } from './field.js';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 const FADE = 3; // seconds of crossfade between stations
+const PACK_WAIT = 10000; // ms to wait for the sample pack before playing synth-only
 const SCAN_EVERY = 4 * 60 * 1000;
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,17 @@ let powered = false;
 let station = null; // the station shown, playing or not
 let scanTimer = null;
 let holdCustom = false; // a typed-in code stays put until the dial is turned
+let packSent = false; // the worklet keeps the decoded pack once it has it
+
+// Instruments rendered from real synths and samplers (about 1.6 MB), fetched as
+// soon as the page opens. Without it every instrument has a synth stand-in.
+const packPromise = fetch(new URL('../../samples/pack.bin', import.meta.url))
+    .then((r) => (r.ok ? r.arrayBuffer() : null))
+    .catch(() => null);
+
+function loadPack() {
+    return Promise.race([packPromise, new Promise((resolve) => setTimeout(() => resolve(null), PACK_WAIT))]);
+}
 
 // "dub-07" -> its place on the dial; custom codes have none
 function dialIndex(id) {
@@ -90,10 +102,14 @@ async function play(id) {
         duck(1);
         return;
     }
+    const pack = packSent ? null : await loadPack();
+    // the dial may have moved on while the pack was loading
+    if (id !== station) return;
+    if (pack) packSent = true;
     const node = new AudioWorkletNode(ac, 'lost-codex', {
         numberOfInputs: 0,
         outputChannelCount: [2],
-        processorOptions: { code: id, quality: isLite ? 'lite' : 'full' },
+        processorOptions: { code: id, quality: isLite ? 'lite' : 'full', pack },
     });
     const gain = ac.createGain();
     const now = ac.currentTime;

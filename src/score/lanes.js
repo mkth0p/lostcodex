@@ -43,13 +43,17 @@ function nearestFifth(chord, root) {
 
 // One place that knows how each instrument is played: type, envelope,
 // sends and a sensible level. Lanes only choose notes and timing.
+// `sample` names an instrument of the sample pack (rendered from real
+// instruments and synths); the synth voice described next to it plays
+// instead when the pack is not loaded. Events of type 'sample' have no synth
+// fallback and are simply skipped then.
 export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
     const vel = 0.3 + rng.next() * 0.4;
     const base = { time, midi, pan };
     let ev;
     switch (name) {
         case 'piano':
-            ev = { type: 'modal', layer: 'keys', preset: 'piano', velocity: vel, gain: 0.3 * level * (0.6 + vel), reverb: 0.55, echo: 0.04, dur: 12 };
+            ev = { type: 'modal', sample: 'felt', trim: 0.6, layer: 'keys', preset: 'piano', velocity: vel, gain: 0.3 * level * (0.6 + vel), reverb: 0.55, echo: 0.04, dur: 12 };
             break;
         case 'glass':
             ev = { type: 'modal', layer: 'bells', preset: 'glass', gain: 0.12 * level * (0.6 + vel), reverb: 0.75, echo: 0.12 };
@@ -58,38 +62,61 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
             ev = { type: 'modal', layer: 'bells', preset: 'bowl', gain: 0.07 * level, reverb: 0.7 };
             break;
         case 'vibes':
-            ev = { type: 'modal', layer: 'bells', preset: 'vibes', gain: 0.16 * level * (0.6 + vel), reverb: 0.6, echo: 0.1 };
+            ev = { type: 'modal', sample: 'vibes', layer: 'bells', preset: 'vibes', gain: 0.16 * level * (0.6 + vel), reverb: 0.6, echo: 0.1 };
             break;
         case 'metal':
             ev = { type: 'modal', layer: 'texture', preset: 'metal', gain: 0.06 * level, reverb: 0.9, echo: 0.1 };
             break;
         case 'marimba':
-            ev = { type: 'modal', layer: 'keys', preset: 'marimba', velocity: vel, gain: 0.17 * level * (0.6 + vel), reverb: 0.35, echo: 0.05 };
+            ev = { type: 'modal', sample: 'marimba', trim: 0.7, layer: 'keys', preset: 'marimba', velocity: vel, gain: 0.17 * level * (0.6 + vel), reverb: 0.35, echo: 0.05 };
             break;
         case 'kalimba':
-            ev = { type: 'modal', layer: 'keys', preset: 'kalimba', gain: 0.22 * level * (0.6 + vel), reverb: 0.4, echo: 0.15 };
+            ev = { type: 'modal', sample: 'kalimba', layer: 'keys', preset: 'kalimba', gain: 0.22 * level * (0.6 + vel), reverb: 0.4, echo: 0.15 };
             break;
         case 'choir':
-            ev = { type: 'pad', layer: 'choir', preset: 'choir', gain: 0.14 * level, attack: 2.5, dur: 3, release: 6, reverb: 0.7, detune: 9, cutoff: 3200 };
+            ev = { type: 'pad', sample: 'choir', trim: 0.8, layer: 'choir', preset: 'choir', gain: 0.14 * level, attack: 2.5, dur: 3, release: 6, reverb: 0.7, detune: 9, cutoff: 3200 };
             break;
         case 'voice':
-            ev = { type: 'pad', layer: 'choir', preset: 'voice', gain: 0.16 * level, attack: 1.8, dur: 2.5, release: 5, reverb: 0.75, detune: 12, oscs: 5, cutoff: 3600, wow: 5, vowels: [rng.pick(['a', 'o', 'u']), rng.pick(['e', 'o', 'a'])] };
+            ev = { type: 'pad', sample: 'ooh', layer: 'choir', preset: 'voice', gain: 0.16 * level, attack: 1.8, dur: 2.5, release: 5, reverb: 0.75, detune: 12, oscs: 5, cutoff: 3600, wow: 5, vowels: [rng.pick(['a', 'o', 'u']), rng.pick(['e', 'o', 'a'])] };
             break;
         case 'organ':
-            ev = { type: 'organ', layer: 'organ', preset: 'gedackt', gain: 0.2 * level, attack: 3, dur: 6, release: 7, reverb: 0.8 };
+            ev = { type: 'organ', sample: 'pipes', layer: 'organ', preset: 'gedackt', gain: 0.2 * level, attack: 3, dur: 6, release: 7, reverb: 0.8 };
             break;
         case 'flute':
-            ev = { type: 'flute', layer: 'lead', gain: 0.1 * level * (0.7 + vel), dur: 1, attack: 0.1, release: 0.6, reverb: 0.55, echo: 0.2 };
+            ev = { type: 'flute', sample: 'shaku', layer: 'lead', gain: 0.1 * level * (0.7 + vel), dur: 1, attack: 0.1, release: 0.6, reverb: 0.55, echo: 0.2 };
             break;
         case 'lead':
             ev = { type: 'lead', layer: 'lead', gain: 0.08 * level * (0.7 + vel), dur: 1, attack: 0.06, release: 0.9, reverb: 0.45, echo: 0.3, cutoff: 1100 + vel * 900 };
             break;
+        case 'celesta':
+            ev = { type: 'modal', sample: 'celesta', layer: 'bells', preset: 'glass', gain: 0.12 * level * (0.6 + vel), reverb: 0.7, echo: 0.12 };
+            break;
+        case 'tine':
+            ev = { type: 'modal', sample: 'tine', layer: 'keys', preset: 'vibes', gain: 0.14 * level * (0.6 + vel), reverb: 0.45, echo: 0.3, dur: 3 };
+            break;
+        case 'mflute':
+            // Mellotron flute on worn tape (Boards of Canada)
+            ev = { type: 'lead', sample: 'mflute', layer: 'lead', gain: 0.1 * level * (0.7 + vel), dur: 1, attack: 0.06, release: 0.7, reverb: 0.45, echo: 0.3, cutoff: 2600, wow: 16 };
+            break;
+        case 'mstrings':
+            ev = { type: 'pad', sample: 'mstrings', layer: 'pad', preset: 'warm', gain: 0.09 * level, attack: 2.5, dur: 2.5, release: 5, reverb: 0.6, detune: 10, wow: 10, cutoff: 3000 };
+            break;
+        case 'mchoir':
+            ev = { type: 'pad', sample: 'mchoir', layer: 'choir', preset: 'choir', gain: 0.12 * level, attack: 2, dur: 3, release: 6, reverb: 0.7, detune: 9, cutoff: 3200, wow: 8 };
+            break;
+        case 'monks':
+            ev = { type: 'pad', sample: 'monks', layer: 'choir', preset: 'voice', gain: 0.14 * level, attack: 2.5, dur: 4, release: 6, reverb: 0.8, detune: 10, oscs: 5, cutoff: 2400, vowels: ['o', 'u'] };
+            break;
+        case 'glassbow':
+            ev = { type: 'modal', sample: 'glassbow', layer: 'bells', preset: 'bowl', gain: 0.08 * level, attack: 3, dur: 5, release: 7, reverb: 0.85, echo: 0.1, scatter: true };
+            break;
         case 'crush':
-            ev = { type: 'pad', layer: 'pad', preset: 'warm', gain: 0.08 * level, attack: 2, dur: 3, release: 6, reverb: 0.6, detune: 14, drive: 0.6, crush: 6, bits: 5, cutoff: 2400 };
+            // a felt piano crushed to a few bits (a bit-reduced pad without the pack)
+            ev = { type: 'pad', sample: 'felt', layer: 'pad', preset: 'warm', gain: 0.08 * level, attack: 2, dur: 3, release: 6, reverb: 0.6, detune: 14, drive: 0.6, crush: 6, bits: 5, cutoff: 2400 };
             break;
         case 'swell':
         default:
-            ev = { type: 'pad', layer: 'pad', preset: 'warm', gain: 0.09 * level, attack: 3, dur: 2, release: 7, reverb: 0.6, detune: 8 };
+            ev = { type: 'pad', sample: 'strings', layer: 'pad', preset: 'warm', gain: 0.09 * level, attack: 3, dur: 2, release: 7, reverb: 0.6, detune: 8 };
     }
     return { ...ev, ...base, ...extra };
 }
@@ -97,7 +124,9 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
 // ------------------------------------------------------------------ lanes
 
 // Long tones on the bass (and fifth), optionally the whole chord, re-struck
-// at every chord change. `voice` picks pad, organ or singing pad.
+// at every chord change. `voice` picks pad, organ or singing pad; `sample`
+// plays a looped instrument of the pack instead (`sampleOnly`: nothing
+// without the pack, for layers that only add to a synth drone).
 export class DroneLane extends Lane {
     constructor(scene, rng, opts = {}) {
         super(scene, rng, opts.first ?? 0);
@@ -125,6 +154,14 @@ export class DroneLane extends Lane {
                 reverb: o.reverb ?? 0.5,
                 layer: 'drone',
             };
+            if (o.sample) {
+                common.sample = o.sample;
+                common.scatter = true;
+                common.wow = o.wow;
+                common.drive = o.drive;
+                common.cutoff = o.cutoff;
+                if (o.sampleOnly) return { ...common, type: 'sample' };
+            }
             if (o.voice === 'organ') return { ...common, type: 'organ', preset: o.preset || 'flue' };
             return {
                 ...common, type: 'pad', preset: o.preset || 'warm', cutoff: o.cutoff, detune: o.detune ?? 6,
@@ -289,14 +326,14 @@ export class PhraseLane extends Lane {
 
 // Four-on-the-floor muffled pulse with dub chord stabs (Gas / Basic Channel).
 export class PulseLane extends Lane {
-    constructor(scene, rng, { bpm, stabs = true, kick = 0.2, ticks = 0.2, stabCutoff = 700, stabGain = 0.1 }) {
+    constructor(scene, rng, { bpm, stabs = true, kick = 0.2, ticks = 0.2, stabCutoff = 700, stabGain = 0.1, stabSample = null }) {
         super(scene, rng, 0);
         this.step = 60 / bpm / 4;
         this.index = Math.ceil(scene.start / this.step);
         this.next = this.index * this.step;
         this.stabSteps = rng.pick([[3, 10], [2, 7, 11], [6, 14], [3, 11, 14]]);
         this.tickProb = rng.range(0.4, 0.9);
-        Object.assign(this, { stabs, kick, ticks, stabCutoff, stabGain });
+        Object.assign(this, { stabs, kick, ticks, stabCutoff, stabGain, stabSample });
         // tuned to the tonic, in the 35-65 Hz range
         this.kickMidi = 25 + pitchClass(scene.key.tonic - 25);
     }
@@ -325,6 +362,8 @@ export class PulseLane extends Lane {
                     type: 'pad', layer: 'stab', preset: 'warm', time: t, midi: m - 12, gain: this.stabGain * level, pan,
                     attack: 0.006, dur: 0.08, release: 0.28, cutoff: this.stabCutoff, filterEnv: 1.5, q: 1.2,
                     oscs: 2, detune: 5, reverb: 0.25, echo: 0.65, wow: 0,
+                    // with the pack, a damped Rhodes chord under the same envelope
+                    sample: this.stabSample || undefined,
                 });
             }
         }

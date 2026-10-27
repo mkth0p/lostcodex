@@ -1,6 +1,7 @@
 // Offline render of a piece to WAV: node scripts/render.mjs CODE [seconds] [out.wav] [startSeconds]
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Engine } from '../src/engine/engine.js';
+import { SampleBank } from '../src/engine/samples.js';
 
 const [code = 'LOSTCODEX', secArg = '60', out = `${code}.wav`, startArg = '0'] = process.argv.slice(2);
 const sr = 44100;
@@ -8,7 +9,10 @@ const seconds = Number(secArg);
 const start = Number(startArg);
 const block = 128;
 const only = process.env.SCENE ? process.env.SCENE.split(',') : null;
-const engine = new Engine(code, sr, { sceneOverride: only });
+// the sample pack is used when present; NOSAMPLES=1 renders the synth-only fallback
+const packUrl = new URL('../samples/pack.bin', import.meta.url);
+const samples = !process.env.NOSAMPLES && existsSync(packUrl) ? new SampleBank(readFileSync(packUrl)) : null;
+const engine = new Engine(code, sr, { sceneOverride: only, samples });
 const total = Math.round(seconds * sr);
 const skip = Math.round(start * sr);
 const left = new Float32Array(total);
@@ -48,7 +52,7 @@ for (let i = 0; i < total; i++) {
 writeFileSync(out, data);
 const rmsDb = 10 * Math.log10(sum / (2 * total) + 1e-12);
 console.log(JSON.stringify({
-    code: engine.piece.code, mode: engine.piece.key.mode, tonic: engine.piece.key.tonic, bpm: engine.piece.bpm,
+    code: engine.piece.code, samples: !!samples, mode: engine.piece.key.mode, tonic: engine.piece.key.tonic, bpm: engine.piece.bpm,
     harsh: +engine.piece.harsh.toFixed(2), pulse: +engine.piece.pulse.toFixed(2),
     seconds, realtimeFactor: +((seconds * 1000 + start * 1000) / ms).toFixed(1), peakDb: +(20 * Math.log10(peak)).toFixed(1), rmsDb: +rmsDb.toFixed(1), scenes,
 }));
