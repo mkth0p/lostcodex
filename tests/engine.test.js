@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Engine } from '../src/engine/engine.js';
+import { UNIVERSES } from '../src/universes.js';
 
 function render(code, seconds, sr = 22050, opts = {}) {
     const engine = new Engine(code, sr, opts);
@@ -33,9 +34,10 @@ describe('engine', () => {
         expect(hash(render('ONE', 10))).not.toBe(hash(render('TWO', 10)));
     });
 
-    for (const scene of ['drift', 'sparse', 'shimmer', 'pulse', 'storm']) {
-        it(`keeps the ${scene} scene finite, audible and under the ceiling`, () => {
-            const out = render('LEVELS', 50, 16000, { sceneOverride: [scene] });
+    const scenes = UNIVERSES.flatMap((u) => Object.keys(u.scenes).map((scene) => [u.id, scene]));
+    for (const [universe, scene] of scenes) {
+        it(`keeps ${universe}/${scene} finite, audible and under the ceiling`, () => {
+            const out = render(`${universe}-LEVELS`, 30, 16000, { sceneOverride: [scene] });
             let peak = 0;
             let sum = 0;
             let bad = 0;

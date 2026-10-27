@@ -1,4 +1,5 @@
 import { Rng } from '../core/rng.js';
+import { tuneHz } from '../core/theory.js';
 import { Svf, dbToGain } from '../dsp/primitives.js';
 import { Echo, Limiter, Reverb } from '../dsp/effects.js';
 import { createPiece } from '../score/piece.js';
@@ -24,8 +25,8 @@ export class Engine {
         this.nextCollect = 0;
         this.reverb = new Reverb(sampleRate, {
             t60: this.piece.reverbT60,
-            size: quality === 'lite' ? 1.2 : 1.7,
-            damping: 5500 + this.piece.brightness * 4000,
+            size: quality === 'lite' ? Math.min(1.2, this.piece.reverbSize) : this.piece.reverbSize,
+            damping: this.piece.reverbDamping,
         });
         this.echo = new Echo(sampleRate, { seconds: this.piece.echoSeconds, feedback: 0.55 });
         this.limiter = new Limiter(sampleRate, dbToGain(-1));
@@ -58,6 +59,11 @@ export class Engine {
     _spawn(ev, offset) {
         const Type = VOICE_TYPES[ev.type];
         if (!Type) return;
+        // every pitch goes through the piece's tuning here
+        const key = this.piece.key;
+        if (ev.midi !== undefined && ev.type !== 'kick') ev.hz = tuneHz(key, ev.midi);
+        if (ev.fromMidi !== undefined) ev.fromHz = tuneHz(key, ev.fromMidi);
+        if (ev.midis) ev.hzs = ev.midis.map((m) => tuneHz(key, m));
         const voice = new Type(this.sr, ev, this.voiceRng);
         voice.offset = offset;
         voice.fade = 1;
@@ -152,6 +158,7 @@ export class Engine {
         return {
             time: t,
             code: this.piece.code,
+            universe: this.piece.universe.id,
             mode: this.piece.key.mode,
             tonic: this.piece.key.tonic,
             scene: scene?.type || null,
