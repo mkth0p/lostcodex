@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest';
+import { isInKey } from '../src/core/theory.js';
+import { createPiece, normalizeCode } from '../src/score/piece.js';
+import { Score } from '../src/score/score.js';
+
+function eventsFor(code, seconds, step = 0.5) {
+    const score = new Score(createPiece(code));
+    const out = [];
+    for (let t = step; t <= seconds; t += step) out.push(...score.collect(t));
+    return { score, events: out };
+}
+
+describe('piece', () => {
+    it('normalizes codes so case and punctuation do not matter', () => {
+        expect(normalizeCode(' k7qx-2m ')).toBe('K7QX2M');
+        expect(createPiece('k7qx2m').seed).toBe(createPiece('K7QX2M').seed);
+    });
+
+    it('gives different codes different pieces', () => {
+        const seeds = new Set(['A', 'B', 'C', 'D', 'E', 'F'].map((c) => createPiece(c).seed));
+        expect(seeds.size).toBe(6);
+    });
+});
+
+describe('score', () => {
+    it('plays only notes from the key, for many pieces', () => {
+        for (let i = 0; i < 40; i++) {
+            const code = `T${i}`;
+            const { key } = createPiece(code);
+            const { events } = eventsFor(code, 900, 2);
+            for (const ev of events) {
+                for (const m of ev.midis || (ev.midi === undefined ? [] : [ev.midi])) {
+                    expect(isInKey(key, m), `${code} ${ev.layer} ${m}`).toBe(true);
+                }
+            }
+        }
+    });
+
+    it('does not depend on how the timeline is chunked', () => {
+        const a = eventsFor('CHUNKS', 600, 0.25).events;
+        const b = eventsFor('CHUNKS', 600, 7).events;
+        const key = (e) => `${e.time.toFixed(6)}|${e.layer}|${e.midi}|${e.gain.toFixed(6)}`;
+        expect(a.map(key).sort()).toEqual(b.map(key).sort());
+    });
+
+    it('opens gently and keeps scenes overlapping without gaps', () => {
+        const score = new Score(createPiece('GAPS'));
+        expect(['drift', 'sparse', 'shimmer']).toContain(score.scenes[0].type);
+        for (let t = 0; t < 3000; t += 10) {
+            score.collect(t + 0.1);
+            expect(score.sceneAt(t)).not.toBeNull();
+        }
+    });
+});
