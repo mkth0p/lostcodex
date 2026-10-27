@@ -8,7 +8,22 @@ export const MODES = {
     dorian: [0, 2, 3, 5, 7, 9, 10],
     aeolian: [0, 2, 3, 5, 7, 8, 10],
     phrygian: [0, 1, 3, 5, 7, 8, 10],
+    pentMajor: [0, 2, 4, 7, 9],
+    pentMinor: [0, 3, 5, 7, 10],
+    hirajoshi: [0, 2, 3, 7, 8],
 };
+
+// Five-limit just ratios over the tonic, used by universes that hold a
+// tonic pedal and only build chords on degrees that stay pure over it.
+export const JUST_RATIOS = [1, 16 / 15, 9 / 8, 6 / 5, 5 / 4, 4 / 3, 45 / 32, 3 / 2, 8 / 5, 5 / 3, 9 / 5, 15 / 8];
+
+export function tuneHz(key, midi) {
+    if (key.tuning !== 'just') return midiToHz(midi);
+    const rel = midi - key.tonic;
+    const octave = Math.floor(rel / 12);
+    const pc = rel - octave * 12;
+    return midiToHz(key.tonic) * Math.pow(2, octave) * JUST_RATIOS[pc];
+}
 
 // Upper-structure shapes, as scale-degree offsets from the chord root.
 // Open, airy voicings: added 9ths, suspensions, stacked fourths.
@@ -131,15 +146,20 @@ const ROOT_WEIGHTS = [[0, 5], [3, 3], [5, 3], [4, 2], [1, 1.5], [6, 1.5], [2, 1]
 // Lazily extended chord timeline. Chords hold for a long time and change by
 // small voice-leading moves; the tonic pedal is common.
 export class Harmony {
-    constructor(key, rng, { holdMin = 36, holdMax = 90, pedalProb = 0.5 } = {}) {
+    constructor(key, rng, { holdMin = 36, holdMax = 90, pedalProb = 0.5, roots = null, shapes = null } = {}) {
         this.key = key;
         this.rng = rng;
         this.holdMin = holdMin;
         this.holdMax = holdMax;
         this.pedalProb = pedalProb;
+        this.pedalOnly = pedalProb >= 1;
+        this.roots = roots ? ROOT_WEIGHTS.filter(([d]) => roots.includes(d)) : ROOT_WEIGHTS;
+        this.shapes = shapes || Object.keys(SHAPES);
         this.chords = [];
-        const first = buildChord(key, 0, rng.pick(['add9', 'open', 'sus2']), true)
-            || buildChord(key, 0, 'open', true);
+        const openers = ['add9', 'open', 'sus2'].filter((name) => this.shapes.includes(name));
+        const first = buildChord(key, 0, rng.pick(openers.length ? openers : this.shapes), true)
+            || buildChord(key, 0, 'open', true)
+            || { rootDegree: 0, shape: 'root', pcs: [pitchClass(key.tonic), pitchClass(key.tonic + 7)], bass: key.tonic - 12, pedal: true };
         const upper = voiceLead([60, 64, 67, 71].map((m) => nearestNote(first.pcs, m)), first.pcs);
         this.chords.push({ ...first, upper, start: 0, end: this._hold() });
     }
@@ -150,11 +170,12 @@ export class Harmony {
 
     _nextChord(prev) {
         const candidates = [];
-        for (const [degree, weight] of ROOT_WEIGHTS) {
-            for (const shape of Object.keys(SHAPES)) {
+        for (const [degree, weight] of this.roots) {
+            if (degree >= this.key.steps.length) continue;
+            for (const shape of this.shapes) {
                 const pedal = this.rng.chance(this.pedalProb);
                 const chord = buildChord(this.key, degree, shape, pedal);
-                if (!chord) continue;
+                if (!chord || (this.pedalOnly && !chord.pedal)) continue;
                 const same = chord.rootDegree === prev.rootDegree && chord.shape === prev.shape;
                 if (same) continue;
                 const common = chord.pcs.filter((pc) => prev.pcs.includes(pc)).length;
@@ -163,6 +184,7 @@ export class Harmony {
                 candidates.push([chord, score]);
             }
         }
+        if (!candidates.length) return { ...prev };
         return this.rng.weighted(candidates);
     }
 

@@ -30,6 +30,7 @@ class LostCodexProcessor extends AudioWorkletProcessor {
 function summarize(piece) {
     return {
         code: piece.code,
+        universe: piece.universe.id,
         mode: piece.key.mode,
         tonic: piece.key.tonic,
         bpm: piece.bpm,

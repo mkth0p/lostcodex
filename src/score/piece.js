@@ -1,10 +1,24 @@
 import { Rng, hashString } from '../core/rng.js';
 import { MODES } from '../core/theory.js';
+import { UNIVERSES, getUniverse } from '../universes.js';
 
-export const SCENE_TYPES = ['drift', 'sparse', 'shimmer', 'pulse', 'storm'];
+// A station id is "<universe>-<code>", e.g. "dub-07" or "ice-K7QX2M".
+// A bare code with no known universe prefix is assigned one by its hash.
 
-export function normalizeCode(code) {
-    return String(code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'LOSTCODEX';
+export const STATIONS_PER_UNIVERSE = 12;
+
+export function normalizeStation(raw) {
+    const text = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24);
+    if (!text) return 'tide-01';
+    const [head, ...rest] = text.split('-');
+    if (getUniverse(head) && rest.join('')) return `${head}-${rest.join('').toUpperCase()}`;
+    const code = text.replace(/-/g, '').toUpperCase() || 'LOSTCODEX';
+    const universe = UNIVERSES[hashString(code) % UNIVERSES.length];
+    return `${universe.id}-${code}`;
+}
+
+export function stationId(universeIndex, n) {
+    return `${UNIVERSES[universeIndex].id}-${String(n + 1).padStart(2, '0')}`;
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -15,44 +29,47 @@ export function randomCode(rand = Math.random) {
     return out;
 }
 
-// A piece is the handful of numbers an address turns into. Everything else
-// is derived from these plus named random streams.
-export function createPiece(rawCode) {
-    const code = normalizeCode(rawCode);
-    const seed = hashString(code);
+// A piece is the handful of numbers a station turns into. Everything else is
+// derived from these plus named random streams.
+export function createPiece(raw) {
+    const station = normalizeStation(raw);
+    const universe = getUniverse(station.split('-')[0]);
+    const seed = hashString(station);
     const rng = new Rng(seed);
-    const modeName = rng.weighted([
-        ['lydian', 2], ['ionian', 2], ['mixolydian', 1.5], ['dorian', 2], ['aeolian', 2], ['phrygian', 0.6],
-    ]);
-    const tonic = 43 + rng.int(0, 11);
+    const modeName = rng.weighted(universe.modes);
+    const tonic = rng.int(universe.tonic[0], universe.tonic[1]);
     const harsh = Math.pow(rng.next(), 1.7);
     const pulse = rng.chance(0.5) ? rng.range(0.35, 1) : 0;
     const brightness = rng.next();
     const density = rng.range(0.25, 0.85);
-    const space = rng.range(0.55, 1);
-    const bpm = rng.int(96, 122);
-
-    return {
-        code,
+    const space = rng.next();
+    const bpm = rng.int(universe.bpm[0], universe.bpm[1]);
+    const r = universe.reverb;
+    const h = universe.harmony;
+    const piece = {
+        station,
+        code: station,
         seed,
-        key: { tonic, steps: MODES[modeName], mode: modeName },
+        universe,
+        key: { tonic, steps: MODES[modeName], mode: modeName, tuning: universe.tuning || 'equal' },
         harsh,
         pulse,
         brightness,
         density,
         space,
         bpm,
-        reverbT60: 7 + space * 13,
-        echoSeconds: (60 / bpm) * 1.5,
-        holdMin: 30 + (1 - density) * 30,
-        holdMax: 70 + (1 - density) * 50,
-        pedalProb: 0.35 + (1 - harsh) * 0.3,
-        sceneWeights: {
-            drift: 3,
-            sparse: 1 + (1 - density) * 1.5,
-            shimmer: 0.6 + brightness * 2,
-            pulse: pulse * 3.2,
-            storm: harsh * 4,
+        reverbT60: r.t60[0] + (r.t60[1] - r.t60[0]) * space,
+        reverbDamping: r.damping[0] + (r.damping[1] - r.damping[0]) * brightness,
+        reverbSize: r.size ?? 1.6,
+        echoSeconds: (60 / bpm) * (universe.echoBeats ?? 1.5),
+        harmony: {
+            ...h,
+            holdMin: h.holdMin * (1.2 - density * 0.4),
+            holdMax: h.holdMax * (1.2 - density * 0.4),
         },
     };
+    piece.sceneWeights = Object.fromEntries(Object.entries(universe.scenes).map(([name, s]) => [
+        name, typeof s.weight === 'function' ? s.weight(piece) : s.weight,
+    ]));
+    return piece;
 }

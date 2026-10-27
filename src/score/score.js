@@ -1,7 +1,6 @@
 import { Rng } from '../core/rng.js';
 import { Harmony } from '../core/theory.js';
-import { SCENE_TYPES } from './piece.js';
-import { Scene } from './scenes.js';
+import { Scene } from './scene.js';
 
 // The endless score for one piece: a shared chord timeline and a chain of
 // overlapping scenes, both generated lazily and deterministically.
@@ -10,11 +9,7 @@ export class Score {
         this.piece = piece;
         this.sceneOverride = sceneOverride;
         const rng = new Rng(piece.seed);
-        this.harmony = new Harmony(piece.key, rng.fork('harmony'), {
-            holdMin: piece.holdMin,
-            holdMax: piece.holdMax,
-            pedalProb: piece.pedalProb,
-        });
+        this.harmony = new Harmony(piece.key, rng.fork('harmony'), piece.harmony);
         this.sceneRng = rng.fork('scenes');
         this.scenes = [];
         this.sceneIndex = 0;
@@ -24,12 +19,13 @@ export class Score {
     _appendScene(start) {
         const prev = this.scenes[this.scenes.length - 1];
         const rng = this.sceneRng;
-        const weights = SCENE_TYPES
-            .filter((type) => type !== prev?.type)
-            .map((type) => [type, this.piece.sceneWeights[type]])
-            .filter(([, w]) => w > 0);
-        // open gently: the first scene is never a pulse or a storm
-        let type = prev ? rng.weighted(weights) : rng.weighted([['drift', 2], ['sparse', 1], ['shimmer', 1]]);
+        const weights = Object.entries(this.piece.sceneWeights)
+            .filter(([type, w]) => w > 0 && type !== prev?.type);
+        // open gently, with one of the universe's opening scenes
+        const opening = this.piece.universe.opening;
+        let type = prev
+            ? (weights.length ? rng.weighted(weights) : prev.type)
+            : opening[rng.int(0, opening.length - 1)];
         if (this.sceneOverride) type = this.sceneOverride[this.sceneIndex % this.sceneOverride.length];
         const fade = rng.range(25, 40);
         const length = rng.range(200, 420);
