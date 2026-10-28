@@ -392,6 +392,12 @@ export class AcidVoice extends Voice {
         this.wobblePhase = rng.next();
         // resonance eats level; keep the body up
         this.norm = 0.9 / (1 + this.drive);
+        // Polivoks: the input clips lopsided before the filter, and the VCA
+        // after it is overdriven, so the envelope itself gets squashed
+        this.asym = ev.asym ?? 0;
+        this.asymBias = soft(this.asym * 0.4);
+        this.vca = ev.vca ?? 0;
+        this.vcaNorm = this.vca ? 1 / soft(1 + this.vca * 4) : 1;
     }
 
     tick() {
@@ -421,12 +427,14 @@ export class AcidVoice extends Voice {
             x = x * (1 - this.square) + (x - this.sq.next()) * 0.5 * this.square;
         }
         if (this.saw2) x = (x + this.saw2.next()) * 0.6;
+        if (this.asym) x = soft(x * (1 + this.asym * 2) + this.asym * 0.4) - this.asymBias;
         let y = soft(this.filter.process(x) * (1 + this.drive * 3)) * this.norm;
         if (this.sub) {
             this.subPhase += this.subInc;
             if (this.subPhase > 1) this.subPhase -= 1;
             y += Math.sin(TAU * this.subPhase) * this.sub;
         }
+        if (this.vca) return soft(y * e * (1 + this.vca * 4)) * this.vcaNorm * this.gain;
         return y * e * this.gain;
     }
 }
@@ -742,6 +750,82 @@ export class NoiseBedVoice extends Voice {
 }
 
 // ---------------------------------------------------------------- sub
+
+// ---------------------------------------------------------------- 808
+
+// A trap 808: a sine with a short punch on top, held for the note and then
+// let go, sliding from the previous note when the figure asks (`fromMidi`),
+// saturated so it reads on a phone.
+export class BoomVoice extends Voice {
+    constructor(sr, ev) {
+        super(sr, ev);
+        this.hz = hzOf(ev);
+        this.fromHz = ev.fromHz ?? this.hz;
+        this.glide = Math.max(1, Math.round((ev.glide ?? 0.09) * sr));
+        this.punch = ev.punch ?? 60;
+        this.env = new Envelope(sr, 0.002, ev.dur ?? 0.6, ev.release ?? 0.5);
+        this.drive = ev.drive ?? 0.8;
+        this.norm = 1 / soft(1 + this.drive * 3);
+        this.phase = 0;
+        this.t = 0;
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        const t = this.t++;
+        const g = t < this.glide ? Math.sin((Math.PI / 2) * t / this.glide) : 1;
+        const hz = this.fromHz + (this.hz - this.fromHz) * g + this.punch * Math.exp(-t / (0.025 * this.sr));
+        this.phase += hz / this.sr;
+        if (this.phase > 1) this.phase -= 1;
+        const y = Math.sin(TAU * this.phase);
+        return soft(y * (1 + this.drive * 3)) * this.norm * e * this.gain;
+    }
+}
+
+// ---------------------------------------------------------------- cello
+
+// Electric cello (Tina Guo on the Cyberpunk 2077 score): a bowed saw with
+// bow noise through two body resonances, a vibrato that comes in as the note
+// is held, and as much drive as the part wants, from sweet to torn.
+export class CelloVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.hz = hzOf(ev);
+        this.fromHz = ev.fromHz ?? this.hz;
+        this.saw = new Saw(sr, this.hz, rng.next());
+        this.noise = new Noise((rng.next() * 4294967295) >>> 0);
+        this.body1 = new Svf(sr, 280, 2);
+        this.body2 = new Svf(sr, 1150, 2.6);
+        this.top = new Svf(sr, ev.cutoff ?? 3200, 0.8);
+        this.env = new Envelope(sr, ev.attack ?? 0.18, ev.dur ?? 1.5, ev.release ?? 0.6);
+        this.glide = Math.round((ev.glide ?? 0.08) * sr);
+        this.vibrato = (ev.vibrato ?? 22) / 1200;
+        this.vibPhase = rng.next();
+        this.drive = ev.drive ?? 0.3;
+        this.norm = 1 / (1 + this.drive);
+        this.t = 0;
+        this.counter = 0;
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        const t = this.t++;
+        if ((this.counter++ & 15) === 0) {
+            const g = this.glide && t < this.glide ? t / this.glide : 1;
+            this.vibPhase += 5.2 * 16 / this.sr;
+            const vib = 1 + this.vibrato * Math.min(1, t / (0.9 * this.sr)) * Math.sin(TAU * this.vibPhase);
+            this.saw.setHz((this.fromHz + (this.hz - this.fromHz) * g) * vib);
+        }
+        const x = this.saw.next() + this.noise.next() * 0.12 * (0.4 + e);
+        this.body1.process(x);
+        this.body2.process(x);
+        const b = this.body1.band * 1.2 + this.body2.band * 0.9 + x * 0.15;
+        const y = this.top.process(b);
+        return soft(y * (1 + this.drive * 4)) * this.norm * e * this.gain;
+    }
+}
 
 export class SubVoice extends Voice {
     constructor(sr, ev) {
@@ -1132,6 +1216,8 @@ export const VOICE_TYPES = {
     acid: AcidVoice,
     brass: BrassVoice,
     riser: RiserVoice,
+    boom: BoomVoice,
+    cello: CelloVoice,
     sample: SampleVoice,
     grain: GrainVoice,
 };

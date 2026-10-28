@@ -1,5 +1,5 @@
 import { SampleBank } from '../engine/samples.js';
-import { normalizeStation, stationId, STATIONS_PER_UNIVERSE } from '../score/piece.js';
+import { formatOf, normalizeStation, stationId, STATIONS_PER_UNIVERSE } from '../score/piece.js';
 import { UNIVERSES, getUniverse } from '../universes.js';
 import { Dial, frequency } from './dial.js';
 import { Field } from './field.js';
@@ -60,9 +60,10 @@ function dialIndex(id) {
 
 function show(id, { tuning = false } = {}) {
     const universe = getUniverse(id.split('-')[0]);
+    const format = formatOf(id);
     const index = dialIndex(id);
     $('name').textContent = universe.name;
-    $('blurb').textContent = universe.blurb;
+    $('blurb').textContent = format ? `${format.label}. ${format.blurb}` : universe.blurb;
     $('freq').textContent = index === null
         ? 'Off the dial'
         : `${frequency(index).toFixed(1)} FM`;
@@ -74,7 +75,7 @@ function show(id, { tuning = false } = {}) {
     document.body.dataset.look = universe.id;
     document.querySelector('meta[name="theme-color"]').setAttribute('content', look.paper);
     document.body.classList.toggle('tuning', tuning);
-    field.setStation(id, universe);
+    field.setStation(id, universe, format);
     dial.setTheme(look);
 }
 
@@ -189,7 +190,7 @@ function onMessage(node, msg) {
     if (msg.type === 'state') {
         const s = msg.state;
         field.update(s);
-        $('now').textContent = `${NOTE_NAMES[s.tonic % 12]} ${s.mode}, ${s.scene || ''}`;
+        $('now').textContent = `${NOTE_NAMES[s.tonic % 12]} ${s.mode}, ${s.bpm} bpm, ${(s.scene || '').split(':').pop()}`;
     }
 }
 

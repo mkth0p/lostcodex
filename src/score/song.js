@@ -12,38 +12,52 @@ import { Lane, instrumentEvent } from './lanes.js';
 
 export const DROPS = ['drop', 'drive'];
 
+// Scenes of a universe with formats are named "<format>:<role>"; the role is
+// what the song form and the visuals care about.
+export function roleOf(type) {
+    return type ? type.split(':').pop() : null;
+}
+
+// Section lengths in bars, by role; a format can change them (`song.bars`).
+const BARS = { intro: [16], rain: [8, 16], build: [4, 8, 8], drop: [16, 16, 32], break: [8, 16], build2: [4, 8], drop2: [16, 32] };
+
 export class SongPlan {
     constructor(piece, rng) {
+        const u = piece.universe;
         this.bar = 240 / piece.bpm;
         this.rng = rng;
+        this.prefix = u.formatId ? `${u.formatId}:` : '';
+        this.bars = { ...BARS, ...(u.song.bars || {}) };
         this.sections = [];
         this.end = 0;
         this.cycle = 0;
-        this.firstDrop = rng.pick(DROPS);
+        this.drops = DROPS.filter((d) => u.scenes[this.prefix + d]);
+        this.firstDrop = rng.pick(this.drops);
     }
 
-    _push(type, bars, fadeIn, fadeOut) {
+    _push(role, bars, fadeIn, fadeOut) {
         const start = this.end;
         this.end = start + bars * this.bar;
-        this.sections.push({ type, bars, start, end: this.end, fadeIn, fadeOut });
+        this.sections.push({ type: this.prefix + role, role, bars, start, end: this.end, fadeIn, fadeOut });
     }
 
     // drops come back: mostly the piece's own drop, sometimes the other one
     _drop() {
-        if (this.rng.chance(0.65)) return this.firstDrop;
-        return DROPS.find((d) => d !== this.firstDrop);
+        if (this.drops.length < 2 || this.rng.chance(0.65)) return this.firstDrop;
+        return this.drops.find((d) => d !== this.firstDrop);
     }
 
     _cycle() {
         const r = this.rng;
         const first = this.cycle === 0;
         const bar = this.bar;
-        this._push('rain', first ? 16 : r.pick([8, 16]), first ? 8 : 0.02, bar);
-        this._push('build', r.pick([4, 8, 8]), 0.02, 0.02);
-        this._push(this._drop(), r.pick([16, 16, 32]), 0.01, 0.02);
-        this._push('break', r.pick([8, 16]), 0.02, bar);
-        this._push('build', r.pick([4, 8]), 0.02, 0.02);
-        this._push(this._drop(), r.pick([16, 32]), 0.01, 0.02);
+        const b = this.bars;
+        this._push('rain', r.pick(first ? b.intro : b.rain), first ? 8 : 0.02, bar);
+        this._push('build', r.pick(b.build), 0.02, 0.02);
+        this._push(this._drop(), r.pick(b.drop), 0.01, 0.02);
+        this._push('break', r.pick(b.break), 0.02, bar);
+        this._push('build', r.pick(b.build2), 0.02, 0.02);
+        this._push(this._drop(), r.pick(b.drop2), 0.01, 0.02);
         this.cycle++;
     }
 
@@ -61,7 +75,7 @@ export class SongPlan {
     }
 
     isDrop(section) {
-        return DROPS.includes(section.type);
+        return DROPS.includes(section.role);
     }
 
     // When the gap before a drop starts: the last half bar of a build.
@@ -73,7 +87,7 @@ export class SongPlan {
     // dry signal pulled out in the gap so only the reverb is left.
     mix(t) {
         const s = this.at(t);
-        if (s.type !== 'build') return { hp: 28, dry: 1 };
+        if (s.role !== 'build') return { hp: 28, dry: 1 };
         const gap = this.gap(s);
         if (t >= gap) return { hp: 900, dry: 0.08 };
         const p = Math.max(0, (t - s.start) / (gap - s.start));

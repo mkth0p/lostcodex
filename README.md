@@ -18,7 +18,7 @@ Each universe has its own look, like a label giving each release its own sleeve:
 | Ash | distorted strings shredded into grains, a Buchla drone, crushed piano, all in key | burn, cinder, smoke |
 | Orbit | Mellotron flute and string melodies on wobbly tape, Gyro tape memories, sometimes a lazy beat | tape, beat, lull |
 | Voices | ooh voices, Mellotron choir, looped choirs and Gyro ooh/aah clouds | hymn, loop, veil |
-| Neon | a song with build-ups and drops: CS-80 style brass and lead, the low 2049 horn, a reese bass under broken drums or an acid bass under a four-on-the-floor kit, risers, snare rolls, rain | rain, build, drop, drive, break |
+| Neon | Night City on six radio formats, one per station: Rebel (the score: Polivoks bass, tribal toms, electric cello, always A minor), Acid (303 techno, rumbling kick, bleeps), Body (EBM: sixteenth sequencer bass, anvils), Outrun (octave bass, gated snare, saw lead), Dirge (trap: sliding 808, hat rolls, bells), Rain (Vangelis brass, no beat) | rain, build, drop, drive, break (per format) |
 | Abyss | sub pressure, sonar pings, whale glides, an 808 electro kit and bass, thunder grains | trench, electro, glow |
 | Bronze | saron and bonang with beating (ombak) pairs, interlocking kotekan, gongs closing each cycle, in pelog and slendro-like scales | kotekan, gong, mist |
 
@@ -41,9 +41,13 @@ station ──hash──▶ piece (universe, key, tempo, mood numbers)
 * Chords move by Gyro's progression scorer: two shared notes score best and none or all are penalised, steps and fourths or fifths in the bass beat a tritone, and the top voice should hold or move by 2, 3, 5 or 7 semitones. One of the best three candidates is drawn.
 * Scenes come back: now and then the next scene is one of the first few already heard (Gyro's repetition pool at the scale of the piece).
 
+## Formats
+
+A universe can have formats, like the stations of a city's radio. Neon has six; the numbered stations on the dial step through them in order (neon-01 is Rebel, neon-02 Acid ... neon-07 Rebel again) and any other code is given one by its hash (`formatOf` in `src/score/piece.js`). A format sets its own modes, tonic, tempo, swing, harmony, room, song shape and scenes, named `<format>:<scene>`; the page shows the format's name and blurb and the poster's sign spells it. They follow the Cyberpunk 2077 score (the Polivoks, distortion everywhere, '90s rave, IDM and industrial, nearly everything in A minor; [Den of Geek](https://www.denofgeek.com/games/cyberpunk-2077-soundtrack-music-listen-free/), [Inverse](https://inverse.com/gaming/cyberpunk-2077-music-composers-interview), [GOG](https://gog.com/news/dirty_heavy_yet_beautiful_the_music_of_cyberpunk_2077)) and the kinds of music on its in-game stations ([PC Gamer](https://pcgamer.com/cyberpunk-2077-radio-stations-soundtrack-music)). The Polivoks voice copies what makes the real one ugly: lopsided clipping into a 12 dB filter and an overdriven VCA ([Cherry Audio](https://cherryaudio.com/news/secrets-of-atomika)).
+
 ## Song form
 
-Most universes crossfade between scenes over minutes. Neon (`song: true`) plays a song instead (`src/score/song.js`): a seeded plan of sections on bar lines, rain → build → drop or drive → break → build → drop, round again with different lengths. Every drop has a build before it:
+Most universes crossfade between scenes over minutes. Neon's beat formats (`song: {}`) play a song instead (`src/score/song.js`): a seeded plan of sections on bar lines, rain → build → drop or drive → break → build → drop, round again with different lengths. Every drop has a build before it:
 
 * the harmony holds a tension chord (degree 6, 4 or 5) through the build and lands on the tonic at the drop;
 * a snare roll speeds up from quarters to thirty-seconds while a riser climbs and a high-pass on the whole mix sweeps from 28 to 500 Hz;
