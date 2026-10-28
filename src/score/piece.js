@@ -29,11 +29,25 @@ export function randomCode(rand = Math.random) {
     return out;
 }
 
+// The format a station plays, for universes that have them (Neon's radio
+// formats): the numbered stations on the dial step through them in order, so
+// every format is on the dial; any other code is assigned one by its hash.
+export function formatOf(raw) {
+    const station = normalizeStation(raw);
+    const [id, code] = station.split('-');
+    const formats = getUniverse(id).formats;
+    if (!formats) return null;
+    const n = /^\d{2}$/.test(code) ? Number(code) : 0;
+    const i = n >= 1 && n <= STATIONS_PER_UNIVERSE ? n - 1 : hashString(`format:${station}`);
+    return formats[i % formats.length];
+}
+
 // A piece is the handful of numbers a station turns into. Everything else is
 // derived from these plus named random streams.
 export function createPiece(raw) {
     const station = normalizeStation(raw);
-    const universe = getUniverse(station.split('-')[0]);
+    const format = formatOf(station);
+    const universe = format ? format.universe : getUniverse(station.split('-')[0]);
     const seed = hashString(station);
     const rng = new Rng(seed);
     const modeName = rng.weighted(universe.modes);
@@ -75,7 +89,7 @@ export function createPiece(raw) {
             holdMax: h.holdMax * (1.2 - density * 0.4),
         },
     };
-    piece.sceneWeights = Object.fromEntries(Object.entries(universe.scenes).map(([name, s]) => [
+    piece.sceneWeights = universe.sceneWeights ? { ...universe.sceneWeights } : Object.fromEntries(Object.entries(universe.scenes).map(([name, s]) => [
         name, typeof s.weight === 'function' ? s.weight(piece) : s.weight,
     ]));
     return piece;

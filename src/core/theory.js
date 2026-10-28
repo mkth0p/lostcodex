@@ -193,7 +193,7 @@ export class Harmony {
 
     _planned(prev, start) {
         const s = this.plan.at(start + 1e-6);
-        if (s.type === 'build') return { chord: this._chordOn(prev, [6, 4, 5]), end: s.end };
+        if (s.role === 'build') return { chord: this._chordOn(prev, [6, 4, 5]), end: s.end };
         if (this.plan.isDrop(s) && start - s.start < 1e-6) return { chord: this._chordOn(prev, [0]), end: start + 4 * this.plan.bar };
         return { chord: this._nextChord(prev), end: this._planEnd(start) };
     }

@@ -40,10 +40,10 @@ export class Field {
     }
 
     // A new station starts its look from scratch, seeded by its code.
-    setStation(id, universe) {
+    setStation(id, universe, format = null) {
         if (id === this.station) return;
         this.station = id;
-        this.name = universe.name;
+        this.name = format ? format.label : universe.name;
         this.look = LOOKS[universe.id] || LOOKS.tide;
         this.rng = new Rng(hashString(`look:${id}`));
         this.s = {};
@@ -62,7 +62,11 @@ export class Field {
         if (state.bass !== undefined) this.bass = state.bass;
         if (state.time !== undefined) this.time = state.time;
         if (state.bpm) this.bpm = state.bpm;
-        if (state.scene !== undefined) this.scene = state.scene;
+        if (state.scene !== undefined) {
+            this.scene = state.scene;
+            // "acid:drop" -> "drop": what the section does, whatever its format
+            this.role = state.scene ? state.scene.split(':').pop() : null;
+        }
         for (const note of state.notes || []) this.look.note(this, note);
     }
 

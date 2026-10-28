@@ -570,7 +570,7 @@ const matrix = {
         }
         if (n.layer === 'snare') {
             s.drops = 1;
-            if (f.scene === 'build') s.target += 1;
+            if (f.role === 'build') s.target += 1;
         }
         if (!PITCHED(n)) return;
         const i = Math.floor(pitch(n) * (s.board.length - 1));
@@ -590,7 +590,7 @@ const matrix = {
         const len = s.text.length;
         const off = Math.floor(s.scroll);
         const frac = s.scroll - off;
-        const drop = f.scene === 'drop' || f.scene === 'drive';
+        const drop = f.role === 'drop' || f.role === 'drive';
         if (drop) {
             ctx.fillStyle = this.ink;
             ctx.fillRect(0, top - u * 0.5, w, u * 10);

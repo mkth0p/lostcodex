@@ -166,6 +166,43 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
             // an ugly, singing lead (Polivoks): resonant, detuned, overdriven
             ev = { type: 'acid', layer: 'lead', velocity: vel, gain: 0.07 * level, square: 0.5, detune: 9, cutoff: 800 + vel * 500, envAmt: 3, decay: 0.35, q: 8, drive: 1.3, glide: 0.05, reverb: 0.35, echo: 0.35 };
             break;
+        case 'polivoks':
+            // the Cyberpunk 2077 bass: a Soviet Polivoks, lopsided clipping
+            // into a 12 dB filter into an overdriven VCA, ugly on purpose
+            ev = { type: 'acid', layer: 'bass', velocity: vel, gain: 0.1 * level, square: 0.3, cutoff: 300 + vel * 500, envAmt: 2.5 + vel * 3, decay: 0.14 + vel * 0.08, q: 3.5, drive: 0.8, asym: 0.7, vca: 0.8, sub: 0.3, reverb: 0.05, echo: 0.05 };
+            break;
+        case 'polilead':
+            // the same machine as a lead, resonance up until it bubbles
+            ev = { type: 'acid', layer: 'lead', velocity: vel, gain: 0.06 * level, detune: 6, cutoff: 1100 + vel * 700, envAmt: 2, decay: 0.4, q: 9, drive: 1, asym: 0.9, vca: 0.6, glide: 0.06, reverb: 0.4, echo: 0.35 };
+            break;
+        case 'tb303':
+            // a 303 line: short, resonant, accents open and drive it
+            ev = { type: 'acid', layer: 'bass', velocity: vel, gain: 0.19 * level, cutoff: 220 + vel * 520, envAmt: 3 + vel * 8, decay: 0.12 + vel * 0.12, q: 10, drive: 0.6 + vel * 0.6, glide: 0.06, reverb: 0.06, echo: 0.18 };
+            break;
+        case 'bleep':
+            // Sheffield bleep: a pure square-ish tone, short, into the echo
+            ev = { type: 'acid', layer: 'keys', velocity: vel, gain: 0.05 * level, square: 1, cutoff: 2400, envAmt: 0.3, decay: 0.05, q: 0.7, drive: 0.05, attack: 0.002, reverb: 0.3, echo: 0.5 };
+            break;
+        case 'boom':
+            // trap 808, sliding when the figure says so
+            ev = { type: 'boom', layer: 'bass', velocity: vel, gain: 0.11 * level, punch: 70, drive: 0.9, release: 0.35, reverb: 0.02 };
+            break;
+        case 'bell':
+            // a dark trap bell, thrown into the room
+            ev = { type: 'modal', layer: 'bells', preset: 'glass', velocity: vel, gain: 0.07 * level * (0.6 + vel), reverb: 0.6, echo: 0.3 };
+            break;
+        case 'cello':
+            // electric cello: sweet when soft, torn when loud
+            ev = { type: 'cello', layer: 'lead', velocity: vel, gain: 0.09 * level, drive: 0.2 + vel * 0.7, attack: 0.2, release: 0.8, vibrato: 24, reverb: 0.6, echo: 0.25 };
+            break;
+        case 'celloswell':
+            // long bowed notes under everything
+            ev = { type: 'cello', layer: 'pad', velocity: vel, gain: 0.07 * level, drive: 0.15, attack: 1.2, dur: 3, release: 2.5, vibrato: 14, cutoff: 2200, reverb: 0.8, echo: 0.1 };
+            break;
+        case 'saw':
+            // synthwave lead: bright detuned saws with a slow vibrato
+            ev = { type: 'lead', layer: 'lead', velocity: vel, gain: 0.045 * level * (0.7 + vel), dur: 1, attack: 0.02, release: 0.6, glide: 0.04, cutoff: 2400 + vel * 1600, q: 1.4, wow: 9, detune: 14, reverb: 0.6, echo: 0.45 };
+            break;
         case 'stab':
             // dub chord stab: a click of a chord thrown into the echo
             ev = { type: 'pad', layer: 'stab', preset: 'warm', gain: 0.07 * level * (0.6 + vel), attack: 0.006, dur: 0.08, release: 0.3, cutoff: 650 + vel * 400, filterEnv: 1.5, q: 1.2, oscs: 2, detune: 5, reverb: 0.25, echo: 0.65, wow: 0 };
