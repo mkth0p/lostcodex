@@ -53,7 +53,7 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
     let ev;
     switch (name) {
         case 'piano':
-            ev = { type: 'modal', sample: 'felt', trim: 0.6, layer: 'keys', preset: 'piano', velocity: vel, gain: 0.3 * level * (0.6 + vel), reverb: 0.55, echo: 0.04, dur: 12 };
+            ev = { type: 'modal', sample: 'felt', trim: 0.45, layer: 'keys', preset: 'piano', velocity: vel, gain: 0.3 * level * (0.6 + vel), reverb: 0.55, echo: 0.04, dur: 12 };
             break;
         case 'glass':
             ev = { type: 'modal', layer: 'bells', preset: 'glass', gain: 0.12 * level * (0.6 + vel), reverb: 0.75, echo: 0.12 };
@@ -80,10 +80,10 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
             ev = { type: 'pad', sample: 'ooh', layer: 'choir', preset: 'voice', gain: 0.16 * level, attack: 1.8, dur: 2.5, release: 5, reverb: 0.75, detune: 12, oscs: 5, cutoff: 3600, wow: 5, vowels: [rng.pick(['a', 'o', 'u']), rng.pick(['e', 'o', 'a'])] };
             break;
         case 'organ':
-            ev = { type: 'organ', sample: 'pipes', layer: 'organ', preset: 'gedackt', gain: 0.2 * level, attack: 3, dur: 6, release: 7, reverb: 0.8 };
+            ev = { type: 'organ', sample: 'pipes', trim: 0.75, layer: 'organ', preset: 'gedackt', gain: 0.2 * level, attack: 3, dur: 6, release: 7, reverb: 0.8 };
             break;
         case 'flute':
-            ev = { type: 'flute', sample: 'shaku', layer: 'lead', gain: 0.1 * level * (0.7 + vel), dur: 1, attack: 0.1, release: 0.6, reverb: 0.55, echo: 0.2 };
+            ev = { type: 'flute', sample: 'xiao', layer: 'lead', gain: 0.1 * level * (0.7 + vel), dur: 1, attack: 0.1, release: 0.6, reverb: 0.55, echo: 0.2 };
             break;
         case 'lead':
             ev = { type: 'lead', layer: 'lead', gain: 0.08 * level * (0.7 + vel), dur: 1, attack: 0.06, release: 0.9, reverb: 0.45, echo: 0.3, cutoff: 1100 + vel * 900 };
@@ -126,7 +126,9 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
 // Long tones on the bass (and fifth), optionally the whole chord, re-struck
 // at every chord change. `voice` picks pad, organ or singing pad; `sample`
 // plays a looped instrument of the pack instead (`sampleOnly`: nothing
-// without the pack, for layers that only add to a synth drone).
+// without the pack, for layers that only add to a synth drone), and `grain`
+// ({ density, size, octaves, reverse, jitter }) turns it into a grain cloud
+// that never repeats (also pack-only).
 export class DroneLane extends Lane {
     constructor(scene, rng, opts = {}) {
         super(scene, rng, opts.first ?? 0);
@@ -160,6 +162,9 @@ export class DroneLane extends Lane {
                 common.wow = o.wow;
                 common.drive = o.drive;
                 common.cutoff = o.cutoff;
+                common.echo = o.echo;
+                // a grain cloud rebuilt from the sample for the whole chord
+                if (o.grain) return { ...common, ...o.grain, type: 'grain' };
                 if (o.sampleOnly) return { ...common, type: 'sample' };
             }
             if (o.voice === 'organ') return { ...common, type: 'organ', preset: o.preset || 'flue' };
@@ -326,14 +331,14 @@ export class PhraseLane extends Lane {
 
 // Four-on-the-floor muffled pulse with dub chord stabs (Gas / Basic Channel).
 export class PulseLane extends Lane {
-    constructor(scene, rng, { bpm, stabs = true, kick = 0.2, ticks = 0.2, stabCutoff = 700, stabGain = 0.1, stabSample = null }) {
+    constructor(scene, rng, { bpm, stabs = true, kick = 0.2, kickShape = null, ticks = 0.2, stabCutoff = 700, stabGain = 0.1, stabSample = null }) {
         super(scene, rng, 0);
         this.step = 60 / bpm / 4;
         this.index = Math.ceil(scene.start / this.step);
         this.next = this.index * this.step;
         this.stabSteps = rng.pick([[3, 10], [2, 7, 11], [6, 14], [3, 11, 14]]);
         this.tickProb = rng.range(0.4, 0.9);
-        Object.assign(this, { stabs, kick, ticks, stabCutoff, stabGain, stabSample });
+        Object.assign(this, { stabs, kick, kickShape, ticks, stabCutoff, stabGain, stabSample });
         // tuned to the tonic, in the 35-65 Hz range
         this.kickMidi = 25 + pitchClass(scene.key.tonic - 25);
     }
@@ -347,7 +352,7 @@ export class PulseLane extends Lane {
         const events = [];
         const chord = this.harmony.chordAt(t);
         if (this.kick && s % 4 === 0 && level > 0.55) {
-            events.push({ type: 'kick', layer: 'kick', time: t, midi: this.kickMidi, gain: this.kick * smooth((level - 0.55) / 0.3), reverb: 0.06 });
+            events.push({ type: 'kick', layer: 'kick', time: t, midi: this.kickMidi, gain: this.kick * smooth((level - 0.55) / 0.3), reverb: 0.06, ...this.kickShape });
         }
         if (this.ticks && s % 4 === 2 && level > 0.65 && this.rng.chance(this.tickProb)) {
             events.push({ type: 'tick', layer: 'ticks', time: t, gain: this.ticks * level, pan: 0.25, reverb: 0.2, echo: 0.25, tone: 7500, decay: 0.04 });

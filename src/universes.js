@@ -9,6 +9,10 @@ import {
 
 const LOOP_PERIODS = [17.3, 19.7, 23.1, 26.9, 29.3, 31.7, 37.1, 41.3];
 
+// Deep and round like Basic Channel, but saturated with a short knock so it
+// still reads on laptop and phone speakers.
+const DUB_KICK = { tone: 1400, punch: 105, sweep: 0.045, decay: 0.6, click: 0.5, drive: 1.0 };
+
 function loops(scene, rng, instruments, { count = 5, octaves = {} } = {}) {
     const lanes = [];
     for (let i = 0; i < count; i++) {
@@ -52,6 +56,7 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.06, sub: 0.03 }),
                 new DroneLane(s, r.fork('choir'), { preset: 'choir', octave: 3, gain: 0.05, attack: 9, detune: 10, cutoff: 3600, reverb: 0.8 }),
                 new DroneLane(s, r.fork('strings'), { sample: 'strings', sampleOnly: true, octave: 2, upper: true, gain: 0.05, attack: 10, release: 10, stagger: 6, reverb: 0.75 }),
+                new DroneLane(s, r.fork('gyroglass'), { sample: 'gyroglass', grain: { density: 6, size: [0.12, 0.5], octaves: [0, 1, 1], reverse: 0.2 }, octave: 2, gain: 0.04, attack: 12, release: 12, reverb: 0.85, echo: 0.15 }),
                 new WanderLane(s, r.fork('glass'), { mean: 1.6, lo: 72, hi: 96, instrument: 'glass' }),
                 new WanderLane(s, r.fork('bowl'), { mean: 19, lo: 55, hi: 72, instrument: 'bowl' }),
             ] },
@@ -80,11 +85,12 @@ export const UNIVERSES = [
             chant: { weight: 2, build: (s, r) => [
                 new DroneLane(s, r.fork('organ'), { voice: 'organ', preset: 'gedackt', fifth: true, gain: 0.14, attack: 10, release: 12, reverb: 0.8 }),
                 new DroneLane(s, r.fork('monks'), { sample: 'monks', sampleOnly: true, octave: 1, gain: 0.07, attack: 9, release: 12, reverb: 0.85 }),
+                new DroneLane(s, r.fork('veil'), { sample: 'choir', grain: { density: 5, size: [0.3, 0.9], octaves: [0, 0, 1], reverse: 0.3 }, octave: 3, gain: 0.04, attack: 14, release: 14, reverb: 0.9 }),
                 ...loops(s, r, ['choir', 'voice', 'organ', 'choir'], { count: 4, octaves: { voice: 0, choir: 0, organ: 1 } }),
             ] },
             reed: { weight: 1.2, build: (s, r) => [
                 new DroneLane(s, r.fork('organ'), { voice: 'organ', preset: 'reed', fifth: true, upper: true, gain: 0.16, attack: 14, release: 14, stagger: 12, reverb: 0.85 }),
-                new DroneLane(s, r.fork('pipes'), { sample: 'pipes', sampleOnly: true, octave: -1, gain: 0.08, attack: 16, release: 14, reverb: 0.85 }),
+                new DroneLane(s, r.fork('pipes'), { sample: 'pipes', sampleOnly: true, octave: 0, gain: 0.08, attack: 16, release: 14, reverb: 0.85 }),
                 new WanderLane(s, r.fork('bowl'), { mean: 28, lo: 48, hi: 67, instrument: 'bowl' }),
             ] },
         },
@@ -94,7 +100,7 @@ export const UNIVERSES = [
         name: 'Dub',
         color: '#8fae7d',
         refs: 'Gas, Basic Channel',
-        blurb: 'Muffled kick in the fog, chord stabs dissolving into long echoes.',
+        blurb: 'A deep kick in the fog, chord stabs dissolving into long echoes.',
         modes: [['dorian', 3], ['aeolian', 2], ['mixolydian', 1]],
         tonic: [43, 52],
         bpm: [108, 124],
@@ -105,19 +111,20 @@ export const UNIVERSES = [
         scenes: {
             pulse: { weight: 3, build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.06, cutoff: 600, sub: 0.07 }),
-                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, stabSample: p.brightness > 0.4 ? 'tine' : null }),
+                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.16, kickShape: DUB_KICK, stabSample: p.brightness > 0.4 ? 'tine' : null }),
                 new BedLane(s, r.fork('bed'), { gain: 0.012, tone: 5000, crackle: 6 }),
             ] },
             fog: { weight: 2, build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.06, cutoff: 700, sub: 0.05 }),
                 new DroneLane(s, r.fork('dubpad'), { sample: 'dubpad', sampleOnly: true, octave: 1, upper: true, gain: 0.04, attack: 8, release: 10, cutoff: 1400, stagger: 5, reverb: 0.6 }),
-                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0, ticks: 0, stabGain: 0.12, stabSample: 'tine' }),
+                new DroneLane(s, r.fork('smear'), { sample: 'tine', grain: { density: 3, size: [0.05, 0.2], octaves: [0, 1], reverse: 0.15 }, octave: 1, gain: 0.035, attack: 10, release: 10, cutoff: 2200, reverb: 0.4, echo: 0.7 }),
+                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.1, kickShape: DUB_KICK, ticks: 0, stabGain: 0.12, stabSample: 'tine' }),
                 new BedLane(s, r.fork('bed'), { gain: 0.016, tone: 4000, crackle: 10 }),
-                new WanderLane(s, r.fork('choir'), { mean: 14, lo: 64, hi: 84, instrument: 'mchoir' }),
+                new WanderLane(s, r.fork('choir'), { mean: 14, lo: 60, hi: 79, instrument: 'mchoir' }),
             ] },
             deep: { weight: 1.5, build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.05, cutoff: 450, sub: 0.09 }),
-                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.22, ticks: 0.1, stabCutoff: 500, stabGain: 0.08 }),
+                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.17, kickShape: DUB_KICK, ticks: 0.1, stabCutoff: 500, stabGain: 0.08 }),
                 new BedLane(s, r.fork('bed'), { gain: 0.01, tone: 3000, crackle: 4 }),
             ] },
         },
@@ -140,19 +147,20 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { gain: 0.045, cutoff: 400, sub: 0.08 }),
                 new ResonantLane(s, r.fork('res'), { harsh: 0.1, lo: 60, hi: 96, q: [60, 120], gain: 0.17, length: [16, 30] }),
                 new ResonantLane(s, r.fork('res2'), { harsh: 0.1, lo: 72, hi: 100, q: [80, 140], gain: 0.11, length: [20, 34] }),
-                new DroneLane(s, r.fork('thunder'), { sample: 'thunder', sampleOnly: true, octave: 0, gain: 0.05, attack: 12, release: 12, reverb: 0.5 }),
+                new DroneLane(s, r.fork('thunder'), { sample: 'thunder', grain: { density: 4, size: [0.4, 1.2], octaves: [-1, 0, 0], reverse: 0.5, jitter: 20 }, octave: 0, gain: 0.05, attack: 12, release: 12, reverb: 0.5 }),
             ] },
             crack: { weight: 1.5, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.07, cutoff: 350, sub: 0.08 }),
                 new WanderLane(s, r.fork('metal'), { mean: 11, lo: 40, hi: 60, instrument: 'metal' }),
                 new WanderLane(s, r.fork('glass'), { mean: 7, lo: 84, hi: 100, instrument: 'glass' }),
-                new DroneLane(s, r.fork('wind'), { sample: 'wind', sampleOnly: true, octave: 2, gain: 0.04, attack: 10, release: 12, reverb: 0.6 }),
+                new DroneLane(s, r.fork('wind'), { sample: 'wind', grain: { density: 5, size: [0.3, 1.0], octaves: [0, 0, 1], reverse: 0.5, jitter: 30 }, octave: 2, gain: 0.04, attack: 10, release: 12, reverb: 0.6 }),
             ] },
             aurora: { weight: 2, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.04, cutoff: 400, sub: 0.06 }),
                 new DroneLane(s, r.fork('high'), { preset: 'choir', octave: 3, upper: true, upperOctave: 1, gain: 0.07, attack: 14, detune: 14, cutoff: 4200, reverb: 0.9, stagger: 6 }),
                 new WanderLane(s, r.fork('vibes'), { mean: 9, lo: 72, hi: 91, instrument: 'vibes' }),
                 new WanderLane(s, r.fork('bow'), { mean: 16, lo: 67, hi: 91, instrument: 'glassbow' }),
+                new DroneLane(s, r.fork('gyrobow'), { sample: 'gyrobow', grain: { density: 6, size: [0.1, 0.4], octaves: [0, 1], reverse: 0.25 }, octave: 2, fifth: true, gain: 0.035, attack: 14, release: 14, reverb: 0.9 }),
             ] },
         },
     },
@@ -185,6 +193,7 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { gain: 0.045, cutoff: 800, sub: 0.03 }),
                 new WanderLane(s, r.fork('drops'), { mean: 0.55, lo: 74, hi: 93, instrument: 'marimba', useScale: true }),
                 new OstinatoLane(s, r.fork('o1'), { bpm: p.bpm * 0.5, length: 7, instrument: 'vibes', lo: 60, hi: 76, rest: 0.4 }),
+                new DroneLane(s, r.fork('gyrovibe'), { sample: 'gyrovibe', grain: { density: 5, size: [0.08, 0.3], octaves: [0, 1], reverse: 0.1 }, octave: 2, gain: 0.035, attack: 10, release: 10, reverb: 0.5, echo: 0.2 }),
             ] },
         },
     },
@@ -206,7 +215,7 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.07, sub: 0.06, drive: 0.5 + p.harsh * 0.4, cutoff: 1200, detune: 16 }),
                 new ResonantLane(s, r.fork('res'), { harsh: 0.6 + p.harsh * 0.4 }),
                 new ResonantLane(s, r.fork('res2'), { harsh: 0.6 + p.harsh * 0.4, lo: 40, hi: 70 }),
-                new DroneLane(s, r.fork('grit'), { sample: 'grit', sampleOnly: true, octave: 1, fifth: true, gain: 0.045, attack: 10, release: 10, stagger: 7, drive: 0.3 + p.harsh * 0.6, reverb: 0.7 }),
+                new DroneLane(s, r.fork('grit'), { sample: 'grit', grain: { density: 10, size: [0.05, 0.25], octaves: [-1, 0, 0, 1], reverse: 0.3, jitter: 12 }, octave: 1, fifth: true, gain: 0.045, attack: 10, release: 10, stagger: 7, drive: 0.3 + p.harsh * 0.6, reverb: 0.7 }),
             ] },
             cinder: { weight: 2, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.09, sub: 0.06, drive: 0.4, crush: 4, bits: 7, cutoff: 900 }),
@@ -217,7 +226,7 @@ export const UNIVERSES = [
             smoke: { weight: 2, build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { fifth: true, upper: true, gain: 0.08, drive: 0.3 + p.harsh * 0.3, cutoff: 1500, detune: 20, attack: 12, stagger: 8, reverb: 0.8 }),
                 new WanderLane(s, r.fork('metal'), { mean: 12, lo: 36, hi: 58, instrument: 'metal' }),
-                new DroneLane(s, r.fork('buchla'), { sample: 'drone', sampleOnly: true, octave: 0, gain: 0.06, attack: 14, release: 12, drive: p.harsh * 0.5, reverb: 0.8 }),
+                new DroneLane(s, r.fork('buchla'), { sample: 'drone', grain: { density: 3, size: [0.5, 1.5], octaves: [-1, 0, 0], reverse: 0.4 }, octave: 0, gain: 0.06, attack: 14, release: 12, drive: p.harsh * 0.5, reverb: 0.8 }),
             ] },
         },
     },
@@ -251,6 +260,7 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { fifth: true, upper: true, gain: 0.05, cutoff: 900, detune: 14, wow: 18, attack: 8 }),
                 new OstinatoLane(s, r.fork('arp'), { bpm: p.bpm, perBeat: 2, length: r.pick([6, 8]), instrument: 'vibes', lo: 64, hi: 84, rest: 0.25, useScale: false }),
                 ...loops(s, r, ['mflute', 'mstrings'], { count: 2, octaves: { mflute: 0, mstrings: 0 } }),
+                new DroneLane(s, r.fork('gyrotape'), { sample: 'gyrotape', grain: { density: 4, size: [0.15, 0.6], octaves: [0, 1], reverse: 0.25, jitter: 15 }, octave: 2, gain: 0.035, attack: 10, release: 10, cutoff: 3500, reverb: 0.5, echo: 0.25 }),
                 new BedLane(s, r.fork('bed'), { gain: 0.018, tone: 5000, crackle: 5 }),
             ] },
         },
@@ -277,10 +287,12 @@ export const UNIVERSES = [
             loop: { weight: 2.5, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { preset: 'voice', fifth: true, gain: 0.045, oscs: 5, detune: 12, cutoff: 3000, reverb: 0.8 }),
                 ...loops(s, r, ['voice', 'mchoir', 'voice', 'choir', 'celesta'], { count: 5, octaves: { voice: 0, mchoir: 0, choir: 0, celesta: 1 } }),
+                new DroneLane(s, r.fork('gyrovox'), { sample: 'gyrovox', grain: { density: 4, size: [0.2, 0.6], octaves: [0, 1], reverse: 0.2 }, octave: 2, gain: 0.035, attack: 12, release: 12, reverb: 0.85 }),
             ] },
             veil: { weight: 1.5, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { preset: 'voice', octave: 2, upper: true, gain: 0.09, attack: 10, oscs: 5, detune: 16, cutoff: 3200, reverb: 0.9, stagger: 8 }),
                 new WanderLane(s, r.fork('piano'), { mean: 7, lo: 55, hi: 79, instrument: 'piano', useScale: true, dyad: 0.2 }),
+                new DroneLane(s, r.fork('smear'), { sample: 'ooh', grain: { density: 6, size: [0.25, 0.8], octaves: [0, 0, 1], reverse: 0.35 }, octave: 2, gain: 0.04, attack: 12, release: 14, reverb: 0.9 }),
             ] },
         },
     },

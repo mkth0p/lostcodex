@@ -1,3 +1,4 @@
+import { SampleBank } from '../engine/samples.js';
 import { normalizeStation, stationId, STATIONS_PER_UNIVERSE } from '../score/piece.js';
 import { UNIVERSES, getUniverse } from '../universes.js';
 import { Dial, frequency } from './dial.js';
@@ -20,16 +21,30 @@ let powered = false;
 let station = null; // the station shown, playing or not
 let scanTimer = null;
 let holdCustom = false; // a typed-in code stays put until the dial is turned
+let ctxReady = null; // the one AudioContext, once its worklet module is loaded
+let playGen = 0; // only the latest play() may start a station
+let packData = null; // the decoded sample pack, until the worklet has it
 let packSent = false; // the worklet keeps the decoded pack once it has it
+let packWait = null;
 
-// Instruments rendered from real synths and samplers (about 1.6 MB), fetched as
-// soon as the page opens. Without it every instrument has a synth stand-in.
+// Instruments rendered from real synths and samplers (about 1.9 MB), fetched as
+// soon as the page opens and decoded here rather than on the audio thread (the
+// decoder is integer maths, so the result is the same anywhere). Without it
+// every instrument has a synth stand-in.
 const packPromise = fetch(new URL('../../samples/pack.bin', import.meta.url))
     .then((r) => (r.ok ? r.arrayBuffer() : null))
-    .catch(() => null);
+    .then((buffer) => {
+        if (buffer) packData = new SampleBank(buffer).data();
+    })
+    .catch(() => {
+        packData = null;
+    });
 
-function loadPack() {
-    return Promise.race([packPromise, new Promise((resolve) => setTimeout(() => resolve(null), PACK_WAIT))]);
+// Wait for the pack at most PACK_WAIT, once: after that, stations stop
+// waiting, and the pack goes along with the next station once it arrives.
+async function loadPack() {
+    if (!packData) await (packWait ??= Promise.race([packPromise, new Promise((resolve) => setTimeout(resolve, PACK_WAIT))]));
+    return packData;
 }
 
 // "dub-07" -> its place on the dial; custom codes have none
@@ -62,14 +77,22 @@ function setStation(id) {
     show(id);
 }
 
-async function ensureContext() {
-    if (ctx) return ctx;
-    // iOS: play through the ringer switch like a media app
-    if (navigator.audioSession) navigator.audioSession.type = 'playback';
-    ctx = new AudioContext({ latencyHint: 'playback' });
-    await ctx.audioWorklet.addModule(new URL('./worklet.js', import.meta.url));
-    staticGain = makeStatic(ctx);
-    return ctx;
+// Every caller waits for the same context and its worklet module. The context
+// itself is created synchronously, inside the gesture that powers on.
+function ensureContext() {
+    ctxReady ??= (async () => {
+        // iOS: play through the ringer switch like a media app
+        if (navigator.audioSession) navigator.audioSession.type = 'playback';
+        const ac = new AudioContext({ latencyHint: 'playback' });
+        await ac.audioWorklet.addModule(new URL('./worklet.js', import.meta.url));
+        staticGain = makeStatic(ac);
+        ctx = ac;
+        return ac;
+    })().catch((err) => {
+        ctxReady = null;
+        throw err;
+    });
+    return ctxReady;
 }
 
 // Band-limited hiss, heard while the needle sits between stations.
@@ -96,21 +119,30 @@ function makeStatic(ac) {
 }
 
 async function play(id) {
+    const gen = ++playGen;
     const ac = await ensureContext();
     if (ac.state !== 'running') await ac.resume();
-    if (current && current.station === id) {
+    if (gen === playGen && current && current.station === id) {
         duck(1);
         return;
     }
     const pack = packSent ? null : await loadPack();
-    // the dial may have moved on while the pack was loading
-    if (id !== station) return;
-    if (pack) packSent = true;
+    // while we waited, power may have gone off, the dial moved on, or a newer
+    // play() taken over
+    if (gen !== playGen || !powered || id !== station) return;
+    if (current && current.station === id) {
+        duck(1);
+        return;
+    }
     const node = new AudioWorkletNode(ac, 'lost-codex', {
         numberOfInputs: 0,
         outputChannelCount: [2],
         processorOptions: { code: id, quality: isLite ? 'lite' : 'full', pack },
     });
+    if (pack) {
+        packSent = true;
+        packData = null; // the worklet has its own copy now
+    }
     const gain = ac.createGain();
     const now = ac.currentTime;
     gain.gain.setValueAtTime(0, now);
@@ -155,6 +187,7 @@ function onMessage(node, msg) {
 
 async function power(on) {
     powered = on;
+    if (!on) playGen++; // a station still loading must not start
     $('power').setAttribute('aria-pressed', String(on));
     document.body.classList.toggle('playing', on);
     if (on) {

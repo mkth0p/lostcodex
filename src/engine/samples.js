@@ -34,32 +34,47 @@ function decodeAdpcm(bytes, offset, n) {
     return out;
 }
 
-// name -> { kind, rms, zones: [{ root, hz, data (int16), loopStart }] }, zones sorted by root.
+// The pack as plain data: { sampleRate, instruments: name -> { kind, rms,
+// zones: [{ root, hz, rate, data (int16), loopStart, end }] } }, zones sorted
+// by root. Plain typed arrays, so it can be structured-cloned to the worklet.
+export function decodePack(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+    if (magic !== 'LCS1') throw new Error('not a Lost Codex sample pack');
+    const len = bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24);
+    // the manifest is ASCII; TextDecoder is missing in some AudioWorklet scopes
+    let text = '';
+    for (let i = 8; i < 8 + len; i += 4096) text += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(8 + len, i + 4096)));
+    const manifest = JSON.parse(text);
+    const base = 8 + len;
+    const instruments = {};
+    for (const [name, ins] of Object.entries(manifest.instruments)) {
+        instruments[name] = {
+            kind: ins.kind,
+            rms: ins.rms,
+            zones: ins.zones.map((z) => ({
+                root: z.root,
+                hz: midiToHz(z.root),
+                rate: z.rate ?? manifest.sampleRate,
+                data: decodeAdpcm(bytes, base + z.offset, z.length),
+                loopStart: z.loopStart ?? -1,
+                end: z.end ?? z.length,
+            })).sort((a, b) => a.root - b.root),
+        };
+    }
+    return { sampleRate: manifest.sampleRate, instruments };
+}
+
+// Built from the raw pack (decoding it) or from decodePack()'s data.
 export class SampleBank {
-    constructor(buffer) {
-        const bytes = new Uint8Array(buffer);
-        const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
-        if (magic !== 'LCS1') throw new Error('not a Lost Codex sample pack');
-        const len = bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24);
-        // the manifest is ASCII; TextDecoder is missing in some AudioWorklet scopes
-        let text = '';
-        for (let i = 8; i < 8 + len; i += 4096) text += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(8 + len, i + 4096)));
-        const manifest = JSON.parse(text);
-        const base = 8 + len;
-        this.sampleRate = manifest.sampleRate;
-        this.instruments = {};
-        for (const [name, ins] of Object.entries(manifest.instruments)) {
-            this.instruments[name] = {
-                kind: ins.kind,
-                rms: ins.rms,
-                zones: ins.zones.map((z) => ({
-                    root: z.root,
-                    hz: midiToHz(z.root),
-                    data: decodeAdpcm(bytes, base + z.offset, z.length),
-                    loopStart: z.loopStart ?? -1,
-                })).sort((a, b) => a.root - b.root),
-            };
-        }
+    constructor(source) {
+        const data = source && source.instruments ? source : decodePack(source);
+        this.sampleRate = data.sampleRate;
+        this.instruments = data.instruments;
+    }
+
+    data() {
+        return { sampleRate: this.sampleRate, instruments: this.instruments };
     }
 
     has(name) {

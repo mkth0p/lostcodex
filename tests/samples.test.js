@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Engine } from '../src/engine/engine.js';
 import { SampleBank } from '../src/engine/samples.js';
+import { createPiece } from '../src/score/piece.js';
+import { Score } from '../src/score/score.js';
 import { UNIVERSES } from '../src/universes.js';
 
 const pack = readFileSync(new URL('../samples/pack.bin', import.meta.url));
@@ -55,8 +57,36 @@ describe('sample pack', () => {
         expect(hash(render('voices-SAME', 15, 22050, { samples: bank }))).toBe(hash(render('voices-SAME', 15, 22050, { samples: bank })));
     });
 
+    it('rebuilds grain clouds identically', () => {
+        const opts = { samples: bank, sceneOverride: ['burn'] };
+        expect(hash(render('ash-GRAINS', 20, 22050, opts))).toBe(hash(render('ash-GRAINS', 20, 22050, opts)));
+    });
+
+    it('puts a kick in every Dub scene', () => {
+        for (const scene of Object.keys(UNIVERSES.find((u) => u.id === 'dub').scenes)) {
+            const score = new Score(createPiece('dub-KICK'), { sceneOverride: [scene] });
+            const kicks = score.collect(120).filter((ev) => ev.type === 'kick');
+            expect(kicks.length, scene).toBeGreaterThan(20);
+        }
+    });
+
     const scenes = UNIVERSES.flatMap((u) => Object.keys(u.scenes).map((scene) => [u.id, scene]));
     for (const [universe, scene] of scenes) {
+        it(`does not lean on the limiter in ${universe}/${scene} more than the synth version`, () => {
+            const leastGain = (samples) => {
+                const engine = new Engine(`${universe}-LIMIT`, 16000, { sceneOverride: [scene], samples });
+                const l = new Float32Array(128);
+                const r = new Float32Array(128);
+                let least = 1;
+                for (let f = 0; f < 16000 * 40; f += 128) {
+                    engine.render(l, r, 128);
+                    least = Math.min(least, engine.limiter.gain);
+                }
+                return 20 * Math.log10(least);
+            };
+            expect(leastGain(bank)).toBeGreaterThan(Math.min(-1.5, leastGain(null) - 1.5));
+        });
+
         it(`keeps ${universe}/${scene} with samples finite, audible and under the ceiling`, () => {
             const out = render(`${universe}-LEVELS`, 30, 16000, { sceneOverride: [scene], samples: bank });
             let peak = 0;

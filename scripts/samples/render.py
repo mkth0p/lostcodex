@@ -39,8 +39,9 @@ def jobs_for(names, out):
         ins = INSTRUMENTS[name]
         plugin = os.path.join(VST3, ins["plugin"] + ".vst3")
         preset = preset_path(ins["plugin"], ins["preset"])
-        # one-shots: a short press, then room to ring; loops: hold well past the loop we cut
-        hold = 1.0 if ins["kind"] == "shot" else ins["length"] + 3.0
+        # one-shots: held for their whole length so dampers (piano, Rhodes, vibes) never cut the
+        # ring short; the engine shortens notes itself. Loops: held well past the loop we cut
+        hold = ins.get("hold", ins["length"]) if ins["kind"] == "shot" else ins["length"] + 3.0
         for root in ins["roots"]:
             jobs.append(dict(plugin=plugin, preset=preset, notes=[[0.0, hold, root, ins["vel"]]], bpm=BPM,
                              beats=hold + 0.5, tail=ins["length"] + 1.5, settle=4.0,
@@ -52,7 +53,8 @@ def jobs_for(names, out):
 
 def main():
     out = os.path.abspath(sys.argv[1])
-    names = sys.argv[2:] or list(INSTRUMENTS)
+    # Gyro instruments have their own renderer (render_gyro.py)
+    names = sys.argv[2:] or [n for n, ins in INSTRUMENTS.items() if ins.get("source") != "gyro"]
     os.makedirs(out, exist_ok=True)
     path = os.path.join(out, "jobs.json")
     jobs = jobs_for(names, out)

@@ -1,7 +1,8 @@
 import { Engine } from '../engine/engine.js';
 import { SampleBank } from '../engine/samples.js';
 
-// Decoded once per audio context: every station node in this scope shares it.
+// The decoded pack (decoded on the page), kept for every station node in
+// this audio context once the first one brings it.
 let bank = null;
 
 // Runs the whole engine on the audio thread: the score, the voices and the
