@@ -13,8 +13,10 @@ const LOOKAHEAD = 0.1;
 // Renders one piece, block by block. Identical input (code, sample rate,
 // block size) gives identical output, in the browser worklet or in Node.
 export class Engine {
-    constructor(code, sampleRate, { maxVoices = 48, quality = 'full', sceneOverride = null } = {}) {
+    constructor(code, sampleRate, { maxVoices = 48, quality = 'full', sceneOverride = null, samples = null } = {}) {
         this.sr = sampleRate;
+        // optional SampleBank; without it every sampled instrument falls back to its synth voice
+        this.samples = samples;
         this.piece = createPiece(code);
         this.score = new Score(this.piece, { sceneOverride });
         this.voiceRng = new Rng(this.piece.seed).fork('voices');
@@ -57,6 +59,14 @@ export class Engine {
     }
 
     _spawn(ev, offset) {
+        let optional = false;
+        if (ev.sample) {
+            // grain clouds and sample-only layers exist only with the pack
+            const only = ev.type === 'sample' || ev.type === 'grain';
+            optional = only;
+            if (this.samples?.has(ev.sample)) ev = { ...ev, type: ev.type === 'grain' ? 'grain' : 'sample', bank: this.samples };
+            else if (only) return;
+        }
         const Type = VOICE_TYPES[ev.type];
         if (!Type) return;
         // every pitch goes through the piece's tuning here
@@ -67,16 +77,18 @@ export class Engine {
         const voice = new Type(this.sr, ev, this.voiceRng);
         voice.offset = offset;
         voice.fade = 1;
+        voice.optional = optional;
         this.voices.push(voice);
         if (ev.midi !== undefined || ev.midis) {
             this.notes.push({ time: ev.time, midi: ev.midi ?? ev.midis[0], layer: ev.layer, gain: ev.gain });
             if (this.notes.length > 64) this.notes.shift();
         }
-        // steal the oldest sustained voice, with a short fade
+        // over the cap, steal with a short fade: the oldest pack-only layer first
+        // (they only add to the synth voices), else the oldest voice
         let live = 0;
         for (const v of this.voices) if (!v.stealing) live++;
         if (live > this.maxVoices) {
-            const victim = this.voices.find((v) => !v.stealing);
+            const victim = this.voices.find((v) => !v.stealing && v.optional) || this.voices.find((v) => !v.stealing);
             victim.stealing = true;
         }
     }

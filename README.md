@@ -10,14 +10,14 @@ Each universe has its own look, like a label giving each release its own sleeve:
 
 | Universe | Sound | Scenes |
 | --- | --- | --- |
-| Tide | felt piano, glass and warm pads in slow overlapping loops | drift, sparse, shimmer |
-| Cathedral | pipe-organ drones in just intonation | nave, chant, reed |
-| Dub | muffled kick, chord stabs and long echoes | pulse, fog, deep |
-| Ice | sub-bass under frozen noise resonances and metal | glacier, crack, aurora |
-| Garden | marimba and kalimba figures over a breathy flute | grove, stream, rain |
-| Ash | saturated, crushed textures that stay in key | burn, cinder, smoke |
-| Orbit | wobbly tape melodies, sometimes over a lazy beat | tape, beat, lull |
-| Voices | vocal swells and looped choirs | hymn, loop, veil |
+| Tide | felt piano, celesta, Solina strings and warm pads in slow overlapping loops, a cloud of Gyro glass | drift, sparse, shimmer |
+| Cathedral | additive and sampled pipe organ in just intonation, choir, monks and a veil of choir grains | nave, chant, reed |
+| Dub | a deep saturated kick, dark Rhodes stabs and their smeared grains, a Prophet pad, long echoes | pulse, fog, deep |
+| Ice | sub-bass under frozen noise resonances, metal, bowed glass, Gyro glockenspiel, thunder and wind | glacier, crack, aurora |
+| Garden | marimba and kalimba figures over a xiao, Gyro vibes as drizzle | grove, stream, rain |
+| Ash | distorted strings shredded into grains, a Buchla drone, crushed piano, all in key | burn, cinder, smoke |
+| Orbit | Mellotron flute and string melodies on wobbly tape, Gyro tape memories, sometimes a lazy beat | tape, beat, lull |
+| Voices | ooh voices, Mellotron choir, looped choirs and Gyro ooh/aah clouds | hymn, loop, veil |
 
 Each universe in `src/universes.js` sets its modes, tempo range, tuning, harmony rules, reverb and the lanes each scene is built from. Adding a universe means adding one entry there.
 
@@ -36,7 +36,26 @@ station ──hash──▶ piece (universe, key, tempo, mood numbers)
 
 * Every note goes through `src/core/theory.js` as a MIDI number; a test checks that nothing ever leaves the key.
 * All randomness comes from named, seeded streams (`src/core/rng.js`). Rendering is sample-identical for the same station, sample rate and block size, in the browser and in Node.
-* All synthesis is plain JavaScript DSP (`src/dsp`, `src/engine/voices.js`), so there are no samples to download.
+* Synthesis is plain JavaScript DSP (`src/dsp`, `src/engine/voices.js`). On top of it, a 1.9 MB sample pack adds real instruments (see below). Without the pack every sampled instrument falls back to a synth voice and the layers that only exist as samples are left out, so the radio still plays offline or on a failed download.
+
+## Sample pack
+
+`samples/pack.bin` holds 26 instruments (62 multisample zones, 227 s of audio) rendered offline from VST3 plugins: Arturia Piano V3, Emulator II V, Mellotron V, Augmented Voices / Strings / Mallets / Yangtze, Solina V2, Stage-73 V2, Prophet-5 V, Synclavier V, MS-20 V, Synthi V and Buchla Easel V, plus five generative patterns from 10K Audio's Gyro whose chord sets are replaced by octaves of one note, so they stay on the root. `scripts/samples/plan.py` lists which preset each one comes from. Zones sit about an octave apart over the range each instrument is played in, so no note is pitched much more than half an octave.
+
+Each zone is trimmed, retuned to its exact root, cut as a one-shot or a seamless crossfaded loop, resampled (16 kHz for dark zones, 22.05 kHz otherwise) and stored as 4-bit IMA ADPCM. The engine decodes it itself (`src/engine/samples.js`) instead of using the browser's codecs, so the decoded samples are bit-identical everywhere and stations stay deterministic. The page fetches and decodes the pack once, and the worklet keeps the decoded copy for every station after that.
+
+Samples are raw material, never playback: the score still picks every note, and `GrainVoice` rebuilds textures (thunder, wind, drones, choirs, the Gyro patterns) as clouds of seeded grains, so nothing repeats however long a station plays.
+
+Rebuilding it needs Windows, the plugins, Gyro, and the offline VST3 host and Gyro host (`gyrohost.py`, `gyrolib.py`) from the MIXING toolkit:
+
+```
+python scripts/samples/render.py RAW_DIR            # renders the plugin zones to RAW_DIR/*.npy
+python scripts/samples/render_gyro.py RAW_DIR       # renders the Gyro zones
+python scripts/samples/build_pack.py RAW_DIR [WAVS] # writes samples/pack.bin (+ WAV previews); refuses if a zone is missing
+node scripts/pitchmap.mjs                           # how far each sample is pitched from its zone
+node scripts/layers.mjs 60                          # per-layer levels, synth-only vs sampled
+node scripts/limits.mjs 120 lite                    # limiter use and voice steals, synth-only vs sampled
+```
 
 ## Files
 
@@ -46,11 +65,14 @@ station ──hash──▶ piece (universe, key, tempo, mood numbers)
 | `src/universes.js` | the eight universes and their scenes |
 | `src/score/` | stations and pieces, lanes, scenes, the scene chain |
 | `src/dsp/` | filters, oscillators, reverb (8-line FDN), echo, limiter |
-| `src/engine/` | voices and the block renderer |
+| `src/engine/` | voices, the sample pack decoder and the block renderer |
 | `src/web/` | AudioWorklet wrapper, the dial, page logic, and the poster canvas |
 | `src/web/looks.js` | one look per universe: page colours and a poster drawn from the notes |
 | `fonts/` | Basteleur and Compagnon by Velvetyne (SIL Open Font License) |
-| `scripts/render.mjs` | offline render to WAV |
+| `samples/pack.bin` | the sample pack |
+| `scripts/render.mjs` | offline render to WAV (`NOSAMPLES=1` for synth-only) |
+| `scripts/samples/` | sample pack plan, renderers and builder |
+| `scripts/pitchmap.mjs`, `layers.mjs`, `limits.mjs` | checks for the sampled layers: pitch shifts, levels, limiter and voice use |
 
 ## Working on it
 

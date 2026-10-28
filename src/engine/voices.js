@@ -1,3 +1,4 @@
+import { Rng } from '../core/rng.js';
 import { midiToHz } from '../core/theory.js';
 import { Noise, OnePole, Saw, Svf, TAU, soft } from '../dsp/primitives.js';
 
@@ -494,24 +495,40 @@ export class SubVoice extends Voice {
 
 // ---------------------------------------------------------------- pulse kit
 
+// Tuned kick: a sine falling from low + punch to the note. Optional fields
+// shape it into a dub kick that still reads on small speakers: `click` adds a
+// short knock, `drive` tape-saturates the body so its harmonics carry the low
+// end, and a higher `tone` lets them through. Without them, the plain
+// muffled kick.
 export class KickVoice extends Voice {
     constructor(sr, ev) {
         super(sr, ev);
         this.t = 0;
         this.phase = 0;
         this.lp = new OnePole(sr, ev.tone ?? 160);
-        this.ampCoef = Math.exp(-6.9 / (0.42 * sr));
+        this.ampCoef = Math.exp(-6.9 / ((ev.decay ?? 0.42) * sr));
         this.amp = 1;
         this.low = ev.midi === undefined ? midiToHz(31) : hzOf(ev);
+        this.punch = ev.punch ?? 70;
+        this.sweep = ev.sweep ?? 0.035;
+        this.click = ev.click ?? 0;
+        this.clickPhase = 0;
+        this.drive = ev.drive ?? 0;
+        this.driveNorm = this.drive ? 1 / soft(1 + this.drive * 3) : 1;
     }
 
     tick() {
         const t = this.t++ / this.sr;
-        const hz = this.low + 70 * Math.exp(-t / 0.035);
+        const hz = this.low + this.punch * Math.exp(-t / this.sweep);
         this.phase += hz / this.sr;
         this.amp *= this.ampCoef;
         if (this.amp < 1e-4) this.done = true;
-        const y = Math.sin(TAU * this.phase) * this.amp;
+        let y = Math.sin(TAU * this.phase) * this.amp;
+        if (this.click && t < 0.006) {
+            this.clickPhase += (900 + 2200 * Math.exp(-t / 0.0015)) / this.sr;
+            y += this.click * Math.sin(TAU * this.clickPhase) * (1 - t / 0.006);
+        }
+        if (this.drive) y = soft(y * (1 + this.drive * 3)) * this.driveNorm;
         return this.lp.lp(y) * 1.8 * this.gain;
     }
 }
@@ -594,6 +611,213 @@ export class ResonantNoiseVoice extends Voice {
     }
 }
 
+// ---------------------------------------------------------------- sampled
+
+// The pack normalises each instrument's loudest zone to this peak.
+const PACK_PEAK = 0.89;
+
+// Gain that brings a zone to the level of the synth voice it stands in for at
+// the same event gain: loops by their loudness, one-shots by their peak (a
+// full-scale zone then peaks at 2: struck samples decay faster than the modal
+// voices ring, so that matches their loudness without crowding the limiter).
+function sampleNorm(ins, loop, trim = 1) {
+    return trim * (loop ? Math.min(16, 0.4 / ins.rms) : 2 / PACK_PEAK) / 32768;
+}
+
+// Plays a zone of the sample pack, repitched to the tuned note with cubic
+// interpolation. One-shots ring out (a damper shortens them after `dur`);
+// loops hold on their crossfaded loop under an attack / hold / release
+// envelope. Optional tape wow, low-pass, drive and bit crush.
+export class SampleVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        const bank = ev.bank;
+        const ins = bank.instruments[ev.sample];
+        const hz = hzOf(ev);
+        const zone = bank.zone(ev.sample, ev.midi ?? 60);
+        this.data = zone.data;
+        this.len = zone.data.length;
+        this.loopStart = zone.loopStart;
+        this.loop = zone.loopStart >= 0;
+        this.inc = (hz / zone.hz) * (zone.rate / sr);
+        this.fromInc = ev.fromHz ? (ev.fromHz / zone.hz) * (zone.rate / sr) : this.inc;
+        this.glide = Math.round((ev.glide ?? 0.08) * sr);
+        // loops can start somewhere inside the loop, so held notes never sound copied
+        this.pos = this.loop && ev.scatter ? zone.loopStart + (this.len - zone.loopStart) * rng.next() : 0;
+        this.norm = sampleNorm(ins, this.loop, ev.trim);
+        // the meter (analysis only) tells sampled layers apart
+        this.layer = `${this.layer}:${ev.sample}`;
+        if (this.loop) {
+            this.env = new Envelope(sr, ev.attack ?? 0.02, ev.dur ?? 4, ev.release ?? 2);
+        } else {
+            this.env = null;
+            this.damp = ev.dur ? Math.round(ev.dur * sr) : Infinity;
+            this.dampCoef = Math.exp(-6.9 / ((ev.release ?? 1.2) * sr));
+            this.dampLevel = 1;
+        }
+        this.t = 0;
+        this.wow = (ev.wow ?? 0) / 1200;
+        this.wowPhase = rng.next();
+        this.wowInc = rng.range(0.3, 0.6) / sr;
+        this.lp = ev.cutoff ? new OnePole(sr, ev.cutoff) : null;
+        this.drive = ev.drive ?? 0;
+        this.crush = ev.crush ?? 0;
+        this.crushBits = Math.pow(2, ev.bits ?? 8);
+        this.held = 0;
+        this.rate = this.fromInc;
+        this.counter = 0;
+    }
+
+    tick() {
+        const t = this.t++;
+        if ((this.counter++ & 15) === 0) {
+            const g = t < this.glide ? t / this.glide : 1;
+            let inc = this.fromInc + (this.inc - this.fromInc) * g;
+            if (this.wow) {
+                this.wowPhase += this.wowInc * 16;
+                inc *= 1 + this.wow * Math.sin(TAU * this.wowPhase);
+            }
+            this.rate = inc;
+        }
+        let e = 1;
+        if (this.env) {
+            e = this.env.next();
+            if (this.env.done) this.done = true;
+        } else if (t > this.damp) {
+            this.dampLevel *= this.dampCoef;
+            e = this.dampLevel;
+            if (e < 1e-4) this.done = true;
+        }
+        // cubic (Catmull-Rom) read between samples
+        const d = this.data;
+        const i = this.pos | 0;
+        const f = this.pos - i;
+        const a = d[i > 0 ? i - 1 : 0];
+        const b = d[i];
+        let c;
+        let n;
+        if (i + 2 < this.len) {
+            c = d[i + 1];
+            n = d[i + 2];
+        } else {
+            // past the end a loop continues from its loop start, a one-shot from silence
+            c = i + 1 < this.len ? d[i + 1] : this.loop ? d[this.loopStart] : 0;
+            n = this.loop ? d[this.loopStart + i + 2 - this.len] : 0;
+        }
+        let y = b + 0.5 * f * (c - a + f * (2 * a - 5 * b + 4 * c - n + f * (3 * (b - c) + n - a)));
+        this.pos += this.rate;
+        if (this.pos >= this.len) {
+            if (this.loop) this.pos -= this.len - this.loopStart;
+            else this.done = true;
+        }
+        // colour the normalised signal (as the pad voice does), then apply the gain
+        y *= this.norm;
+        if (this.lp) y = this.lp.lp(y);
+        if (this.drive > 0) y = soft(y * (1 + this.drive * 4)) / (1 + this.drive);
+        if (this.crush) {
+            if (t % this.crush === 0) this.held = Math.round(y * this.crushBits) / this.crushBits;
+            y = this.held;
+        }
+        return y * e * this.gain;
+    }
+}
+
+// ---------------------------------------------------------------- granular
+
+const GRAIN_WINDOW = new Float32Array(1025);
+for (let i = 0; i <= 1024; i++) GRAIN_WINDOW[i] = 0.5 - 0.5 * Math.cos(TAU * i / 1024);
+const MAX_GRAINS = 10;
+
+// A cloud rebuilt endlessly from one zone of the sample pack: Hann-windowed
+// grains start at seeded random places in the zone, some an octave away, a
+// few reversed, so a few seconds of source never repeat. Octave moves only,
+// so the cloud stays on its note. Grains draw from their own random stream,
+// so the cloud is the same however the engine splits its blocks.
+export class GrainVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        const bank = ev.bank;
+        const ins = bank.instruments[ev.sample];
+        const zone = bank.zone(ev.sample, ev.midi ?? 60);
+        this.sr = sr;
+        this.data = zone.data;
+        this.len = zone.data.length;
+        // loops: the held part (a little before the loop); shots: all of it, attacks
+        // included, up to where the ring has died away
+        this.from = zone.loopStart >= 0 ? Math.max(0, zone.loopStart - Math.round(0.3 * zone.rate)) : 0;
+        this.end = Math.min(this.len, zone.end);
+        this.baseInc = (hzOf(ev) / zone.hz) * (zone.rate / sr);
+        this.rng = new Rng((rng.next() * 4294967295) >>> 0);
+        this.density = ev.density ?? 8;
+        this.size = ev.size ?? [0.08, 0.35];
+        this.octaves = ev.octaves ?? [0];
+        this.reverse = ev.reverse ?? 0.15;
+        this.jitter = (ev.jitter ?? 5) / 1200;
+        this.pos = new Float64Array(MAX_GRAINS);
+        this.inc = new Float64Array(MAX_GRAINS);
+        this.age = new Int32Array(MAX_GRAINS);
+        this.dur = new Int32Array(MAX_GRAINS);
+        this.amp = new Float64Array(MAX_GRAINS);
+        this.live = new Uint8Array(MAX_GRAINS);
+        this.t = 0;
+        this.nextGrain = 0;
+        const overlap = this.density * (this.size[0] + this.size[1]) / 2;
+        this.norm = 3 * sampleNorm(ins, true, ev.trim) / Math.sqrt(Math.max(1, overlap));
+        this.env = new Envelope(sr, ev.attack ?? 4, ev.dur ?? 10, ev.release ?? 6);
+        this.lp = ev.cutoff ? new OnePole(sr, ev.cutoff) : null;
+        this.drive = ev.drive ?? 0;
+        this.layer = `${this.layer}:${ev.sample}~`;
+    }
+
+    _grain() {
+        let k = 0;
+        while (k < MAX_GRAINS && this.live[k]) k++;
+        if (k === MAX_GRAINS) return;
+        const r = this.rng;
+        let inc = this.baseInc * Math.pow(2, r.pick(this.octaves)) * (1 + (r.next() * 2 - 1) * this.jitter);
+        let dur = Math.max(64, Math.round(r.range(this.size[0], this.size[1]) * this.sr));
+        // keep every read inside the zone
+        const room = this.end - 2 - this.from;
+        if (dur * inc > room) dur = Math.max(64, Math.floor(room / inc));
+        const span = dur * inc;
+        let pos = this.from + r.next() * Math.max(0, room - span);
+        if (r.chance(this.reverse)) {
+            pos += span;
+            inc = -inc;
+        }
+        this.pos[k] = pos;
+        this.inc[k] = inc;
+        this.age[k] = 0;
+        this.dur[k] = dur;
+        this.amp[k] = r.range(0.6, 1);
+        this.live[k] = 1;
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        if (this.t++ >= this.nextGrain) {
+            this._grain();
+            this.nextGrain = this.t + Math.max(1, Math.round(this.rng.exp(1 / this.density) * this.sr));
+        }
+        const d = this.data;
+        let y = 0;
+        for (let k = 0; k < MAX_GRAINS; k++) {
+            if (!this.live[k]) continue;
+            const p = this.pos[k];
+            const i = p | 0;
+            const s = d[i] + (d[i + 1] - d[i]) * (p - i);
+            y += s * GRAIN_WINDOW[(this.age[k] * 1024 / this.dur[k]) | 0] * this.amp[k];
+            this.pos[k] = p + this.inc[k];
+            if (++this.age[k] >= this.dur[k]) this.live[k] = 0;
+        }
+        y *= this.norm;
+        if (this.lp) y = this.lp.lp(y);
+        if (this.drive > 0) y = soft(y * (1 + this.drive * 4)) / (1 + this.drive);
+        return y * e * this.gain;
+    }
+}
+
 export const VOICE_TYPES = {
     modal: ModalVoice,
     pad: PadVoice,
@@ -606,4 +830,6 @@ export const VOICE_TYPES = {
     lead: LeadVoice,
     bed: NoiseBedVoice,
     snare: SnareVoice,
+    sample: SampleVoice,
+    grain: GrainVoice,
 };
