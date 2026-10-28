@@ -191,6 +191,23 @@ export const GENERATORS = {
         }
         return notes;
     },
+    // reggae skank: a short chord chop on two and four
+    skank(rng) {
+        const top = rng.int(3, 4);
+        const len = rng.pick([1, 1, 2]);
+        const notes = [];
+        for (const step of [4, 12, 20, 28]) for (let row = top - 2; row <= top; row++) notes.push({ step, row, steps: len });
+        return notes;
+    },
+    // the organ bubble: a pair of sixteenths after every beat, low then high
+    bubble(rng) {
+        const notes = [];
+        const lift = rng.int(1, 2);
+        for (let beat = 0; beat < STEPS; beat += 4) {
+            notes.push({ step: beat + 2, row: lift, steps: 1 }, { step: beat + 3, row: lift + 2, steps: 1 });
+        }
+        return notes;
+    },
     // trap 808: a few long notes where the kick would be, some sliding
     trap(rng) {
         const bar = rng.pick([[0, 7, 10], [0, 10, 14], [0, 6, 11], [0, 3, 10, 14], [0, 11]]);
@@ -281,7 +298,7 @@ export class FigureLane extends Lane {
         const o = this.o;
         const rng = this.build;
         let notes = GENERATORS[o.gen](rng, this.grid, o);
-        if (!['arp', 'line', 'pump', 'octaves', 'trap'].includes(o.gen)) notes = arrange(rng, notes, o.clusters, o.repeat);
+        if (!['arp', 'line', 'pump', 'octaves', 'trap', 'skank', 'bubble'].includes(o.gen)) notes = arrange(rng, notes, o.clusters, o.repeat);
         notes = clean(notes);
         if (o.interlock !== undefined) {
             notes = notes.filter((n) => n.step % 2 === o.interlock).map((n) => ({ ...n, row: n.row + o.interlock }));
@@ -354,8 +371,12 @@ const KICKS = {
     ebm: [[0, 4, 8, 12]],
     // the score's tribal drums: a kick and toms answering it
     tribal: [[0, 6, 10], [0, 3, 8, 11], [0, 10, 12]],
+    // roots reggae: the one drop, kick and rim together on the third beat
+    onedrop: [[8]],
+    // UK steppers: a kick on every beat under a half-time snare
+    steppers: [[0, 4, 8, 12]],
 };
-const HALF_TIME = ['halfstep', 'trap', 'tribal'];
+const HALF_TIME = ['halfstep', 'trap', 'tribal', 'onedrop', 'steppers'];
 
 export class KitLane extends Lane {
     constructor(scene, rng, { style = 'four', kick = {}, kickGain = 1, gain = 1, clap = 0.11, snare = 0, hat = 0.1, perc = 0.06, metal = 0, open = 0.3, toms = 0, rolls = 0 } = {}) {
@@ -379,7 +400,7 @@ export class KitLane extends Lane {
             else for (const s of [4, 12]) base.push({ step: half + s, kind: 'clap' });
         }
         // hats: eighths, sixteenths or the shared grid, with Gyro accents
-        const hatEvery = style === 'halfstep' || style === 'tribal' ? 0 : style === 'trap' ? 2 : b.pick([1, 2, 2]);
+        const hatEvery = style === 'halfstep' || style === 'tribal' ? 0 : style === 'trap' || style === 'onedrop' ? 2 : b.pick([1, 2, 2]);
         for (let s = 0; s < STEPS; s++) {
             const onGrid = this.grid.onsets.includes(s);
             // EBM and techno: the open hat on every offbeat

@@ -50,7 +50,7 @@ describe('sample pack', () => {
     });
 
     it('stays small enough for phones', () => {
-        expect(pack.length).toBeLessThan(2.2 * 1024 * 1024);
+        expect(pack.length).toBeLessThan(3 * 1024 * 1024);
     });
 
     it('renders the same code to identical samples', () => {

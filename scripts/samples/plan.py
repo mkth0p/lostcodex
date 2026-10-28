@@ -44,6 +44,36 @@ INSTRUMENTS = {
     # Voices
     "ooh":      dict(plugin="Augmented VOICES", preset="Double Ooh", kind="loop", roots=[60, 72], length=3.0, vel=90),
     "mchoir":   dict(plugin="Mellotron V", preset="Choirs", kind="loop", roots=[48, 60, 72], length=3.0, vel=100),
+    # Neon (Night City)
+    "cs80":       dict(plugin="CS-80 V4", preset="L.A. 2019", kind="loop", roots=[48, 60, 72], length=2.5, vel=90),
+    "cs80lead":   dict(plugin="CS-80 V4", preset="Lead The Aftertouch", kind="loop", roots=[60, 72], length=2.5, vel=90),
+    "lowhorn":    dict(plugin="Augmented BRASS", preset="Horn Surge", kind="loop", roots=[36, 48], length=2.5, vel=90),
+    "cello":      dict(plugin="Augmented STRINGS", preset="Sad Day Cello", kind="loop", roots=[48, 60], length=2.5, vel=90),
+    "erhu":       dict(plugin="Augmented YANGTZE", preset="Erhu Master", kind="loop", roots=[60, 72], length=2.5, vel=90),
+    # the MS-20 growls (Doom Drive, Dungeon) sound a fifth or octave off their note; Hard Sink sits on it
+    "ms20bass":   dict(plugin="KORG MS-20 V", preset="Hard Sink", kind="loop", roots=[36, 48], length=2.0, vel=90),
+    "matrixbass": dict(plugin="Matrix-12 V2", preset="Crowling Bass", kind="loop", roots=[36, 48], length=2.0, vel=90),
+    "minibass":   dict(plugin="Mini V4", preset="Chameleon Bass", kind="shot", roots=[36, 48], length=0.8, vel=90),
+    # MiniFreak's hoovers are detuned by about a quarter tone; Mini V's is centred
+    "hoover":     dict(plugin="Mini V4", preset="Razor Hoover", kind="loop", roots=[48, 60], length=2.0, vel=90),
+    # the Jup-8 "rave stab" is a fifth chord and OP-Xa's AFX drifts in pitch; this is one steady note
+    "ravestab":   dict(plugin="OP-Xa V", preset="Eclectic Keys", kind="shot", roots=[60, 72], length=1.0, vel=90),
+    "vocoder":    dict(plugin="Vocoder V", preset="Faults", kind="loop", roots=[48, 60], length=2.5, vel=90),
+    "obxlead":    dict(plugin="OP-Xa V", preset="Neon", kind="loop", roots=[60, 72], length=2.0, vel=90),
+    "jup8pad":    dict(plugin="Jup-8 V4", preset="PWM Dreams", kind="loop", roots=[48, 60, 72], length=2.5, vel=90),
+    "dx7bell":    dict(plugin="DX7 V", preset="80's FM EP", kind="shot", roots=[72, 84], length=2.0, vel=90),
+    "darkbell":   dict(plugin="Augmented MALLETS", preset="Broken Life", kind="shot", roots=[72, 84], length=2.0, vel=90),
+    "flute":      dict(plugin="Augmented WOODWINDS", preset="Hazy Flute", kind="loop", roots=[72, 84], length=2.0, vel=90),
+    "darkchoir":  dict(plugin="Augmented VOICES", preset="Dark Side", kind="loop", roots=[48, 60], length=2.5, vel=90),
+    "metal":      dict(plugin="Modular V3", preset="Crack Bell", kind="shot", roots=[72], length=1.5, vel=90),
+    # Dub; no plugin has a melodica, so a harmonica stands in
+    "melodica":   dict(plugin="Jup-8 V4", preset="Harmonica", kind="loop", roots=[60, 72], length=2.0, vel=90),
+    "organ":      dict(plugin="B-3 V2", preset="Percussive Organ", kind="shot", roots=[48, 60, 72], length=0.6, vel=90),
+    "clav":       dict(plugin="Clavinet V", preset="Default BC", kind="shot", roots=[60, 72], length=0.6, vel=90),
+    "horns":      dict(plugin="Augmented BRASS", preset="Dub Trumpet", kind="shot", roots=[60, 72], length=1.0, vel=90),
+    "polystab":   dict(plugin="CS-80 V4", preset="Dub Stab", kind="shot", roots=[48, 60], length=1.2, vel=90),
+    "deeppad":    dict(plugin="SEM V3", preset="Monochrome", kind="loop", roots=[48, 60], length=2.5, vel=90),
+    "spacevox":   dict(plugin="Augmented VOICES", preset="Choir Waves", kind="loop", roots=[60], length=2.5, vel=90),
     # Gyro's generative patterns, raw material for grain clouds
     "gyroglass": dict(source="gyro", plugin="Gyro", preset=("Magical", "Glassware"), kind="loop", roots=[60, 72], length=4.0),
     "gyrobow":   dict(source="gyro", plugin="Gyro", preset=("Soundscapes", "Bowed Glockenspiel"), kind="loop", roots=[60, 72], length=4.0),

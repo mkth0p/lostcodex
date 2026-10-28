@@ -203,6 +203,81 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
             // synthwave lead: bright detuned saws with a slow vibrato
             ev = { type: 'lead', layer: 'lead', velocity: vel, gain: 0.045 * level * (0.7 + vel), dur: 1, attack: 0.02, release: 0.6, glide: 0.04, cutoff: 2400 + vel * 1600, q: 1.4, wow: 9, detune: 14, reverb: 0.6, echo: 0.45 };
             break;
+        // ---- rendered from the VSTs on ju's PC (scripts/samples/plan.py);
+        // each falls back to the synth voice next to it without the pack
+        case 'cs80':
+            ev = { type: 'brass', sample: 'cs80', layer: 'pad', velocity: vel, gain: 0.1 * level, cutoff: 650, filterAmt: 3.5, attack: 0.25, dur: 2, release: 1.2, reverb: 0.75, echo: 0.15 };
+            break;
+        case 'cs80lead':
+            ev = { type: 'brass', sample: 'cs80lead', layer: 'lead', velocity: vel, gain: 0.08 * level, cutoff: 900, filterAmt: 2.5, attack: 0.12, release: 1.4, glide: 0.12, vibrato: 18, slide: 2, reverb: 0.8, echo: 0.35 };
+            break;
+        case 'lowhorn':
+            ev = { type: 'brass', sample: 'lowhorn', layer: 'pad', velocity: 1, gain: 0.16 * level, cutoff: 260, filterAmt: 5, fdecay: 3, attack: 0.08, dur: 2, release: 2.5, drive: 0.6, reverb: 0.6, echo: 0.1 };
+            break;
+        case 'vcello':
+            ev = { type: 'cello', sample: 'cello', layer: 'lead', velocity: vel, gain: 0.09 * level, drive: 0.2 + vel * 0.6, attack: 0.15, release: 0.8, vibrato: 24, reverb: 0.6, echo: 0.25 };
+            break;
+        case 'erhu':
+            ev = { type: 'cello', sample: 'erhu', trim: 1.8, layer: 'lead', velocity: vel, gain: 0.08 * level, drive: 0.15, attack: 0.12, release: 0.7, vibrato: 40, glide: 0.15, reverb: 0.65, echo: 0.3 };
+            break;
+        case 'ms20bass':
+            ev = { type: 'acid', sample: 'ms20bass', layer: 'bass', velocity: vel, gain: 0.1 * level, square: 0.3, cutoff: 300 + vel * 500, envAmt: 2.5 + vel * 3, decay: 0.14, q: 3.5, drive: 0.8, asym: 0.7, vca: 0.8, attack: 0.004, release: 0.06, reverb: 0.05, echo: 0.05 };
+            break;
+        case 'matrixbass':
+            ev = { type: 'acid', sample: 'matrixbass', layer: 'bass', velocity: vel, gain: 0.12 * level, detune: 22, sub: 0.45, cutoff: 360 + vel * 260, envAmt: 1.4, decay: 0.3, q: 1.3, drive: 1, wobble: 0.35, attack: 0.004, release: 0.08, reverb: 0.04 };
+            break;
+        case 'minibass':
+            ev = { type: 'acid', sample: 'minibass', layer: 'bass', velocity: vel, gain: 0.15 * level, square: 0.7, cutoff: 220, envAmt: 3 + vel * 4, decay: 0.12, q: 2.2, drive: 0.3, release: 0.08, reverb: 0.05, echo: 0.05 };
+            break;
+        case 'hoover':
+            ev = { type: 'acid', sample: 'hoover', layer: 'lead', velocity: vel, gain: 0.065 * level, square: 0.5, detune: 14, cutoff: 1200, envAmt: 2, decay: 0.4, q: 3, drive: 1.1, glide: 0.08, attack: 0.01, release: 0.3, reverb: 0.4, echo: 0.3 };
+            break;
+        case 'ravestab':
+            ev = { type: 'pad', sample: 'ravestab', trim: 0.65, layer: 'stab', preset: 'warm', gain: 0.08 * level * (0.6 + vel), attack: 0.004, dur: 0.1, release: 0.35, cutoff: 1800 + vel * 1200, filterEnv: 1.5, q: 1.4, oscs: 3, detune: 12, reverb: 0.35, echo: 0.5 };
+            break;
+        case 'vocoder':
+            ev = { type: 'pad', sample: 'vocoder', layer: 'choir', preset: 'voice', gain: 0.12 * level, attack: 0.6, dur: 2, release: 2.5, reverb: 0.6, detune: 8, oscs: 4, cutoff: 3000, vowels: ['a', 'o'] };
+            break;
+        case 'jup8':
+            ev = { type: 'pad', sample: 'jup8pad', layer: 'pad', preset: 'warm', gain: 0.08 * level, attack: 1, dur: 2, release: 3, reverb: 0.6, detune: 12, cutoff: 2600 };
+            break;
+        case 'obxlead':
+            ev = { type: 'lead', sample: 'obxlead', layer: 'lead', velocity: vel, gain: 0.045 * level * (0.7 + vel), dur: 1, attack: 0.02, release: 0.6, glide: 0.05, cutoff: 2600, q: 1.4, wow: 8, detune: 12, reverb: 0.6, echo: 0.45 };
+            break;
+        case 'dx7bell':
+            ev = { type: 'modal', sample: 'dx7bell', layer: 'bells', preset: 'glass', velocity: vel, gain: 0.08 * level * (0.6 + vel), reverb: 0.55, echo: 0.35 };
+            break;
+        case 'darkbell':
+            ev = { type: 'modal', sample: 'darkbell', layer: 'bells', preset: 'glass', velocity: vel, gain: 0.07 * level * (0.6 + vel), reverb: 0.65, echo: 0.3 };
+            break;
+        case 'trapflute':
+            ev = { type: 'flute', sample: 'flute', layer: 'lead', gain: 0.08 * level * (0.7 + vel), dur: 1, attack: 0.06, release: 0.5, reverb: 0.5, echo: 0.3 };
+            break;
+        case 'metalhit':
+            ev = { type: 'modal', sample: 'metal', trim: 0.4, layer: 'ticks', preset: 'metal', velocity: vel, gain: 0.06 * level * (0.6 + vel), reverb: 0.4, echo: 0.25, ring: 0.45 };
+            break;
+        case 'melodica':
+            // Augustus Pablo: a reed lead, a little out of breath
+            ev = { type: 'lead', sample: 'melodica', trim: 1.3, layer: 'lead', velocity: vel, gain: 0.06 * level * (0.7 + vel), dur: 1, attack: 0.04, release: 0.4, glide: 0.04, cutoff: 1800, q: 1.2, wow: 10, detune: 5, reverb: 0.45, echo: 0.5 };
+            break;
+        case 'bubble':
+            // the reggae organ bubble: short, percussive, on the offbeats
+            ev = { type: 'organ', sample: 'organ', layer: 'keys', preset: 'gedackt', gain: 0.07 * level * (0.6 + vel), attack: 0.004, dur: 0.12, release: 0.08, reverb: 0.25, echo: 0.2 };
+            break;
+        case 'clav':
+            // the skank: a muted chop on two and four
+            ev = { type: 'acid', sample: 'clav', trim: 1.6, layer: 'keys', velocity: vel, gain: 0.05 * level, square: 0.6, cutoff: 1400, envAmt: 2, decay: 0.05, q: 1.5, drive: 0.2, attack: 0.002, release: 0.05, reverb: 0.3, echo: 0.45 };
+            break;
+        case 'horns':
+            ev = { type: 'brass', sample: 'horns', trim: 1.4, layer: 'lead', velocity: vel, gain: 0.08 * level, cutoff: 1100, filterAmt: 2, attack: 0.03, dur: 0.3, release: 0.4, reverb: 0.5, echo: 0.55 };
+            break;
+        case 'polystab':
+            ev = { type: 'pad', sample: 'polystab', trim: 2.2, layer: 'stab', preset: 'warm', gain: 0.07 * level * (0.6 + vel), attack: 0.006, dur: 0.08, release: 0.3, cutoff: 650 + vel * 400, filterEnv: 1.5, q: 1.2, oscs: 2, detune: 5, reverb: 0.25, echo: 0.65, wow: 0 };
+            break;
+        case 'siren':
+            // a dub siren: a lead whose pitch swings slowly up and down
+            ev = { type: 'lead', layer: 'lead', gain: 0.035 * level, dur: 3, attack: 0.3, release: 2, cutoff: 2400, q: 2, wow: 350, detune: 3, reverb: 0.6, echo: 0.8 };
+            break;
         case 'stab':
             // dub chord stab: a click of a chord thrown into the echo
             ev = { type: 'pad', layer: 'stab', preset: 'warm', gain: 0.07 * level * (0.6 + vel), attack: 0.006, dur: 0.08, release: 0.3, cutoff: 650 + vel * 400, filterEnv: 1.5, q: 1.2, oscs: 2, detune: 5, reverb: 0.25, echo: 0.65, wow: 0 };
