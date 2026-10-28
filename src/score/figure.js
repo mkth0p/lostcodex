@@ -214,6 +214,9 @@ export class FigureLane extends Lane {
         this.step = (60 / scene.piece.bpm / 4) * o.rate;
         this.swing = o.rate === 1 ? this.grid.swing : 0;
         this.index = Math.ceil(scene.start / this.step);
+        // forms count from the lane's first step, so a section that starts on
+        // a bar line (a drop) starts on its first figure
+        this.first = this.index;
         this.next = stepTime(this.index, this.step, this.swing);
         this.build = rng.fork('pattern');
         this.slots = o.slots ?? 4;
@@ -255,7 +258,7 @@ export class FigureLane extends Lane {
         const i = this.index++;
         this.next = stepTime(this.index, this.step, this.swing);
         const cycle = this.slots * STEPS;
-        const pos = ((i % cycle) + cycle) % cycle;
+        const pos = (i - this.first) % cycle;
         // at the end of each form, now and then redraw a later figure: the
         // first one stays, so the piece keeps its theme
         if (pos === 0 && this.figures.length > 1 && this.build.chance(this.o.evolve)) {
@@ -285,19 +288,22 @@ export class FigureLane extends Lane {
 // halfstep (shuffled half-time, after Burial).
 const KICKS = {
     four: [[0, 4, 8, 12]],
+    // broken industrial kicks under a backbeat
+    breaks: [[0, 7, 10], [0, 3, 10, 11], [0, 6, 9, 14], [0, 10, 13]],
     electro: [[0, 10], [0, 6, 10], [0, 3, 10], [0, 7, 10, 13], [0, 6, 11]],
     halfstep: [[0, 10], [0, 11], [0, 7, 10], [0, 14]],
 };
 
 export class KitLane extends Lane {
-    constructor(scene, rng, { style = 'four', kick = {}, gain = 1, clap = 0.11, hat = 0.1, perc = 0.06, open = 0.3 } = {}) {
+    constructor(scene, rng, { style = 'four', kick = {}, kickGain = 1, gain = 1, clap = 0.11, snare = 0, hat = 0.1, perc = 0.06, metal = 0, open = 0.3 } = {}) {
         super(scene, rng, 0);
         this.grid = scene.grid;
         this.step = 60 / scene.piece.bpm / 4;
         this.swing = this.grid.swing;
         this.index = Math.ceil(scene.start / this.step);
+        this.first = this.index;
         this.next = stepTime(this.index, this.step, this.swing);
-        Object.assign(this, { style, kickShape: kick, gain, clap, hat, perc, open });
+        Object.assign(this, { style, kickShape: kick, kickGain, gain, clap, snare, hat, perc, metal, open });
         this.kickMidi = 25 + pitchClass(scene.key.tonic - 25);
         const b = rng.fork('pattern');
         this.slots = 4;
@@ -330,7 +336,7 @@ export class KitLane extends Lane {
         const i = this.index++;
         this.next = stepTime(this.index, this.step, this.swing);
         const cycle = this.slots * STEPS;
-        const pos = i % cycle;
+        const pos = (i - this.first) % cycle;
         const slot = Math.floor(pos / STEPS);
         const fig = slot === this.slots - 1 ? 1 : 0;
         const level = this.scene.level(t);
@@ -341,10 +347,12 @@ export class KitLane extends Lane {
             const v = n.vel;
             switch (n.kind) {
                 case 'kick':
-                    out.push({ type: 'kick', layer: 'kick', time: t, midi: this.kickMidi, gain: 0.17 * g * (0.7 + 0.3 * v), reverb: 0.04, ...this.kickShape });
+                    if (this.kickGain) out.push({ type: 'kick', layer: 'kick', time: t, midi: this.kickMidi, gain: 0.17 * this.kickGain * g * (0.7 + 0.3 * v), reverb: 0.04, ...this.kickShape });
                     break;
                 case 'clap':
                     out.push({ type: 'clap', layer: 'snare', time: t, gain: this.clap * g * (0.6 + 0.4 * v), reverb: 0.35, echo: 0.12, pan: 0.04 });
+                    // a snare under the clap, thrown into a big room (gated-reverb feel)
+                    if (this.snare) out.push({ type: 'snare', layer: 'snare', time: t, gain: this.snare * g * (0.6 + 0.4 * v), tone: 2600, body: 190, decay: 0.16, reverb: 0.6, pan: -0.04 });
                     break;
                 case 'hat':
                 case 'open':
@@ -352,6 +360,11 @@ export class KitLane extends Lane {
                     break;
                 case 'perc':
                     if (this.perc) out.push({ type: 'tick', layer: 'ticks', time: t, gain: this.perc * g * v, pan: 0.35, reverb: 0.3, echo: 0.3, tone: 2400, decay: 0.05 });
+                    if (this.metal) {
+                        // struck metal on a chord tone: industrial, still in key
+                        const tones = notesInRange(this.harmony.chordAt(t).pcs, 76, 90);
+                        if (tones.length) out.push({ type: 'modal', layer: 'ticks', preset: 'metal', time: t, midi: tones[i % tones.length], gain: this.metal * g * v, ring: 0.45, pan: (i % 3) * 0.3 - 0.3, reverb: 0.35, echo: 0.25 });
+                    }
                     break;
                 default:
             }

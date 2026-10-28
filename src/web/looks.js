@@ -524,7 +524,9 @@ const riso = {
 
 // Neon: a dot-matrix sign on Akira red. The station's name scrolls one
 // column per kick; every note lights a column of the board below it, in
-// white, and black rain slants across the lot.
+// white, and black rain slants across the lot. In a build-up the sign
+// scrolls on every snare of the roll, so it speeds up with it; in a drop the
+// sign turns over, red dots on a black band.
 const matrix = {
     paper: '#e8231b',
     ink: '#0b0b0b',
@@ -566,7 +568,10 @@ const matrix = {
             s.target += 1;
             return;
         }
-        if (n.layer === 'snare') s.drops = 1;
+        if (n.layer === 'snare') {
+            s.drops = 1;
+            if (f.scene === 'build') s.target += 1;
+        }
         if (!PITCHED(n)) return;
         const i = Math.floor(pitch(n) * (s.board.length - 1));
         s.board[i] = Math.min(1, s.board[i] + 0.4 + (n.gain || 0.05) * 4);
@@ -585,11 +590,16 @@ const matrix = {
         const len = s.text.length;
         const off = Math.floor(s.scroll);
         const frac = s.scroll - off;
+        const drop = f.scene === 'drop' || f.scene === 'drive';
+        if (drop) {
+            ctx.fillStyle = this.ink;
+            ctx.fillRect(0, top - u * 0.5, w, u * 10);
+        }
         for (let i = 0; i < cols; i++) {
             const col = s.text[(i + off) % len];
             const x = (i - frac) * u + u / 2;
             for (let j = 0; j < 9; j++) {
-                ctx.fillStyle = this.ink;
+                ctx.fillStyle = drop ? this.paper : this.ink;
                 ctx.globalAlpha = col[j] ? 1 : 0.13;
                 ctx.beginPath();
                 ctx.arc(x, top + j * u + u / 2, u * (col[j] ? 0.42 : 0.16), 0, TAU);

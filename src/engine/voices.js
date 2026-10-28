@@ -381,6 +381,15 @@ export class AcidVoice extends Voice {
         this.glide = Math.round((ev.glide ?? 0) * sr);
         this.t = 0;
         this.counter = 0;
+        // reese: a second saw detuned against the first, beating slowly
+        this.spread = ev.detune ? Math.pow(2, ev.detune / 1200) : 0;
+        this.saw2 = this.spread ? new Saw(sr, this.hz * this.spread, rng.next()) : null;
+        // a clean sine an octave down, under the filter and the drive
+        this.sub = ev.sub ?? 0;
+        this.subPhase = 0;
+        // slow movement of the cutoff
+        this.wobble = (ev.wobble ?? 0) / sr;
+        this.wobblePhase = rng.next();
         // resonance eats level; keep the body up
         this.norm = 0.9 / (1 + this.drive);
     }
@@ -395,7 +404,14 @@ export class AcidVoice extends Voice {
             const hz = this.fromHz + (this.hz - this.fromHz) * g;
             this.saw.setHz(hz);
             this.sq.setHz(hz);
-            this.filter.set(this.cutoff * (1 + this.envAmt * this.fEnv), this.q);
+            if (this.saw2) this.saw2.setHz(hz * this.spread);
+            this.subInc = hz * 0.5 / this.sr;
+            let fc = this.cutoff * (1 + this.envAmt * this.fEnv);
+            if (this.wobble) {
+                this.wobblePhase += this.wobble * 8;
+                fc *= 1 + 0.6 * Math.sin(TAU * this.wobblePhase);
+            }
+            this.filter.set(fc, this.q);
         }
         this.t++;
         let x = this.saw.next();
@@ -404,8 +420,142 @@ export class AcidVoice extends Voice {
             if (this.t === 1) this.sq.phase = (this.saw.phase + 0.5) % 1;
             x = x * (1 - this.square) + (x - this.sq.next()) * 0.5 * this.square;
         }
-        const y = soft(this.filter.process(x) * (1 + this.drive * 3)) * this.norm;
+        if (this.saw2) x = (x + this.saw2.next()) * 0.6;
+        let y = soft(this.filter.process(x) * (1 + this.drive * 3)) * this.norm;
+        if (this.sub) {
+            this.subPhase += this.subInc;
+            if (this.subPhase > 1) this.subPhase -= 1;
+            y += Math.sin(TAU * this.subPhase) * this.sub;
+        }
         return y * e * this.gain;
+    }
+}
+
+// ---------------------------------------------------------------- brass
+
+// Yamaha CS-80 style brass (Vangelis): two pulse waves an octave apart, the
+// upper one a few cents flat, their width swept by an LFO; the filter opens
+// slowly after the note starts and closes over seconds. Velocity sets the
+// brightness. `vibrato` fades in a vibrato as on aftertouch, `slide` bends
+// the note down on release as with the ribbon, `drive` makes the low horn.
+export class BrassVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.hz = hzOf(ev);
+        this.fromHz = ev.fromHz ?? this.hz;
+        const ph = rng.next();
+        this.a = new Saw(sr, this.hz, ph);
+        this.a2 = new Saw(sr, this.hz, (ph + 0.5) % 1);
+        this.b = new Saw(sr, this.hz * 2, rng.next());
+        this.b2 = new Saw(sr, this.hz * 2, 0);
+        this.oct = Math.pow(2, -6 / 1200) * 2;
+        const vel = ev.velocity ?? 0.6;
+        this.cutoff = (ev.cutoff ?? 700) * (0.6 + vel * 0.8);
+        this.filterAmt = ev.filterAmt ?? 3;
+        this.filter = new Svf(sr, this.cutoff, ev.q ?? 1.3);
+        this.fAtt = 1 - Math.exp(-1 / (0.65 * sr));
+        this.fDec = Math.exp(-1 / ((ev.fdecay ?? 6) * sr));
+        this.fEnv = 0;
+        this.fPeak = 0;
+        this.env = new Envelope(sr, ev.attack ?? 0.25, ev.dur ?? 2, ev.release ?? 0.75);
+        this.relStart = Math.round(((ev.attack ?? 0.25) + (ev.dur ?? 2)) * sr);
+        this.slide = ev.slide ?? 0;
+        this.vibrato = (ev.vibrato ?? 0) / 1200;
+        this.glide = Math.round((ev.glide ?? 0) * sr);
+        this.lfo = rng.next();
+        this.lfoInc = (ev.pwmRate ?? 4.2) / sr;
+        this.vibPhase = 0;
+        this.drive = ev.drive ?? 0;
+        this.t = 0;
+        this.counter = 0;
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        const t = this.t++;
+        // the filter envelope: a slow rise, then a long fall
+        if (this.fPeak < 1) {
+            this.fEnv += (1 - this.fEnv) * this.fAtt;
+            if (this.fEnv > 0.98) this.fPeak = 1;
+        } else {
+            this.fEnv *= this.fDec;
+        }
+        if ((this.counter++ & 15) === 0) {
+            const g = this.glide && t < this.glide ? t / this.glide : 1;
+            let hz = this.fromHz + (this.hz - this.fromHz) * g;
+            this.vibPhase += 5.5 * 16 / this.sr;
+            if (this.vibrato) hz *= 1 + this.vibrato * Math.min(1, t / (1.2 * this.sr)) * Math.sin(TAU * this.vibPhase);
+            if (this.slide && t > this.relStart) hz *= Math.pow(2, -this.slide * Math.min(1, (t - this.relStart) / (0.6 * this.sr)) / 12);
+            this.lfo += this.lfoInc * 16;
+            // pulse width between 10 % and 90 %
+            const pw = 0.5 + 0.4 * (2 * Math.abs((this.lfo % 1) - 0.5) - 0.5);
+            this.a.setHz(hz);
+            this.a2.setHz(hz);
+            this.b.setHz(hz * this.oct);
+            this.b2.setHz(hz * this.oct);
+            this.a2.phase = (this.a.phase + pw) % 1;
+            this.b2.phase = (this.b.phase + pw) % 1;
+            this.filter.set(this.cutoff * (1 + this.filterAmt * this.fEnv));
+        }
+        const x = (this.a.next() - this.a2.next()) * 0.6 + (this.b.next() - this.b2.next()) * 0.4;
+        let y = this.filter.process(x * 0.5);
+        if (this.drive) y = soft(y * (1 + this.drive * 4)) / (1 + this.drive);
+        return y * e * this.gain;
+    }
+}
+
+// ---------------------------------------------------------------- risers
+
+// A build-up riser: noise through a band-pass that sweeps up while it swells,
+// with a detuned saw sliding up `rise` semitones underneath, cut dead at the
+// end (the gap before the drop). `down` turns it into a downlifter: it starts
+// high and loud and falls away.
+export class RiserVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.noise = new Noise((rng.next() * 4294967295) >>> 0);
+        this.len = Math.max(1, Math.round((ev.dur ?? 8) * sr));
+        this.f0 = ev.from ?? 300;
+        this.f1 = ev.to ?? 9000;
+        this.down = !!ev.down;
+        this.bp = new Svf(sr, this.f0, ev.q ?? 2.5);
+        this.hz = hzOf(ev);
+        this.rise = ev.rise ?? 12;
+        this.saw = new Saw(sr, this.hz, rng.next());
+        this.saw2 = new Saw(sr, this.hz * 1.007, rng.next());
+        this.sawAmt = ev.saw ?? 0.35;
+        this.lp = new Svf(sr, 800, 0.9);
+        this.t = 0;
+        this.counter = 0;
+        this.p = 0;
+    }
+
+    tick() {
+        const t = this.t++;
+        if (t >= this.len) {
+            this.done = true;
+            return 0;
+        }
+        if ((this.counter++ & 15) === 0) {
+            const q = t / this.len;
+            this.p = this.down ? 1 - q : q;
+            const f = this.f0 * Math.pow(this.f1 / this.f0, this.p * this.p);
+            this.bp.set(f);
+            const hz = this.hz * Math.pow(2, (this.rise * this.p) / 12);
+            this.saw.setHz(hz);
+            this.saw2.setHz(hz * 1.007);
+            this.lp.set(Math.min(12000, 400 + f));
+        }
+        const p = this.p;
+        // swell, and a 20 ms fade at the very end so the cut does not click
+        let amp = this.down ? p * p : Math.pow(p, 1.6);
+        const left = this.len - t;
+        if (left < 0.02 * this.sr) amp *= left / (0.02 * this.sr);
+        this.bp.process(this.noise.next());
+        const n = this.bp.band * this.bp.k;
+        const s = this.lp.process((this.saw.next() + this.saw2.next()) * 0.5) * this.sawAmt;
+        return (n * 0.8 + s) * amp * this.gain;
     }
 }
 
@@ -980,6 +1130,8 @@ export const VOICE_TYPES = {
     snare: SnareVoice,
     clap: ClapVoice,
     acid: AcidVoice,
+    brass: BrassVoice,
+    riser: RiserVoice,
     sample: SampleVoice,
     grain: GrainVoice,
 };

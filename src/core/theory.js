@@ -153,9 +153,12 @@ const ROOT_WEIGHTS = [[0, 5], [3, 3], [5, 3], [4, 2], [1, 1.5], [6, 1.5], [2, 1]
 // Lazily extended chord timeline. Chords hold for a long time and change by
 // small voice-leading moves; the tonic pedal is common.
 export class Harmony {
-    constructor(key, rng, { holdMin = 36, holdMax = 90, pedalProb = 0.5, roots = null, shapes = null } = {}) {
+    constructor(key, rng, { holdMin = 36, holdMax = 90, pedalProb = 0.5, roots = null, shapes = null, plan = null } = {}) {
         this.key = key;
         this.rng = rng;
+        // a song plan (src/score/song.js) puts chord changes on bar lines,
+        // holds a tension chord through each build and lands drops on the tonic
+        this.plan = plan;
         this.holdMin = holdMin;
         this.holdMax = holdMax;
         this.pedalProb = pedalProb;
@@ -168,7 +171,31 @@ export class Harmony {
             || buildChord(key, 0, 'open', true)
             || { rootDegree: 0, shape: 'root', pcs: [pitchClass(key.tonic), pitchClass(key.tonic + 7)], bass: key.tonic - 12, pedal: true };
         const upper = voiceLead([60, 64, 67, 71].map((m) => nearestNote(first.pcs, m)), first.pcs);
-        this.chords.push({ ...first, upper, start: 0, end: this._hold() });
+        this.chords.push({ ...first, upper, start: 0, end: plan ? this._planEnd(0) : this._hold() });
+    }
+
+    _planEnd(start) {
+        const s = this.plan.at(start + 1e-6);
+        return Math.min(s.end, start + this.rng.pick([2, 4, 4]) * this.plan.bar);
+    }
+
+    // the first chord built on one of these degrees that differs from prev
+    _chordOn(prev, degrees) {
+        for (const degree of degrees) {
+            if (degree >= this.key.steps.length) continue;
+            for (const shape of this.shapes) {
+                const chord = buildChord(this.key, degree, shape, false);
+                if (chord && !(chord.rootDegree === prev.rootDegree && chord.shape === prev.shape)) return chord;
+            }
+        }
+        return this._nextChord(prev);
+    }
+
+    _planned(prev, start) {
+        const s = this.plan.at(start + 1e-6);
+        if (s.type === 'build') return { chord: this._chordOn(prev, [6, 4, 5]), end: s.end };
+        if (this.plan.isDrop(s) && start - s.start < 1e-6) return { chord: this._chordOn(prev, [0]), end: start + 4 * this.plan.bar };
+        return { chord: this._nextChord(prev), end: this._planEnd(start) };
     }
 
     _hold() {
@@ -215,10 +242,11 @@ export class Harmony {
     chordAt(t) {
         let last = this.chords[this.chords.length - 1];
         while (last.end <= t) {
-            const chord = this._nextChord(last);
-            const upper = voiceLead(last.upper, chord.pcs);
             const start = last.end;
-            last = { ...chord, upper, start, end: start + this._hold() };
+            const next = this.plan ? this._planned(last, start) : { chord: this._nextChord(last), end: start + this._hold() };
+            const chord = next.chord;
+            const upper = voiceLead(last.upper, chord.pcs);
+            last = { ...chord, upper, start, end: Math.max(next.end, start + 0.5) };
             this.chords.push(last);
             if (this.chords.length > 64) this.chords.shift();
         }

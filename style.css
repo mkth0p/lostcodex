@@ -58,7 +58,9 @@ body {
     position: fixed;
     inset: 0;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    /* the middle row can never push the dial: the wheel always sits at the
+       same place at the bottom, whatever a look does with the type */
+    grid-template-rows: auto minmax(0, 1fr) auto;
     padding: max(14px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) 0 var(--gutter);
 }
 
@@ -107,6 +109,7 @@ input:focus-visible,
 }
 
 #station {
+    min-height: 0;
     align-self: center;
     display: grid;
     gap: 10px;
@@ -174,6 +177,8 @@ body.tuning #name {
     position: relative;
     margin: 0 calc(-1 * max(18px, env(safe-area-inset-right, 0px))) 0 calc(-1 * var(--gutter));
     height: min(44vh, 380px);
+    /* the visible height on phones, not the one behind the browser bars */
+    height: min(44dvh, 380px);
     touch-action: none;
 }
 
@@ -320,6 +325,7 @@ body[data-look="ash"] .wordmark {
 /* Orbit, Soft Signal: the frequency is the headline. */
 body[data-look="orbit"] #freq {
     font: 300 clamp(48px, 12vw, 150px)/0.9 var(--display);
+    white-space: nowrap;
 }
 
 body[data-look="orbit"] #name {

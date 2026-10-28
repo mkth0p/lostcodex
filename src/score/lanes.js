@@ -142,9 +142,29 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
             // short filtered saw, for arps that live in the echo
             ev = { type: 'acid', layer: 'keys', gain: 0.06 * level, velocity: vel, cutoff: 700 + vel * 600, envAmt: 5, decay: 0.08 + vel * 0.05, q: 2.4, drive: 0.15, reverb: 0.5, echo: 0.45 };
             break;
+        case 'grit':
+            // the same pluck pushed into distortion (Night City arps)
+            ev = { type: 'acid', layer: 'keys', gain: 0.055 * level, velocity: vel, detune: 7, cutoff: 1100 + vel * 900, envAmt: 4, decay: 0.07 + vel * 0.05, q: 3, drive: 1.4, reverb: 0.3, echo: 0.35 };
+            break;
         case 'brass':
-            // CS-80 brass swell (Vangelis): the filter opens with the swell
-            ev = { type: 'pad', layer: 'pad', preset: 'warm', gain: 0.08 * level, oscs: 3, detune: 13, cutoff: 700, filterEnv: 2.2, q: 1.4, attack: 1.4, dur: 2, release: 4, reverb: 0.7, echo: 0.15, wow: 7 };
+            // CS-80 brass (Vangelis): the filter blooms after the note starts
+            ev = { type: 'brass', layer: 'pad', velocity: vel, gain: 0.11 * level, cutoff: 650, filterAmt: 3.5, attack: 0.25, dur: 2, release: 1.2, reverb: 0.75, echo: 0.15 };
+            break;
+        case 'brasslead':
+            // the Blade Runner lead: brass with a slow vibrato, sliding down as it ends
+            ev = { type: 'brass', layer: 'lead', velocity: vel, gain: 0.085 * level, cutoff: 900, filterAmt: 2.5, attack: 0.12, release: 1.4, glide: 0.12, vibrato: 18, slide: 2, reverb: 0.8, echo: 0.35 };
+            break;
+        case 'horn':
+            // the 2049 horn: low brass, driven until it tears
+            ev = { type: 'brass', layer: 'pad', velocity: 1, gain: 0.2 * level, cutoff: 260, filterAmt: 5, fdecay: 3, attack: 0.05, dur: 2, release: 3, drive: 0.9, reverb: 0.6, echo: 0.1 };
+            break;
+        case 'reese':
+            // two saws beating against each other over a sine sub, driven
+            ev = { type: 'acid', layer: 'bass', velocity: vel, gain: 0.13 * level, detune: 22, sub: 0.45, cutoff: 360 + vel * 260, envAmt: 1.4, decay: 0.3, q: 1.3, drive: 1, wobble: 0.35, reverb: 0.04 };
+            break;
+        case 'scream':
+            // an ugly, singing lead (Polivoks): resonant, detuned, overdriven
+            ev = { type: 'acid', layer: 'lead', velocity: vel, gain: 0.07 * level, square: 0.5, detune: 9, cutoff: 800 + vel * 500, envAmt: 3, decay: 0.35, q: 8, drive: 1.3, glide: 0.05, reverb: 0.35, echo: 0.35 };
             break;
         case 'stab':
             // dub chord stab: a click of a chord thrown into the echo
