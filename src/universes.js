@@ -1,6 +1,7 @@
 import {
     BeatLane, BedLane, DroneLane, LoopLane, OstinatoLane, PhraseLane, PulseLane, ResonantLane, WanderLane,
 } from './score/lanes.js';
+import { CycleLane, FigureLane, KitLane } from './score/figure.js';
 
 // A universe is a whole sound world: its scales, tuning, tempo, harmony
 // pace, room, and the scenes it moves between. A code picks a station inside
@@ -12,6 +13,9 @@ const LOOP_PERIODS = [17.3, 19.7, 23.1, 26.9, 29.3, 31.7, 37.1, 41.3];
 // Deep and round like Basic Channel, but saturated with a short knock so it
 // still reads on laptop and phone speakers.
 const DUB_KICK = { tone: 1400, punch: 105, sweep: 0.045, decay: 0.6, click: 0.5, drive: 1.0 };
+// A long 808 boom for the rain in Neon, and a tight, knocking one for Abyss.
+const BOOM_KICK = { tone: 700, punch: 80, sweep: 0.05, decay: 0.85, click: 0.25, drive: 0.6 };
+const ELECTRO_KICK = { tone: 1100, punch: 120, sweep: 0.03, decay: 0.42, click: 0.45, drive: 0.5 };
 
 function loops(scene, rng, instruments, { count = 5, octaves = {} } = {}) {
     const lanes = [];
@@ -110,21 +114,26 @@ export const UNIVERSES = [
         opening: ['fog'],
         scenes: {
             pulse: { weight: 3, build: (s, r, p) => [
-                new DroneLane(s, r.fork('drone'), { gain: 0.06, cutoff: 600, sub: 0.07 }),
-                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.16, kickShape: DUB_KICK, stabSample: p.brightness > 0.4 ? 'tine' : null }),
+                new DroneLane(s, r.fork('drone'), { gain: 0.05, cutoff: 600, sub: 0.03 }),
+                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.16, kickShape: DUB_KICK, stabs: false }),
+                // committed chord stabs and a bassline on the scene's grid
+                new FigureLane(s, r.fork('stabs'), { gen: 'chord', instrument: 'stab', lo: 50, hi: 72, repeat: 0.7, gain: 1.4, extra: { sample: p.brightness > 0.4 ? 'tine' : undefined } }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'dubbass', root: true, lo: 31, hi: 50, bias: 2, repeat: 0.75, legato: 0.8 }),
                 new BedLane(s, r.fork('bed'), { gain: 0.012, tone: 5000, crackle: 6 }),
             ] },
             fog: { weight: 2, build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.06, cutoff: 700, sub: 0.05 }),
                 new DroneLane(s, r.fork('dubpad'), { sample: 'dubpad', sampleOnly: true, octave: 1, upper: true, gain: 0.04, attack: 8, release: 10, cutoff: 1400, stagger: 5, reverb: 0.6 }),
                 new DroneLane(s, r.fork('smear'), { sample: 'tine', grain: { density: 3, size: [0.05, 0.2], octaves: [0, 1], reverse: 0.15 }, octave: 1, gain: 0.035, attack: 10, release: 10, cutoff: 2200, reverb: 0.4, echo: 0.7 }),
-                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.1, kickShape: DUB_KICK, ticks: 0, stabGain: 0.12, stabSample: 'tine' }),
+                new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.1, kickShape: DUB_KICK, ticks: 0, stabs: false }),
+                new FigureLane(s, r.fork('stabs'), { gen: 'chord', hits: [1, 2], instrument: 'stab', lo: 50, hi: 72, repeat: 0.8, gain: 1.6, extra: { sample: 'tine' } }),
                 new BedLane(s, r.fork('bed'), { gain: 0.016, tone: 4000, crackle: 10 }),
                 new WanderLane(s, r.fork('choir'), { mean: 14, lo: 60, hi: 79, instrument: 'mchoir' }),
             ] },
             deep: { weight: 1.5, build: (s, r, p) => [
-                new DroneLane(s, r.fork('drone'), { gain: 0.05, cutoff: 450, sub: 0.09 }),
+                new DroneLane(s, r.fork('drone'), { gain: 0.05, cutoff: 450, sub: 0.04 }),
                 new PulseLane(s, r.fork('pulse'), { bpm: p.bpm, kick: 0.17, kickShape: DUB_KICK, ticks: 0.1, stabCutoff: 500, stabGain: 0.08 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'dubbass', root: true, lo: 31, hi: 48, bias: 3, repeat: 0.85, legato: 0.9 }),
                 new BedLane(s, r.fork('bed'), { gain: 0.01, tone: 3000, crackle: 4 }),
             ] },
         },
@@ -158,7 +167,7 @@ export const UNIVERSES = [
             aurora: { weight: 2, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.04, cutoff: 400, sub: 0.06 }),
                 new DroneLane(s, r.fork('high'), { preset: 'choir', octave: 3, upper: true, upperOctave: 1, gain: 0.07, attack: 14, detune: 14, cutoff: 4200, reverb: 0.9, stagger: 6 }),
-                new WanderLane(s, r.fork('vibes'), { mean: 9, lo: 72, hi: 91, instrument: 'vibes' }),
+                new FigureLane(s, r.fork('vibes'), { gen: 'arp', rate: 4, instrument: 'vibes', lo: 72, hi: 93, ring: true, repeat: 0.8, gain: 0.8 }),
                 new WanderLane(s, r.fork('bow'), { mean: 16, lo: 67, hi: 91, instrument: 'glassbow' }),
                 new DroneLane(s, r.fork('gyrobow'), { sample: 'gyrobow', grain: { density: 6, size: [0.1, 0.4], octaves: [0, 1], reverse: 0.25 }, octave: 2, fifth: true, gain: 0.035, attack: 14, release: 14, reverb: 0.9 }),
             ] },
@@ -182,17 +191,18 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { gain: 0.04, cutoff: 700, sub: 0.03 }),
                 new OstinatoLane(s, r.fork('o1'), { bpm: p.bpm, length: r.pick([5, 7, 9]), instrument: 'marimba', lo: 55, hi: 74 }),
                 new OstinatoLane(s, r.fork('o2'), { bpm: p.bpm, length: r.pick([6, 8, 11]), instrument: 'marimba', lo: 62, hi: 81, accent: 0.8 }),
-                new OstinatoLane(s, r.fork('o3'), { bpm: p.bpm, perBeat: 1, length: r.pick([4, 5]), instrument: 'kalimba', lo: 67, hi: 86, rest: 0.5, accent: 0.8 }),
+                new FigureLane(s, r.fork('hook'), { gen: 'hook', instrument: 'kalimba', lo: 67, hi: 88, ring: true, repeat: 0.6, gain: 0.85 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'marimba', root: true, lo: 43, hi: 60, bias: 2, ring: true, repeat: 0.7, gain: 0.7 }),
             ] },
             stream: { weight: 2.5, build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.045, cutoff: 900, sub: 0.03 }),
                 new PhraseLane(s, r.fork('flute'), { bpm: p.bpm, instrument: 'flute', lo: 67, hi: 88, rest: [6, 16] }),
                 new WanderLane(s, r.fork('kalimba'), { mean: 2.4, lo: 64, hi: 86, instrument: 'kalimba', useScale: true }),
             ] },
-            rain: { weight: 1.5, build: (s, r, p) => [
+            rain: { weight: 1.5, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { gain: 0.045, cutoff: 800, sub: 0.03 }),
                 new WanderLane(s, r.fork('drops'), { mean: 0.55, lo: 74, hi: 93, instrument: 'marimba', useScale: true }),
-                new OstinatoLane(s, r.fork('o1'), { bpm: p.bpm * 0.5, length: 7, instrument: 'vibes', lo: 60, hi: 76, rest: 0.4 }),
+                new FigureLane(s, r.fork('vibes'), { gen: 'walk', rate: 2, density: 0.6, instrument: 'vibes', lo: 60, hi: 79, ring: true, repeat: 0.7 }),
                 new DroneLane(s, r.fork('gyrovibe'), { sample: 'gyrovibe', grain: { density: 5, size: [0.08, 0.3], octaves: [0, 1], reverse: 0.1 }, octave: 2, gain: 0.035, attack: 10, release: 10, reverb: 0.5, echo: 0.2 }),
             ] },
         },
@@ -239,6 +249,7 @@ export const UNIVERSES = [
         modes: [['ionian', 1.5], ['dorian', 2], ['mixolydian', 1.5], ['aeolian', 1.5], ['lydian', 1]],
         tonic: [43, 53],
         bpm: [78, 94],
+        swing: [0.05, 0.14],
         harmony: { holdMin: 24, holdMax: 60, pedalProb: 0.35, shapes: ['seventh', 'add9', 'spread', 'open'] },
         reverb: { t60: [5, 9], damping: [4000, 6000], size: 1.3 },
         echoBeats: 0.75,
@@ -252,13 +263,15 @@ export const UNIVERSES = [
             ] },
             beat: { weight: p0(0.6), build: (s, r, p) => [
                 new DroneLane(s, r.fork('drone'), { fifth: true, upper: true, gain: 0.04, cutoff: 1100, detune: 12, wow: 14, sub: 0.05 }),
-                new BeatLane(s, r.fork('beat'), { bpm: p.bpm }),
-                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: 'lead', lo: 62, hi: 84, rest: [6, 14] }),
+                new BeatLane(s, r.fork('beat'), { bpm: p.bpm, swing: s.grid.swing }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'dubbass', root: true, lo: 33, hi: 52, bias: 2, repeat: 0.7, legato: 0.85, gain: 0.55 }),
+                new FigureLane(s, r.fork('keys'), { gen: 'hook', instrument: 'tine', lo: 60, hi: 79, repeat: 0.6, gain: 0.6 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: 'lead', lo: 62, hi: 84, rest: [10, 20] }),
                 new BedLane(s, r.fork('bed'), { gain: 0.014, tone: 5000, crackle: 4 }),
             ] },
-            lull: { weight: 2, build: (s, r, p) => [
+            lull: { weight: 2, build: (s, r) => [
                 new DroneLane(s, r.fork('drone'), { fifth: true, upper: true, gain: 0.05, cutoff: 900, detune: 14, wow: 18, attack: 8 }),
-                new OstinatoLane(s, r.fork('arp'), { bpm: p.bpm, perBeat: 2, length: r.pick([6, 8]), instrument: 'vibes', lo: 64, hi: 84, rest: 0.25, useScale: false }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 2, instrument: 'vibes', lo: 64, hi: 86, ring: true, repeat: 0.7, gain: 0.85 }),
                 ...loops(s, r, ['mflute', 'mstrings'], { count: 2, octaves: { mflute: 0, mstrings: 0 } }),
                 new DroneLane(s, r.fork('gyrotape'), { sample: 'gyrotape', grain: { density: 4, size: [0.15, 0.6], octaves: [0, 1], reverse: 0.25, jitter: 15 }, octave: 2, gain: 0.035, attack: 10, release: 10, cutoff: 3500, reverb: 0.5, echo: 0.25 }),
                 new BedLane(s, r.fork('bed'), { gain: 0.018, tone: 5000, crackle: 5 }),
@@ -293,6 +306,123 @@ export const UNIVERSES = [
                 new DroneLane(s, r.fork('drone'), { preset: 'voice', octave: 2, upper: true, gain: 0.09, attack: 10, oscs: 5, detune: 16, cutoff: 3200, reverb: 0.9, stagger: 8 }),
                 new WanderLane(s, r.fork('piano'), { mean: 7, lo: 55, hi: 79, instrument: 'piano', useScale: true, dyad: 0.2 }),
                 new DroneLane(s, r.fork('smear'), { sample: 'ooh', grain: { density: 6, size: [0.25, 0.8], octaves: [0, 0, 1], reverse: 0.35 }, octave: 2, gain: 0.04, attack: 12, release: 14, reverb: 0.9 }),
+            ] },
+        },
+    },
+    {
+        id: 'neon',
+        name: 'Neon',
+        color: '#ff4a2e',
+        refs: 'Vangelis, Burial',
+        blurb: 'Rain on a megacity: CS-80 brass, acid lines and a shuffled pulse.',
+        modes: [['aeolian', 2], ['phrygian', 1.5], ['dorian', 1.2]],
+        tonic: [40, 49],
+        bpm: [84, 96],
+        swing: [0.08, 0.22],
+        harmony: { holdMin: 30, holdMax: 70, pedalProb: 0.5, shapes: ['seventh', 'add9', 'spread', 'quartal'] },
+        reverb: { t60: [7, 12], damping: [5000, 8000], size: 1.7 },
+        echoBeats: 0.75,
+        returns: 0.5,
+        opening: ['rain'],
+        scenes: {
+            rain: { weight: 3, build: (s, r, p) => [
+                new DroneLane(s, r.fork('drone'), { fifth: true, upper: true, gain: 0.045, cutoff: 900, detune: 14, wow: 6, attack: 6, stagger: 4, sub: 0.05 }),
+                ...loops(s, r, ['brass', 'brass', 'brass'], { count: 3, octaves: { brass: 0 } }),
+                new BedLane(s, r.fork('rain'), { gain: 0.03, tone: 9000, low: 1400, crackle: 140 }),
+                new FigureLane(s, r.fork('pluck'), { gen: 'walk', density: 0.45, instrument: 'pluck', lo: 62, hi: 86, repeat: 0.7, gain: 0.8 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: 'lead', lo: 60, hi: 84, rest: [8, 18], extra: { cutoff: 1700, wow: 5, echo: 0.45, reverb: 0.7 } }),
+            ] },
+            grid: { weight: 2.5, build: (s, r) => [
+                new DroneLane(s, r.fork('pad'), { upper: true, gain: 0.05, cutoff: 1300, detune: 12, attack: 3, pump: 0.7 }),
+                new KitLane(s, r.fork('kit'), { style: 'halfstep', kick: BOOM_KICK, clap: 0.2, hat: 0.09 }),
+                new FigureLane(s, r.fork('acid'), { gen: 'bass', instrument: 'acid', root: true, lo: 33, hi: 55, bias: 1, repeat: 0.6, legato: 0.7 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', instrument: 'pluck', lo: 64, hi: 88, repeat: 0.7, gain: 0.7 }),
+                new BedLane(s, r.fork('rain'), { gain: 0.016, tone: 8000, low: 1400, crackle: 80 }),
+            ] },
+            drive: { weight: p0(0.7), build: (s, r) => [
+                new DroneLane(s, r.fork('pad'), { fifth: true, upper: true, gain: 0.05, cutoff: 1600, detune: 16, attack: 2, pump: 0.8, drive: 0.3 }),
+                new KitLane(s, r.fork('kit'), { style: 'four', kick: BOOM_KICK, clap: 0.18, hat: 0.1, open: 0.4 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'ebass', root: true, lo: 31, hi: 50, bias: 2, repeat: 0.75, legato: 0.6 }),
+                new FigureLane(s, r.fork('hook'), { gen: 'hook', instrument: 'pluck', lo: 62, hi: 84, repeat: 0.6 }),
+                new FigureLane(s, r.fork('brass'), { gen: 'chord', hits: [1, 2], instrument: 'brass', lo: 55, hi: 76, repeat: 0.9, gain: 0.8 }),
+            ] },
+        },
+    },
+    {
+        id: 'abyss',
+        name: 'Abyss',
+        color: '#2fb3a0',
+        refs: 'Drexciya, Biosphere',
+        blurb: 'Pressure, sonar and whale song, and an electro pulse from the deep.',
+        modes: [['aeolian', 2], ['dorian', 2], ['phrygian', 1]],
+        tonic: [38, 46],
+        bpm: [118, 130],
+        swing: [0, 0.06],
+        harmony: { holdMin: 50, holdMax: 120, pedalProb: 0.7, shapes: ['open', 'quartal', 'sus2', 'seventh'] },
+        reverb: { t60: [10, 16], damping: [2500, 4500], size: 1.9 },
+        echoBeats: 0.75,
+        opening: ['trench'],
+        scenes: {
+            trench: { weight: 3, build: (s, r, p) => [
+                new DroneLane(s, r.fork('drone'), { gain: 0.05, cutoff: 350, sub: 0.09 }),
+                new ResonantLane(s, r.fork('pressure'), { harsh: 0.2, lo: 36, hi: 62, q: [40, 90], gain: 0.1, length: [16, 28] }),
+                new WanderLane(s, r.fork('sonar'), { mean: 9, lo: 74, hi: 93, instrument: 'ping' }),
+                new PhraseLane(s, r.fork('whale'), { bpm: p.bpm / 2, instrument: 'whale', lo: 55, hi: 79, rest: [6, 14], repeat: 0.5 }),
+                new DroneLane(s, r.fork('thunder'), { sample: 'thunder', grain: { density: 3, size: [0.5, 1.4], octaves: [-1, -1, 0], reverse: 0.5, jitter: 25 }, octave: 0, gain: 0.05, attack: 12, release: 12, cutoff: 900, reverb: 0.6 }),
+            ] },
+            electro: { weight: 2.5, build: (s, r) => [
+                new DroneLane(s, r.fork('drone'), { gain: 0.04, cutoff: 400, sub: 0.03 }),
+                new KitLane(s, r.fork('kit'), { style: 'electro', kick: ELECTRO_KICK, clap: 0.2, hat: 0.09, perc: 0.07 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'ebass', root: true, lo: 29, hi: 48, bias: 1, repeat: 0.6, legato: 0.7 }),
+                new FigureLane(s, r.fork('sonar'), { gen: 'splatter', bias: 1, instrument: 'ping', lo: 67, hi: 91, ring: true, repeat: 0.7, gain: 0.8 }),
+                new FigureLane(s, r.fork('stabs'), { gen: 'chord', hits: [1, 3], instrument: 'stab', lo: 50, hi: 70, repeat: 0.8, gain: 1.1 }),
+            ] },
+            glow: { weight: 1.5, build: (s, r) => [
+                new DroneLane(s, r.fork('drone'), { gain: 0.04, cutoff: 400, sub: 0.07 }),
+                new DroneLane(s, r.fork('high'), { preset: 'choir', octave: 3, upper: true, gain: 0.04, attack: 12, detune: 12, cutoff: 2600, reverb: 0.9, stagger: 6 }),
+                new FigureLane(s, r.fork('lights'), { gen: 'arp', rate: 2, instrument: 'ping', lo: 72, hi: 96, ring: true, repeat: 0.8, gain: 1 }),
+                new DroneLane(s, r.fork('gyrobow'), { sample: 'gyrobow', grain: { density: 5, size: [0.1, 0.4], octaves: [0, 1], reverse: 0.3 }, octave: 2, gain: 0.03, attack: 14, release: 14, cutoff: 3000, reverb: 0.9 }),
+            ] },
+        },
+    },
+    {
+        id: 'bronze',
+        name: 'Bronze',
+        color: '#d08a2c',
+        refs: 'Balinese gamelan, Steve Reich',
+        blurb: 'Interlocking bronze: saron and bonang figures turning over slow gongs.',
+        modes: [['pelog', 2], ['hirajoshi', 1.5], ['pentMinor', 1], ['pentMajor', 1]],
+        tonic: [45, 53],
+        bpm: [76, 96],
+        harmony: { holdMin: 60, holdMax: 140, pedalProb: 0.8, shapes: ['open', 'sus2', 'quartal', 'add9'] },
+        reverb: { t60: [5, 9], damping: [6000, 9000], size: 1.5 },
+        echoBeats: 1,
+        opening: ['gong'],
+        scenes: {
+            kotekan: { weight: 3, build: (s, r) => {
+                // polos and sangsih: one figure, split into on and off sixteenths
+                const pair = r.fork('kotekan');
+                return [
+                    new DroneLane(s, r.fork('drone'), { gain: 0.035, cutoff: 600, sub: 0.03 }),
+                    new CycleLane(s, r.fork('gong'), { bars: 4, instrument: 'gong', octave: 1 }),
+                    new CycleLane(s, r.fork('kempul'), { bars: 1, instrument: 'saron', octave: 2, gain: 0.5 }),
+                    new FigureLane(s, r.fork('balungan'), { gen: 'walk', rate: 4, density: 0.95, instrument: 'saron', lo: 57, hi: 76, repeat: 0.75, legato: 1 }),
+                    new FigureLane(s, pair, { gen: 'line', interlock: 0, instrument: 'bonang', lo: 67, hi: 88, repeat: 0.75, legato: 1.5, pan: -0.45, gain: 0.8 }),
+                    new FigureLane(s, pair, { gen: 'line', interlock: 1, instrument: 'bonang', lo: 67, hi: 88, repeat: 0.75, legato: 1.5, pan: 0.45, gain: 0.8 }),
+                ];
+            } },
+            gong: { weight: 2, build: (s, r) => [
+                new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.04, cutoff: 700, sub: 0.03 }),
+                new CycleLane(s, r.fork('gong'), { bars: 2, instrument: 'gong', octave: 1 }),
+                new FigureLane(s, r.fork('saron'), { gen: 'walk', rate: 4, density: 0.6, instrument: 'saron', lo: 55, hi: 74, ring: true, repeat: 0.8 }),
+                new WanderLane(s, r.fork('bow'), { mean: 14, lo: 67, hi: 88, instrument: 'glassbow' }),
+                new DroneLane(s, r.fork('gyrovibe'), { sample: 'gyrovibe', grain: { density: 4, size: [0.1, 0.4], octaves: [0, 1], reverse: 0.2 }, octave: 2, gain: 0.03, attack: 12, release: 12, reverb: 0.6 }),
+            ] },
+            mist: { weight: 1.5, build: (s, r) => [
+                new DroneLane(s, r.fork('drone'), { preset: 'choir', octave: 2, upper: true, gain: 0.065, attack: 10, detune: 10, cutoff: 2800, reverb: 0.8, stagger: 6, sub: 0.03 }),
+                new FigureLane(s, r.fork('bonang'), { gen: 'arp', rate: 2, instrument: 'bonang', lo: 69, hi: 91, ring: true, repeat: 0.8, gain: 1.1 }),
+                new FigureLane(s, r.fork('saron'), { gen: 'walk', rate: 8, density: 0.8, instrument: 'saron', lo: 52, hi: 69, ring: true, repeat: 0.8, gain: 1.2 }),
+                new WanderLane(s, r.fork('bowl'), { mean: 20, lo: 48, hi: 67, instrument: 'bowl' }),
             ] },
         },
     },

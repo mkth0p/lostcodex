@@ -1,10 +1,14 @@
 import { smooth } from './lanes.js';
+import { sceneGrid } from './figure.js';
 
 // A scene is a few minutes of one texture inside a universe. Its lanes come
 // from the universe's builder for that scene type.
 export class Scene {
     constructor({ type, start, end, fade, piece, harmony, rng }) {
         Object.assign(this, { type, start, end, fade, piece, harmony, key: piece.key });
+        // one onset grid for every figure and drum kit in the scene, on the
+        // piece's clock and swing
+        this.grid = sceneGrid(rng.fork('grid'), piece.swing);
         this.lanes = piece.universe.scenes[type].build(this, rng, piece);
     }
 

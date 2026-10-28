@@ -128,6 +128,58 @@ const MODAL_PRESETS = {
             attack: 0.003,
         };
     },
+    // saron: a thick bronze bar over a resonator, a pair of keys a few hertz
+    // apart for the gamelan's beating (ombak)
+    saron(hz, vel) {
+        const beat = 1 + 4.5 / hz;
+        return {
+            modes: [
+                { ratio: 1, amp: 1, t60: 4.5 },
+                { ratio: beat, amp: 0.6, t60: 4 },
+                { ratio: 2.76, amp: 0.2 + vel * 0.25, t60: 1.6 },
+                { ratio: 5.4, amp: 0.05 + vel * 0.1, t60: 0.5 },
+            ].filter((m) => m.ratio * hz < 12000),
+            attack: 0.002,
+        };
+    },
+    // bonang: a small kettle gong, bright and a little nasal
+    bonang(hz, vel) {
+        const beat = 1 + 3 / hz;
+        return {
+            modes: [
+                { ratio: 1, amp: 1, t60: 3.2 },
+                { ratio: beat, amp: 0.5, t60: 3 },
+                { ratio: 1.52, amp: 0.12, t60: 1.2 },
+                { ratio: 3.02, amp: 0.15 + vel * 0.2, t60: 0.9 },
+                { ratio: 4.11, amp: 0.05, t60: 0.4 },
+            ].filter((m) => m.ratio * hz < 12000),
+            attack: 0.003,
+        };
+    },
+    // hanging gong: a slow beating pair, a hum below and a ring above
+    gong(hz) {
+        return {
+            modes: [
+                { ratio: 1, amp: 1, t60: 22 },
+                { ratio: 1 + 1.2 / hz, amp: 0.8, t60: 20 },
+                { ratio: 0.5, amp: 0.25, t60: 14 },
+                { ratio: 1.47, amp: 0.25, t60: 9 },
+                { ratio: 2.09, amp: 0.15, t60: 6 },
+                { ratio: 2.76, amp: 0.06, t60: 3 },
+            ],
+            attack: 0.05,
+        };
+    },
+    // sonar: almost a sine, with a faint second partial
+    ping() {
+        return {
+            modes: [
+                { ratio: 1, amp: 1, t60: 2.6 },
+                { ratio: 2.001, amp: 0.06, t60: 1 },
+            ],
+            attack: 0.004,
+        };
+    },
     // dark metal sheet for storm scenes: inharmonic, slow bloom
     metal(hz) {
         const ratios = [1, 1.59, 2.14, 2.3, 2.65, 2.92, 3.6, 4.15];
@@ -247,6 +299,15 @@ export class PadVoice extends Voice {
         this.filterEnv = ev.filterEnv ?? 0;
         this.counter = 0;
         this.norm = 1 / Math.sqrt(count);
+        // side-chain pump locked to the beat grid: the gain dips on every beat
+        // and recovers, as if a kick were ducking it (ev.pump = { beat, depth })
+        this.pump = ev.pump ? ev.pump.depth : 0;
+        if (this.pump) {
+            this.pumpLen = Math.round(ev.pump.beat * sr);
+            this.pumpPos = Math.round(((ev.time % ev.pump.beat) + ev.pump.beat) % ev.pump.beat * sr);
+            this.pumpRec = 0.16 * sr;
+            this.pumpGain = 1;
+        }
     }
 
     tick() {
@@ -254,6 +315,10 @@ export class PadVoice extends Voice {
         if (this.env.done) this.done = true;
         // control-rate updates every 32 samples
         if ((this.counter++ & 31) === 0) {
+            if (this.pump) {
+                this.pumpPos = (this.pumpPos + 32) % this.pumpLen;
+                this.pumpGain = 1 - this.pump * Math.exp(-this.pumpPos / this.pumpRec);
+            }
             this.lfo += this.lfoInc * 32;
             const l = Math.sin(TAU * this.lfo);
             const ratio = 1 + this.wow * l * 0.69;
@@ -287,6 +352,59 @@ export class PadVoice extends Voice {
             if (this.counter % this.crush === 0) this.held = Math.round(y * this.crushBits) / this.crushBits;
             y = this.held;
         }
+        if (this.pump) y *= this.pumpGain;
+        return y * e * this.gain;
+    }
+}
+
+// ---------------------------------------------------------------- acid
+
+// Saw (and square) through a resonant low-pass whose cutoff snaps open and
+// decays, driven: an acid line, an electro bass or a short pluck, depending
+// on cutoff, envelope amount, decay, resonance and drive.
+export class AcidVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.hz = hzOf(ev);
+        this.fromHz = ev.fromHz ?? this.hz;
+        this.saw = new Saw(sr, this.hz, rng.next());
+        this.sq = new Saw(sr, this.hz, 0);
+        this.square = ev.square ?? 0;
+        this.filter = new Svf(sr, ev.cutoff ?? 400, ev.q ?? 6);
+        this.q = ev.q ?? 6;
+        this.cutoff = ev.cutoff ?? 400;
+        this.envAmt = ev.envAmt ?? 4;
+        this.fCoef = Math.exp(-1 / ((ev.decay ?? 0.2) * sr));
+        this.fEnv = 1;
+        this.env = new Envelope(sr, ev.attack ?? 0.003, ev.dur ?? 0.2, ev.release ?? 0.05);
+        this.drive = ev.drive ?? 0.4;
+        this.glide = Math.round((ev.glide ?? 0) * sr);
+        this.t = 0;
+        this.counter = 0;
+        // resonance eats level; keep the body up
+        this.norm = 0.9 / (1 + this.drive);
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        this.fEnv *= this.fCoef;
+        if ((this.counter++ & 7) === 0) {
+            const t = this.t;
+            const g = this.glide && t < this.glide ? t / this.glide : 1;
+            const hz = this.fromHz + (this.hz - this.fromHz) * g;
+            this.saw.setHz(hz);
+            this.sq.setHz(hz);
+            this.filter.set(this.cutoff * (1 + this.envAmt * this.fEnv), this.q);
+        }
+        this.t++;
+        let x = this.saw.next();
+        if (this.square) {
+            // a square from two saws half a cycle apart
+            if (this.t === 1) this.sq.phase = (this.saw.phase + 0.5) % 1;
+            x = x * (1 - this.square) + (x - this.sq.next()) * 0.5 * this.square;
+        }
+        const y = soft(this.filter.process(x) * (1 + this.drive * 3)) * this.norm;
         return y * e * this.gain;
     }
 }
@@ -574,6 +692,36 @@ export class SnareVoice extends Voice {
     }
 }
 
+// Hand clap: three quick bursts of band-passed noise, then the room.
+export class ClapVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.noise = new Noise((rng.next() * 4294967295) >>> 0);
+        this.svf = new Svf(sr, ev.tone ?? 1300, 1.4);
+        this.t = 0;
+        this.burst = Math.round(0.011 * sr);
+        this.bCoef = Math.exp(-6.9 / (0.012 * sr));
+        this.tCoef = Math.exp(-6.9 / ((ev.decay ?? 0.22) * sr));
+        this.b = 1;
+        this.tail = 0;
+    }
+
+    tick() {
+        const t = this.t++;
+        if (t < this.burst * 3) {
+            if (t % this.burst === 0) this.b = 1;
+            this.b *= this.bCoef;
+        } else {
+            if (t === this.burst * 3) this.tail = 0.7;
+            this.b = 0;
+            this.tail *= this.tCoef;
+            if (this.tail < 1e-4) this.done = true;
+        }
+        this.svf.process(this.noise.next());
+        return this.svf.band * this.svf.k * (this.b + this.tail) * 5 * this.gain;
+    }
+}
+
 // ---------------------------------------------------------------- texture
 
 // Noise driven through resonators tuned to chord tones: harsh grain that
@@ -830,6 +978,8 @@ export const VOICE_TYPES = {
     lead: LeadVoice,
     bed: NoiseBedVoice,
     snare: SnareVoice,
+    clap: ClapVoice,
+    acid: AcidVoice,
     sample: SampleVoice,
     grain: GrainVoice,
 };

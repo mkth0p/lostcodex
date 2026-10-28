@@ -11,6 +11,8 @@ export const MODES = {
     pentMajor: [0, 2, 4, 7, 9],
     pentMinor: [0, 3, 5, 7, 10],
     hirajoshi: [0, 2, 3, 7, 8],
+    // gamelan pelog (selisir), folded into twelve equal steps
+    pelog: [0, 1, 3, 7, 8],
 };
 
 // Five-limit just ratios over the tonic, used by universes that hold a
@@ -141,6 +143,11 @@ export function voiceLead(prev, pcs, lo = 52, hi = 79) {
     return next.sort((a, b) => a - b);
 }
 
+// Gyro's tables, indexed by the number of common tones and by the root
+// motion in semitones (folded to 0..6).
+export const COMMON_TONES = [-10, 5, 9, 7, 0, -4, -8];
+const ROOT_MOTION = [5, 6, 6, 5, 3, 6, -18];
+
 const ROOT_WEIGHTS = [[0, 5], [3, 3], [5, 3], [4, 2], [1, 1.5], [6, 1.5], [2, 1]];
 
 // Lazily extended chord timeline. Chords hold for a long time and change by
@@ -168,8 +175,15 @@ export class Harmony {
         return this.rng.range(this.holdMin, this.holdMax);
     }
 
+    // Gyro's progression scorer: every candidate is scored as a move from the
+    // last chord and one of the best three is drawn. Two shared notes score
+    // best and none or all are penalised, so the harmony moves without
+    // lurching; steps and fourths or fifths in the bass beat a tritone; the
+    // top voice should hold or move by a small, singable interval.
     _nextChord(prev) {
         const candidates = [];
+        const prevBass = pitchClass(prev.pedal ? this.key.tonic : degreeToMidi(this.key, prev.rootDegree));
+        const prevTop = prev.upper[prev.upper.length - 1];
         for (const [degree, weight] of this.roots) {
             if (degree >= this.key.steps.length) continue;
             for (const shape of this.shapes) {
@@ -179,13 +193,23 @@ export class Harmony {
                 const same = chord.rootDegree === prev.rootDegree && chord.shape === prev.shape;
                 if (same) continue;
                 const common = chord.pcs.filter((pc) => prev.pcs.includes(pc)).length;
-                // favour two or more common tones; tonic returns often
-                const score = weight * (0.4 + common * 0.6) * (degree === 0 ? 1.2 : 1);
+                let score = COMMON_TONES[Math.min(common, COMMON_TONES.length - 1)];
+                const root = pitchClass(degreeToMidi(this.key, degree));
+                score += ROOT_MOTION[Math.min(pitchClass(root - prevBass), pitchClass(prevBass - root))];
+                const top = voiceLead(prev.upper, chord.pcs);
+                const leap = Math.abs(top[top.length - 1] - prevTop);
+                if (leap === 0) score += 4;
+                else if ([2, 3, 5, 7].includes(leap)) score += 3;
+                else if (leap > 14) score -= 6;
+                // the universe's taste in roots, and the tonic returning often
+                score += 4 * Math.log(weight) + (degree === 0 ? 2 : 0);
                 candidates.push([chord, score]);
             }
         }
         if (!candidates.length) return { ...prev };
-        return this.rng.weighted(candidates);
+        candidates.sort((a, b) => b[1] - a[1]);
+        const top3 = candidates.slice(0, 3).map(([chord], i) => [chord, [3, 2, 1][i]]);
+        return this.rng.weighted(top3);
     }
 
     chordAt(t) {

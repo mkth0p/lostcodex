@@ -44,6 +44,12 @@ export function createPiece(raw) {
     const density = rng.range(0.25, 0.85);
     const space = rng.next();
     const bpm = rng.int(universe.bpm[0], universe.bpm[1]);
+    // the echo always repeats on the beat; halve it rather than let it overflow
+    let echoSeconds = (60 / bpm) * (universe.echoBeats ?? 1.5);
+    while (echoSeconds > 2.5) echoSeconds /= 2;
+    // one swing for the whole piece, so overlapping scenes never flam
+    const sw = universe.swing || [0, 0];
+    const swing = rng.fork('swing').range(sw[0], sw[1]);
     const r = universe.reverb;
     const h = universe.harmony;
     const piece = {
@@ -58,10 +64,11 @@ export function createPiece(raw) {
         density,
         space,
         bpm,
+        swing,
         reverbT60: r.t60[0] + (r.t60[1] - r.t60[0]) * space,
         reverbDamping: r.damping[0] + (r.damping[1] - r.damping[0]) * brightness,
         reverbSize: r.size ?? 1.6,
-        echoSeconds: (60 / bpm) * (universe.echoBeats ?? 1.5),
+        echoSeconds,
         harmony: {
             ...h,
             holdMin: h.holdMin * (1.2 - density * 0.4),

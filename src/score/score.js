@@ -12,6 +12,7 @@ export class Score {
         this.harmony = new Harmony(piece.key, rng.fork('harmony'), piece.harmony);
         this.sceneRng = rng.fork('scenes');
         this.scenes = [];
+        this.history = [];
         this.sceneIndex = 0;
         this._appendScene(0);
     }
@@ -26,6 +27,16 @@ export class Score {
         let type = prev
             ? (weights.length ? rng.weighted(weights) : prev.type)
             : opening[rng.int(0, opening.length - 1)];
+        // Gyro's repetition pool at the scale of the piece: now and then an
+        // earlier scene comes back, from the first few heard, so the endless
+        // stream has audible returns
+        const seen = [...new Set(this.history)];
+        const back = this.piece.universe.returns ?? 0.4;
+        if (prev && seen.length > 1 && rng.chance(back)) {
+            const pool = seen.slice(0, Math.max(1, Math.round((1 - back) * seen.length)))
+                .filter((t) => t !== prev.type && this.piece.sceneWeights[t] > 0);
+            if (pool.length) type = rng.pick(pool);
+        }
         if (this.sceneOverride) type = this.sceneOverride[this.sceneIndex % this.sceneOverride.length];
         const fade = rng.range(25, 40);
         const length = rng.range(200, 420);
@@ -39,6 +50,7 @@ export class Score {
             rng: rng.fork(`scene${this.sceneIndex++}`),
         });
         this.scenes.push(scene);
+        this.history.push(type);
         return scene;
     }
 

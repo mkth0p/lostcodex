@@ -173,6 +173,7 @@ export class Engine {
             universe: this.piece.universe.id,
             mode: this.piece.key.mode,
             tonic: this.piece.key.tonic,
+            bpm: this.piece.bpm,
             scene: scene?.type || null,
             sceneLevel: scene ? scene.level(t) : 0,
             chord: chord.upper.slice(),
