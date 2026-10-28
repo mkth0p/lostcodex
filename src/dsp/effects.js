@@ -15,6 +15,9 @@ class Allpass {
     }
 }
 
+// longest echo the delay lines hold
+const MAX_ECHO = 2.5;
+
 const FDN_MS = [43.7, 53.1, 61.9, 71.3, 83.9, 97.1, 109.7, 127.3];
 const DIFFUSER_MS = [4.77, 3.59, 12.73, 9.31];
 
@@ -76,12 +79,15 @@ export class Reverb {
     }
 }
 
-// Stereo dub echo with filtered cross-feedback.
+// Stereo dub echo: a ping-pong with filtered cross-feedback. Both sides use
+// the same time, so every repeat lands on the beat: left at one delay, right
+// at two, left at three...
 export class Echo {
     constructor(sr, { seconds = 0.75, feedback = 0.5 } = {}) {
         this.sr = sr;
-        this.l = new DelayLine(Math.round(2.5 * sr));
-        this.r = new DelayLine(Math.round(2.5 * sr));
+        seconds = Math.min(MAX_ECHO, seconds);
+        this.l = new DelayLine(Math.ceil(MAX_ECHO * sr) + 4);
+        this.r = new DelayLine(Math.ceil(MAX_ECHO * sr) + 4);
         this.lpL = new OnePole(sr, 2600);
         this.lpR = new OnePole(sr, 2600);
         this.hpL = new OnePole(sr, 220);
@@ -92,13 +98,13 @@ export class Echo {
     }
 
     setTime(seconds) {
-        this.target = Math.min(2.4, seconds) * this.sr;
+        this.target = Math.min(MAX_ECHO, seconds) * this.sr;
     }
 
     process(x, outLR) {
         this.time += (this.target - this.time) * 0.00005;
         const dl = this.l.read(this.time);
-        const dr = this.r.read(this.time * 1.5);
+        const dr = this.r.read(this.time);
         const fl = this.hpL.hp(this.lpL.lp(dr));
         const fr = this.hpR.hp(this.lpR.lp(dl));
         this.l.write(x + fl * this.feedback);

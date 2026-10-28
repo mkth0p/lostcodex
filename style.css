@@ -325,3 +325,53 @@ body[data-look="orbit"] #freq {
 body[data-look="orbit"] #name {
     font-size: clamp(32px, 7vw, 72px);
 }
+
+/* Neon, Dot Matrix: the sign carries the name; the facts sit low, over the dial. */
+body[data-look="neon"] #station {
+    align-self: end;
+    padding-bottom: 2vh;
+}
+
+body[data-look="neon"] #name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+body[data-look="neon"] .blurb {
+    max-width: 30ch;
+}
+
+/* Abyss, Bathymetry: a chart title, set wide and low like a survey sheet. */
+body[data-look="abyss"] #station {
+    align-self: end;
+    max-width: none;
+    padding-bottom: 3vh;
+}
+
+body[data-look="abyss"] #name {
+    font-size: clamp(72px, 17vw, 230px);
+    line-height: 0.95;
+    margin-left: -0.04em;
+}
+
+body[data-look="abyss"] #name,
+body[data-look="abyss"] .blurb,
+body[data-look="abyss"] #freq {
+    background: var(--paper);
+    padding: 0 0.12em;
+}
+
+/* Bronze, Weave: the cloth takes the top right; the name is cut into it. */
+body[data-look="bronze"] #station {
+    align-self: end;
+    padding-bottom: 3vh;
+}
+
+body[data-look="bronze"] #name {
+    font-size: clamp(72px, 15vw, 200px);
+    line-height: 0.9;
+    color: var(--accent);
+}

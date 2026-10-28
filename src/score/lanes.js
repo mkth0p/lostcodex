@@ -6,6 +6,17 @@ import { notesInRange, pitchClass } from '../core/theory.js';
 
 export const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
+// Accent of a sixteenth inside two bars: the 2-bar downbeat, then bars, half
+// bars, beats, eighths. Gyro leaves velocity to chance; this keeps the pulse.
+export function accent(step) {
+    const s = ((step % 32) + 32) % 32;
+    if (s === 0) return 1;
+    if (s % 16 === 0) return 0.92;
+    if (s % 8 === 0) return 0.84;
+    if (s % 4 === 0) return 0.76;
+    return s % 2 === 0 ? 0.64 : 0.54;
+}
+
 export class Lane {
     constructor(scene, rng, first = 0) {
         this.scene = scene;
@@ -47,8 +58,9 @@ function nearestFifth(chord, root) {
 // instruments and synths); the synth voice described next to it plays
 // instead when the pack is not loaded. Events of type 'sample' have no synth
 // fallback and are simply skipped then.
+// `extra.vel` (0..1) sets the velocity, e.g. from a figure's accents.
 export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
-    const vel = 0.3 + rng.next() * 0.4;
+    const vel = extra.vel ?? 0.3 + rng.next() * 0.4;
     const base = { time, midi, pan };
     let ev;
     switch (name) {
@@ -114,6 +126,46 @@ export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
             // a felt piano crushed to a few bits (a bit-reduced pad without the pack)
             ev = { type: 'pad', sample: 'felt', layer: 'pad', preset: 'warm', gain: 0.08 * level, attack: 2, dur: 3, release: 6, reverb: 0.6, detune: 14, drive: 0.6, crush: 6, bits: 5, cutoff: 2400 };
             break;
+        case 'acid':
+            // squelchy resonant bass: the accent opens the filter and drives it
+            ev = { type: 'acid', layer: 'bass', gain: 0.16 * level, velocity: vel, cutoff: 260 + vel * 380, envAmt: 2 + vel * 7, decay: 0.16 + vel * 0.1, q: 7, drive: 0.4 + vel * 0.5, glide: 0.04, reverb: 0.08, echo: 0.12 };
+            break;
+        case 'ebass':
+            // electro bass: square-ish, short, a little resonance
+            ev = { type: 'acid', layer: 'bass', gain: 0.18 * level, velocity: vel, square: 0.7, cutoff: 200, envAmt: 3 + vel * 4, decay: 0.12, q: 2.2, drive: 0.3, reverb: 0.06, echo: 0.05 };
+            break;
+        case 'dubbass':
+            // round sub bass that only just speaks on small speakers
+            ev = { type: 'acid', layer: 'bass', gain: 0.1 * level, velocity: vel, square: 0.35, cutoff: 150, envAmt: 0.9, decay: 0.3, q: 0.9, drive: 0.35, reverb: 0.03 };
+            break;
+        case 'pluck':
+            // short filtered saw, for arps that live in the echo
+            ev = { type: 'acid', layer: 'keys', gain: 0.06 * level, velocity: vel, cutoff: 700 + vel * 600, envAmt: 5, decay: 0.08 + vel * 0.05, q: 2.4, drive: 0.15, reverb: 0.5, echo: 0.45 };
+            break;
+        case 'brass':
+            // CS-80 brass swell (Vangelis): the filter opens with the swell
+            ev = { type: 'pad', layer: 'pad', preset: 'warm', gain: 0.08 * level, oscs: 3, detune: 13, cutoff: 700, filterEnv: 2.2, q: 1.4, attack: 1.4, dur: 2, release: 4, reverb: 0.7, echo: 0.15, wow: 7 };
+            break;
+        case 'stab':
+            // dub chord stab: a click of a chord thrown into the echo
+            ev = { type: 'pad', layer: 'stab', preset: 'warm', gain: 0.07 * level * (0.6 + vel), attack: 0.006, dur: 0.08, release: 0.3, cutoff: 650 + vel * 400, filterEnv: 1.5, q: 1.2, oscs: 2, detune: 5, reverb: 0.25, echo: 0.65, wow: 0 };
+            break;
+        case 'saron':
+            ev = { type: 'modal', layer: 'keys', preset: 'saron', velocity: vel, gain: 0.13 * level * (0.6 + vel), reverb: 0.45, echo: 0.06 };
+            break;
+        case 'bonang':
+            ev = { type: 'modal', layer: 'bells', preset: 'bonang', velocity: vel, gain: 0.11 * level * (0.6 + vel), reverb: 0.5, echo: 0.08 };
+            break;
+        case 'gong':
+            ev = { type: 'modal', layer: 'drone', preset: 'gong', gain: 0.2 * level, reverb: 0.7, echo: 0.05 };
+            break;
+        case 'ping':
+            // sonar: a pure ping thrown far into the echo
+            ev = { type: 'modal', layer: 'bells', preset: 'ping', gain: 0.1 * level * (0.6 + vel), reverb: 0.85, echo: 0.5 };
+            break;
+        case 'whale':
+            ev = { type: 'lead', layer: 'lead', gain: 0.07 * level, dur: 2, attack: 0.9, release: 3, glide: 1.4, cutoff: 800, q: 1.6, wow: 35, detune: 4, reverb: 0.85, echo: 0.35 };
+            break;
         case 'swell':
         default:
             ev = { type: 'pad', sample: 'strings', layer: 'pad', preset: 'warm', gain: 0.09 * level, attack: 3, dur: 2, release: 7, reverb: 0.6, detune: 8 };
@@ -171,6 +223,8 @@ export class DroneLane extends Lane {
             return {
                 ...common, type: 'pad', preset: o.preset || 'warm', cutoff: o.cutoff, detune: o.detune ?? 6,
                 drive: o.drive ?? 0, crush: o.crush ?? 0, bits: o.bits, oscs: o.oscs, vowels: o.vowels, wow: o.wow,
+                // side-chained to the beat grid
+                pump: o.pump ? { beat: 60 / this.scene.piece.bpm, depth: o.pump } : undefined,
             };
         });
         if (o.sub) {
@@ -235,6 +289,7 @@ export class OstinatoLane extends Lane {
     constructor(scene, rng, { bpm, perBeat = 2, length, instrument, lo, hi, rest = 0.3, useScale = true, accent = 1 }) {
         super(scene, rng, 0);
         this.step = 60 / bpm / perBeat;
+        this.sixteenths = 4 / perBeat;
         this.index = Math.ceil(scene.start / this.step);
         this.next = this.index * this.step;
         this.pattern = Array.from({ length }, () => (rng.chance(rest) ? null : rng.int(0, 6)));
@@ -261,7 +316,8 @@ export class OstinatoLane extends Lane {
         if (!notes.length) return [];
         const midi = notes[deg % notes.length];
         const strong = i % this.pattern.length === 0 ? 1 : 0.75;
-        return [instrumentEvent(this.instrument, t, midi, level * strong * this.accent, this.pan, this.rng)];
+        const vel = 0.25 + 0.5 * accent(i * this.sixteenths);
+        return [instrumentEvent(this.instrument, t, midi, level * strong * this.accent, this.pan, this.rng, { vel })];
     }
 }
 
@@ -269,11 +325,15 @@ export class OstinatoLane extends Lane {
 // notes, with rests between phrases. Motifs are varied, not replaced, so the
 // melody feels like it belongs to the piece.
 export class PhraseLane extends Lane {
-    constructor(scene, rng, { bpm, instrument, lo, hi, rest = [4, 12], extra }) {
-        super(scene, rng, rng.range(6, 18));
-        Object.assign(this, { instrument, lo, hi, rest, extra });
+    constructor(scene, rng, { bpm, instrument, lo, hi, rest = [4, 12], repeat = 0.6, extra }) {
+        super(scene, rng, 0);
+        Object.assign(this, { instrument, lo, hi, rest, repeat, extra });
         this.beat = 60 / bpm;
-        this.motif = this._newMotif();
+        // phrases start and move on the eighth-note grid shared with the beat
+        this.unit = this.beat / 2;
+        this.next = onGrid(scene.start + rng.range(6, 18), this.unit);
+        this.motifs = [this._newMotif()];
+        this.phrases = 0;
         this.queue = [];
         this.lastHz = null;
         this.lastMidi = null;
@@ -289,12 +349,27 @@ export class PhraseLane extends Lane {
         return steps;
     }
 
+    // Gyro's repetition pool: with probability `repeat` a phrase reuses one
+    // of the first few motifs, else it states a new one, so the melody has
+    // returns (AABA, ABAC...) instead of wandering off.
+    _pickMotif() {
+        const n = this.phrases++;
+        if (n === 0) return this.motifs[0];
+        if (this.rng.chance(this.repeat)) {
+            const pool = Math.max(1, Math.min(this.motifs.length, Math.round((1 - this.repeat) * 4)));
+            return this.motifs[this.rng.int(0, pool - 1)];
+        }
+        const m = this._newMotif();
+        if (this.motifs.length < 4) this.motifs.push(m);
+        else this.motifs[this.rng.int(1, 3)] = m;
+        return m;
+    }
+
     fire(t) {
         const level = this.scene.level(t);
         const chord = this.harmony.chordAt(t);
         if (!this.queue.length) {
-            if (this.rng.chance(0.25)) this.motif = this._newMotif();
-            const motif = this.motif.map((s) => ({ ...s, move: this.rng.chance(0.2) ? s.move + this.rng.pick([-1, 1]) : s.move }));
+            const motif = this._pickMotif().map((s) => ({ ...s, move: this.rng.chance(0.15) ? s.move + this.rng.pick([-1, 1]) : s.move }));
             // start each phrase on a chord tone
             const starts = notesInRange(chord.pcs, this.lo + 4, this.hi - 6);
             const start = starts.length ? this.rng.pick(starts) : this.lo + 7;
@@ -314,7 +389,8 @@ export class PhraseLane extends Lane {
             // phrases end on a chord tone
             midi = notesInRange(chord.pcs, midi - 3, midi + 3)[0] ?? midi;
         }
-        this.next = t + dur + (note.last ? this.rng.range(this.rest[0], this.rest[1]) * this.beat : 0);
+        const rest = note.last ? this.rng.range(this.rest[0], this.rest[1]) * this.beat : 0;
+        this.next = onGrid(t + dur + rest, this.unit);
         if (level < 0.1) {
             this.lastMidi = null;
             return [];
@@ -322,11 +398,18 @@ export class PhraseLane extends Lane {
         const ev = instrumentEvent(this.instrument, t, midi, level, this.rng.range(-0.25, 0.25), this.rng, {
             dur: dur * 0.92,
             fromMidi: this.lastMidi ?? midi,
+            vel: note.last ? 0.45 : 0.55 + 0.15 * (Math.round(t / this.beat) % 2 === 0),
             ...this.extra,
         });
         this.lastMidi = note.last ? null : midi;
         return [ev];
     }
+}
+
+// The next point of a grid of `unit` seconds counted from t = 0 (the clock
+// every beat and figure in a piece shares).
+export function onGrid(t, unit) {
+    return Math.ceil(t / unit - 1e-6) * unit;
 }
 
 // Four-on-the-floor muffled pulse with dub chord stabs (Gas / Basic Channel).

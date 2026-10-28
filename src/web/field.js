@@ -61,6 +61,7 @@ export class Field {
         if (state.chord) this.chord = state.chord;
         if (state.bass !== undefined) this.bass = state.bass;
         if (state.time !== undefined) this.time = state.time;
+        if (state.bpm) this.bpm = state.bpm;
         for (const note of state.notes || []) this.look.note(this, note);
     }
 

@@ -522,6 +522,313 @@ const riso = {
     },
 };
 
+// Neon: a dot-matrix sign on Akira red. The station's name scrolls one
+// column per kick; every note lights a column of the board below it, in
+// white, and black rain slants across the lot.
+const matrix = {
+    paper: '#e8231b',
+    ink: '#0b0b0b',
+    accent: '#f6f1e7',
+    init(f) {
+        const { s, rng } = f;
+        s.scroll = 0;
+        s.target = 0;
+        s.text = null;
+        s.board = new Float32Array(40);
+        s.rain = Array.from({ length: 70 }, () => ({ x: rng.next(), y: rng.next(), v: rng.range(0.6, 1.4), l: rng.range(0.02, 0.07) }));
+        s.drops = 0;
+    },
+    // the sign's text as a bitmap, 9 dots tall
+    _bitmap(f) {
+        const text = `${f.name} ${f.station.split('-')[1] || ''}  `.toUpperCase();
+        const c = document.createElement('canvas');
+        const h = 9;
+        c.height = h;
+        const q = c.getContext('2d');
+        q.font = `400 ${h + 1}px Compagnon, "Courier New", monospace`;
+        c.width = Math.ceil(q.measureText(text).width) + 2;
+        q.font = `400 ${h + 1}px Compagnon, "Courier New", monospace`;
+        q.fillStyle = '#000';
+        q.textBaseline = 'top';
+        q.fillText(text, 1, 0);
+        const data = q.getImageData(0, 0, c.width, h).data;
+        const cols = [];
+        for (let x = 0; x < c.width; x++) {
+            const col = [];
+            for (let y = 0; y < h; y++) col.push(data[(y * c.width + x) * 4 + 3] > 90);
+            cols.push(col);
+        }
+        return cols;
+    },
+    note(f, n) {
+        const { s } = f;
+        if (n.layer === 'kick') {
+            s.target += 1;
+            return;
+        }
+        if (n.layer === 'snare') s.drops = 1;
+        if (!PITCHED(n)) return;
+        const i = Math.floor(pitch(n) * (s.board.length - 1));
+        s.board[i] = Math.min(1, s.board[i] + 0.4 + (n.gain || 0.05) * 4);
+    },
+    draw(f) {
+        const { ctx, w, h, s } = f;
+        ctx.fillStyle = this.paper;
+        ctx.fillRect(0, 0, w, h);
+        if (!s.text) s.text = this._bitmap(f);
+        // with no beat, the sign creeps on by itself
+        s.target += 0.004;
+        s.scroll += (s.target - s.scroll) * 0.25;
+        const u = Math.max(7, Math.min(w / 40, h / 34));
+        const top = h * 0.07;
+        const cols = Math.ceil(w / u) + 1;
+        const len = s.text.length;
+        const off = Math.floor(s.scroll);
+        const frac = s.scroll - off;
+        for (let i = 0; i < cols; i++) {
+            const col = s.text[(i + off) % len];
+            const x = (i - frac) * u + u / 2;
+            for (let j = 0; j < 9; j++) {
+                ctx.fillStyle = this.ink;
+                ctx.globalAlpha = col[j] ? 1 : 0.13;
+                ctx.beginPath();
+                ctx.arc(x, top + j * u + u / 2, u * (col[j] ? 0.42 : 0.16), 0, TAU);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = 1;
+        // the board: one column of dots per pitch, white while it sounds
+        const bt = top + 10.5 * u;
+        const bx = w > 700 ? w * 0.45 : 0;
+        const bu = (w - bx) / s.board.length;
+        for (let i = 0; i < s.board.length; i++) {
+            const v = s.board[i];
+            const lit = Math.round(v * 6);
+            for (let j = 0; j < 6; j++) {
+                const on = 5 - j < lit;
+                ctx.fillStyle = on ? this.accent : this.ink;
+                ctx.globalAlpha = on ? 1 : 0.13;
+                ctx.fillRect(bx + i * bu + bu * 0.2, bt + j * Math.max(6, bu * 0.5), bu * 0.6, Math.max(4, bu * 0.32));
+            }
+            s.board[i] = v * 0.965;
+        }
+        ctx.globalAlpha = 1;
+        // rain, harder for a moment on each clap
+        ctx.strokeStyle = this.ink;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (const d of s.rain) {
+            d.y += 0.012 * d.v * (1 + s.drops * 2);
+            d.x -= 0.003 * d.v;
+            if (d.y > 1) {
+                d.y -= 1.1;
+                d.x = (d.x + 0.37) % 1;
+            }
+            if (d.x < 0) d.x += 1;
+            const x = d.x * w;
+            const y = d.y * h;
+            ctx.moveTo(x, y);
+            ctx.lineTo(x - d.l * h * 0.25, y - d.l * h);
+        }
+        ctx.stroke();
+        s.drops *= 0.9;
+    },
+    resize(f) {
+        f.s.text = null;
+    },
+};
+
+// Abyss: a bathymetric chart. Contour lines of a seabed fixed by the
+// station; every note sends a sonar ring through the depths and every kick
+// presses the whole floor down a little.
+const bathymetry = {
+    paper: '#0f3a40',
+    ink: '#efe6cf',
+    accent: '#ff7a1a',
+    init(f) {
+        const { s, rng } = f;
+        s.bumps = Array.from({ length: 7 }, () => ({ x: rng.range(-0.1, 1.1), y: rng.range(-0.1, 1.1), r: rng.range(0.15, 0.45), a: rng.range(-1, 1) }));
+        s.pings = [];
+        s.press = 0;
+        s.nx = 56;
+        s.ny = 40;
+        s.v = new Float32Array((s.nx + 1) * (s.ny + 1));
+    },
+    note(f, n) {
+        const { s, rng } = f;
+        if (n.layer === 'kick') {
+            s.press = Math.min(1, s.press + 0.25);
+            return;
+        }
+        if (!PITCHED(n)) return;
+        s.pings.push({ x: 0.08 + pitch(n) * 0.84, y: rng.range(0.15, 0.85), r: 0, life: 1, a: BIG.has(n.layer) ? 0.9 : 0.45 });
+        if (s.pings.length > 10) s.pings.shift();
+    },
+    draw(f) {
+        const { ctx, w, h, s } = f;
+        ctx.fillStyle = this.paper;
+        ctx.fillRect(0, 0, w, h);
+        const { nx, ny, v } = s;
+        const t = f.t * 0.02;
+        for (let j = 0; j <= ny; j++) {
+            for (let i = 0; i <= nx; i++) {
+                const x = i / nx;
+                const y = j / ny;
+                let z = 0;
+                for (const b of s.bumps) z += b.a * Math.exp(-((x - b.x) ** 2 + ((y - b.y) * h / w) ** 2) / (b.r * b.r));
+                z += 0.15 * Math.sin(x * 5 + t) * Math.cos(y * 4 - t);
+                for (const p of s.pings) {
+                    const d = Math.hypot(x - p.x, (y - p.y) * h / w);
+                    z += p.a * p.life * Math.exp(-((d - p.r) ** 2) / 0.0012);
+                }
+                v[j * (nx + 1) + i] = z - s.press * 0.25;
+            }
+        }
+        const cw = w / nx;
+        const ch = h / ny;
+        ctx.strokeStyle = this.ink;
+        for (let k = -6; k <= 8; k++) {
+            const level = k * 0.14;
+            ctx.lineWidth = k % 4 === 0 ? 2.2 : 0.9;
+            ctx.beginPath();
+            for (let j = 0; j < ny; j++) {
+                for (let i = 0; i < nx; i++) {
+                    const a = v[j * (nx + 1) + i] - level;
+                    const b = v[j * (nx + 1) + i + 1] - level;
+                    const c = v[(j + 1) * (nx + 1) + i + 1] - level;
+                    const d = v[(j + 1) * (nx + 1) + i] - level;
+                    // marching squares, edge crossings by linear interpolation
+                    const pts = [];
+                    if ((a > 0) !== (b > 0)) pts.push([i + a / (a - b), j]);
+                    if ((b > 0) !== (c > 0)) pts.push([i + 1, j + b / (b - c)]);
+                    if ((c > 0) !== (d > 0)) pts.push([i + 1 - c / (c - d), j + 1]);
+                    if ((d > 0) !== (a > 0)) pts.push([i, j + 1 - d / (d - a)]);
+                    for (let p = 0; p + 1 < pts.length; p += 2) {
+                        ctx.moveTo(pts[p][0] * cw, pts[p][1] * ch);
+                        ctx.lineTo(pts[p + 1][0] * cw, pts[p + 1][1] * ch);
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+        // the sounding that sent each ring: a solid orange mark
+        ctx.fillStyle = this.accent;
+        for (const p of s.pings) {
+            p.r += 0.0035;
+            const r = Math.min(w, h) * 0.012 * (0.5 + p.life);
+            ctx.globalAlpha = Math.min(1, p.life * 2);
+            ctx.fillRect(p.x * w - r, p.y * h - r, r * 2, r * 2);
+        }
+        ctx.globalAlpha = 1;
+        s.pings = decay(s.pings, 0.006);
+        s.press *= 0.94;
+    },
+};
+
+// Bronze: a weave on turmeric. The columns are the sixteenths of the 2-bar
+// cycle every figure shares and the rows are pitch: struck keys lay weft,
+// bells lay warp, threads pass over and under, and each gong stamps an
+// oxblood disc behind the cloth.
+const weave = {
+    paper: '#e3a72f',
+    ink: '#2b1a10',
+    accent: '#8e1b12',
+    init(f) {
+        const { s, rng } = f;
+        s.cols = 32;
+        s.rows = 16;
+        s.weft = new Float32Array(s.cols * s.rows);
+        s.warp = new Float32Array(s.cols * s.rows);
+        s.gongs = [];
+        // the cloth is never bare: a few seeded threads from the start
+        for (let i = 0; i < 24; i++) this.note(f, { midi: rng.int(50, 90), layer: rng.pick(['keys', 'bells']), time: rng.int(0, 31) * 0.2, gain: 0.1 }, 0.5);
+    },
+    note(f, n, life = 1) {
+        const { s, rng } = f;
+        if (!PITCHED(n)) return;
+        if (n.layer === 'drone' && n.midi < 66 && (n.gain || 0) > 0.1) {
+            s.gongs.push({ x: rng.range(0.25, 0.75), y: rng.range(0.25, 0.55), life: 1, slow: true });
+            if (s.gongs.length > 3) s.gongs.shift();
+            return;
+        }
+        const sixteenth = 60 / (f.bpm || 80) / 4;
+        const col = Math.floor((n.time ?? f.time) / sixteenth + 0.5) % s.cols;
+        const row = s.rows - 1 - Math.floor(pitch(n) * (s.rows - 1));
+        // bells lay a warp thread down a few rows, keys a weft thread along
+        // a few sixteenths
+        const run = rng.int(2, 4);
+        for (let k = 0; k < run; k++) {
+            if (n.layer === 'bells') {
+                const j = Math.min(s.rows - 1, row + k);
+                s.warp[j * s.cols + col] = Math.max(s.warp[j * s.cols + col], life);
+            } else {
+                const i = (col + k) % s.cols;
+                s.weft[row * s.cols + i] = Math.max(s.weft[row * s.cols + i], life);
+            }
+        }
+    },
+    draw(f) {
+        const { ctx, w, h, s } = f;
+        ctx.fillStyle = this.paper;
+        ctx.fillRect(0, 0, w, h);
+        const u = Math.min(w, h);
+        for (const g of s.gongs) {
+            ctx.fillStyle = this.accent;
+            ctx.globalAlpha = Math.min(1, g.life * 1.5);
+            ctx.beginPath();
+            ctx.arc(w * g.x, h * g.y, u * (0.2 + (1 - g.life) * 0.1), 0, TAU);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        s.gongs = decay(s.gongs, 0.003);
+        const wide = w > 700;
+        const gx = wide ? w * 0.5 : w * 0.06;
+        const gw = (wide ? w * 0.96 : w * 0.94) - gx;
+        const gy = wide ? h * 0.08 : h * 0.07;
+        const gh = wide ? h * 0.46 : h * 0.2;
+        const cw = gw / s.cols;
+        const rh = gh / s.rows;
+        // the loom: every thread faintly, so the grid is always there
+        ctx.fillStyle = this.ink;
+        ctx.globalAlpha = 0.12;
+        for (let i = 0; i < s.cols; i++) ctx.fillRect(gx + i * cw + cw * 0.45, gy, cw * 0.1, gh);
+        for (let j = 0; j < s.rows; j++) ctx.fillRect(gx, gy + j * rh + rh * 0.45, gw, rh * 0.1);
+        // warp first (vertical), then weft over it except where the warp
+        // crosses on top
+        for (let i = 0; i < s.cols; i++) {
+            for (let j = 0; j < s.rows; j++) {
+                const v = s.warp[j * s.cols + i];
+                if (v < 0.04) continue;
+                ctx.globalAlpha = Math.min(1, v * 1.4);
+                ctx.fillRect(gx + i * cw + cw * 0.14, gy + j * rh - rh * 0.02, cw * 0.72, rh * 1.04);
+            }
+        }
+        for (let j = 0; j < s.rows; j++) {
+            for (let i = 0; i < s.cols; i++) {
+                const k = j * s.cols + i;
+                const v = s.weft[k];
+                if (v < 0.04) continue;
+                if ((i + j) % 2 && s.warp[k] > 0.2) continue;
+                ctx.globalAlpha = Math.min(1, v * 1.4);
+                ctx.fillStyle = j % 4 === 1 ? this.accent : this.ink;
+                ctx.fillRect(gx + i * cw - cw * 0.02, gy + j * rh + rh * 0.16, cw * 1.04, rh * 0.68);
+            }
+        }
+        ctx.fillStyle = this.ink;
+        ctx.globalAlpha = 1;
+        for (let k = 0; k < s.weft.length; k++) {
+            s.weft[k] *= 0.997;
+            s.warp[k] *= 0.997;
+        }
+        // the playhead: where in the two bars every figure is now
+        const sixteenth = 60 / (f.bpm || 80) / 4;
+        const p = ((f.time / sixteenth) % s.cols) / s.cols;
+        ctx.fillRect(gx + p * gw - 1, gy - rh, 3, gh + rh * 2);
+        // the two bar lines under the cloth
+        for (const c of [0, 16, 32]) ctx.fillRect(gx + c * cw - 1, gy + gh + rh * 0.6, 2, rh * 1.2);
+    },
+};
+
 export const LOOKS = {
     tide: { name: 'Raster', ...raster },
     cathedral: { name: 'Musica Viva', ...viva },
@@ -531,4 +838,7 @@ export const LOOKS = {
     ash: { name: 'Photocopy', ...xerox },
     orbit: { name: 'Soft Signal', ...signal },
     voices: { name: 'Riso', ...riso },
+    neon: { name: 'Dot Matrix', ...matrix },
+    abyss: { name: 'Bathymetry', ...bathymetry },
+    bronze: { name: 'Weave', ...weave },
 };

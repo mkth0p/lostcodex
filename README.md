@@ -1,10 +1,10 @@
 # Lost Codex
 
-Endless ambient radio in the browser. Turn the dial through eight universes of sound, twelve stations each. Every station (`#dub-07`) is its own piece, and it always plays the same way.
+Endless ambient radio in the browser. Turn the dial through eleven universes of sound, twelve stations each. Every station (`#dub-07`) is its own piece, and it always plays the same way.
 
 Open `index.html` through any static server and touch the dial to power on. Turning it gives static between stations; letting go settles on the nearest one after a moment and crossfades to it. Scan moves to a new station every few minutes. You can also type any code in the Station field: `ice-K7QX2M` plays in Ice, and a bare code like `K7QX2M` is given a universe by its hash. After a few seconds without input everything but the dial fades away, so it works as an installation screen.
 
-Each universe has its own look, like a label giving each release its own sleeve: Tide is Raster (black and white signal), Cathedral is Musica Viva (Swiss concert-poster arcs), Dub is Slice (the name cut into strips that echo), Ice is Frost (hairline fractures), Garden is Kankyō (pastel blocks after 80s environmental music sleeves), Ash is Photocopy (halftone on fluorescent paper), Orbit is Soft Signal (grained colour field under a grid) and Voices is Riso (vowels overprinted in two inks). Every poster reacts only to the notes being played, and any choice it makes is seeded by the station.
+Each universe has its own look, like a label giving each release its own sleeve: Tide is Raster (black and white signal), Cathedral is Musica Viva (Swiss concert-poster arcs), Dub is Slice (the name cut into strips that echo), Ice is Frost (hairline fractures), Garden is Kankyō (pastel blocks after 80s environmental music sleeves), Ash is Photocopy (halftone on fluorescent paper), Orbit is Soft Signal (grained colour field under a grid), Voices is Riso (vowels overprinted in two inks), Neon is Dot Matrix (a sign on Akira red that steps on every kick, in the rain), Abyss is Bathymetry (a seabed chart whose contours ring with every sonar note) and Bronze is Weave (the shared 2-bar grid as a loom: keys lay weft, bells lay warp, gongs stamp discs). Every poster reacts only to the notes being played, and any choice it makes is seeded by the station.
 
 ## Universes
 
@@ -18,6 +18,9 @@ Each universe has its own look, like a label giving each release its own sleeve:
 | Ash | distorted strings shredded into grains, a Buchla drone, crushed piano, all in key | burn, cinder, smoke |
 | Orbit | Mellotron flute and string melodies on wobbly tape, Gyro tape memories, sometimes a lazy beat | tape, beat, lull |
 | Voices | ooh voices, Mellotron choir, looped choirs and Gyro ooh/aah clouds | hymn, loop, veil |
+| Neon | CS-80 style brass, acid and electro bass, plucked arps, rain, a half-step or four-on-the-floor kit with side-chained pads | rain, grid, drive |
+| Abyss | sub pressure, sonar pings, whale glides, an 808 electro kit and bass, thunder grains | trench, electro, glow |
+| Bronze | saron and bonang with beating (ombak) pairs, interlocking kotekan, gongs closing each cycle, in pelog and slendro-like scales | kotekan, gong, mist |
 
 Each universe in `src/universes.js` sets its modes, tempo range, tuning, harmony rules, reverb and the lanes each scene is built from. Adding a universe means adding one entry there.
 
@@ -35,10 +38,20 @@ station ──hash──▶ piece (universe, key, tempo, mood numbers)
 ```
 
 * Every note goes through `src/core/theory.js` as a MIDI number; a test checks that nothing ever leaves the key.
+* Chords move by Gyro's progression scorer: two shared notes score best and none or all are penalised, steps and fourths or fifths in the bass beat a tritone, and the top voice should hold or move by 2, 3, 5 or 7 semitones. One of the best three candidates is drawn.
+* Scenes come back: now and then the next scene is one of the first few already heard (Gyro's repetition pool at the scale of the piece).
+
+## Figures and the clock
+
+Rhythmic layers are committed figures after 10K Audio's Gyro (`src/score/figure.js`). A figure is a 2-bar grid of sixteenths whose notes name a chord voice, not a pitch, so it follows the harmony without restarting when a chord changes. Generators (bass, hook, splatter, walk, arp, chord, line) are a few lines each. Hooks favour the middle of the chord; a per-layer bias makes some layers sparse, early and low, so stacked layers stratify by themselves. Each scene draws one onset grid that every figure and drum kit in it shares. A form of four figure slots (AABA, ABAB...) comes from the repetition rule, which also lets a figure answer itself inside its two bars. Velocity is an accent curve (2-bar downbeat, bar, half bar, beat, eighth) with a little seeded life.
+
+Everything with a beat runs on one clock per piece: sixteenths counted from t = 0 at the piece's tempo, with one swing for the whole piece. Phrased melodies start on the eighth-note grid of that clock, and the echo repeats on the beat on both sides.
 * All randomness comes from named, seeded streams (`src/core/rng.js`). Rendering is sample-identical for the same station, sample rate and block size, in the browser and in Node.
 * Synthesis is plain JavaScript DSP (`src/dsp`, `src/engine/voices.js`). On top of it, a 1.9 MB sample pack adds real instruments (see below). Without the pack every sampled instrument falls back to a synth voice and the layers that only exist as samples are left out, so the radio still plays offline or on a failed download.
 
 ## Sample pack
+
+The three newest universes (Neon, Abyss, Bronze) are synthesized for now. The ones that would gain most from renders on the VST host: Neon's brass (CS-80 V) and pads (Jup-8 V or Prophet-5 V), Bronze's saron, bonang and gongs (Augmented Mallets), and Abyss's whale glides and sonar (Synthi V or Buchla Easel V).
 
 `samples/pack.bin` holds 26 instruments (62 multisample zones, 227 s of audio) rendered offline from VST3 plugins: Arturia Piano V3, Emulator II V, Mellotron V, Augmented Voices / Strings / Mallets / Yangtze, Solina V2, Stage-73 V2, Prophet-5 V, Synclavier V, MS-20 V, Synthi V and Buchla Easel V, plus five generative patterns from 10K Audio's Gyro whose chord sets are replaced by octaves of one note, so they stay on the root. `scripts/samples/plan.py` lists which preset each one comes from. Zones sit about an octave apart over the range each instrument is played in, so no note is pitched much more than half an octave.
 
@@ -62,8 +75,8 @@ node scripts/limits.mjs 120 lite                    # limiter use and voice stea
 | Path | What it does |
 | --- | --- |
 | `src/core/` | seeded random streams, scales, chords, harmony timeline |
-| `src/universes.js` | the eight universes and their scenes |
-| `src/score/` | stations and pieces, lanes, scenes, the scene chain |
+| `src/universes.js` | the eleven universes and their scenes |
+| `src/score/` | stations and pieces, lanes, Gyro figures and drum kits, scenes, the scene chain |
 | `src/dsp/` | filters, oscillators, reverb (8-line FDN), echo, limiter |
 | `src/engine/` | voices, the sample pack decoder and the block renderer |
 | `src/web/` | AudioWorklet wrapper, the dial, page logic, and the poster canvas |
