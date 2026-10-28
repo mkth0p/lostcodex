@@ -2,6 +2,7 @@ import {
     BeatLane, BedLane, DroneLane, LoopLane, OstinatoLane, PhraseLane, PulseLane, ResonantLane, WanderLane,
 } from './score/lanes.js';
 import { CycleLane, FigureLane, KitLane } from './score/figure.js';
+import { ImpactLane, RiserLane, RollLane } from './score/song.js';
 
 // A universe is a whole sound world: its scales, tuning, tempo, harmony
 // pace, room, and the scenes it moves between. A code picks a station inside
@@ -15,6 +16,8 @@ const LOOP_PERIODS = [17.3, 19.7, 23.1, 26.9, 29.3, 31.7, 37.1, 41.3];
 const DUB_KICK = { tone: 1400, punch: 105, sweep: 0.045, decay: 0.6, click: 0.5, drive: 1.0 };
 // A long 808 boom for the rain in Neon, and a tight, knocking one for Abyss.
 const BOOM_KICK = { tone: 700, punch: 80, sweep: 0.05, decay: 0.85, click: 0.25, drive: 0.6 };
+// Darksynth / industrial: hard, driven and short enough for broken patterns.
+const HARD_KICK = { tone: 1600, punch: 140, sweep: 0.04, decay: 0.5, click: 0.6, drive: 1.2 };
 const ELECTRO_KICK = { tone: 1100, punch: 120, sweep: 0.03, decay: 0.42, click: 0.45, drive: 0.5 };
 
 function loops(scene, rng, instruments, { count = 5, octaves = {} } = {}) {
@@ -313,38 +316,66 @@ export const UNIVERSES = [
         id: 'neon',
         name: 'Neon',
         color: '#ff4a2e',
-        refs: 'Vangelis, Burial',
-        blurb: 'Rain on a megacity: CS-80 brass, acid lines and a shuffled pulse.',
-        modes: [['aeolian', 2], ['phrygian', 1.5], ['dorian', 1.2]],
-        tonic: [40, 49],
-        bpm: [84, 96],
-        swing: [0.08, 0.22],
-        harmony: { holdMin: 30, holdMax: 70, pedalProb: 0.5, shapes: ['seventh', 'add9', 'spread', 'quartal'] },
-        reverb: { t60: [7, 12], damping: [5000, 8000], size: 1.7 },
+        refs: 'Vangelis, Blade Runner 2049, Carpenter Brut, Burial',
+        blurb: 'Rain on a megacity, then the drop: CS-80 brass, a reese under broken drums, the horn.',
+        modes: [['aeolian', 2], ['phrygian', 1.5], ['dorian', 1]],
+        tonic: [40, 47],
+        bpm: [96, 110],
+        swing: [0.02, 0.1],
+        // laid out as songs: intro, build, drop, breakdown, build, drop...
+        song: true,
+        harmony: { holdMin: 30, holdMax: 70, pedalProb: 0.35, shapes: ['seventh', 'add9', 'spread', 'quartal'] },
+        reverb: { t60: [6, 10], damping: [5000, 8000], size: 1.7 },
         echoBeats: 0.75,
-        returns: 0.5,
         opening: ['rain'],
         scenes: {
-            rain: { weight: 3, build: (s, r, p) => [
-                new DroneLane(s, r.fork('drone'), { fifth: true, upper: true, gain: 0.045, cutoff: 900, detune: 14, wow: 6, attack: 6, stagger: 4, sub: 0.05 }),
+            // the city before the beat: brass swells in the rain, a granular
+            // cloud of strings (the 2049 Crystallizer smear), distant plucks
+            rain: { weight: 1, build: (s, r) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new DroneLane(s, r.fork('drone'), { fifth: true, gain: 0.04, cutoff: 700, detune: 14, wow: 6, attack: 6, sub: 0.06 }),
                 ...loops(s, r, ['brass', 'brass', 'brass'], { count: 3, octaves: { brass: 0 } }),
+                new DroneLane(s, r.fork('smear'), { sample: 'strings', grain: { density: 5, size: [0.15, 0.6], octaves: [0, 1], reverse: 0.4, jitter: 12 }, octave: 2, gain: 0.035, attack: 8, release: 10, reverb: 0.8, echo: 0.3 }),
                 new BedLane(s, r.fork('rain'), { gain: 0.03, tone: 9000, low: 1400, crackle: 140 }),
-                new FigureLane(s, r.fork('pluck'), { gen: 'walk', density: 0.45, instrument: 'pluck', lo: 62, hi: 86, repeat: 0.7, gain: 0.8 }),
-                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: 'lead', lo: 60, hi: 84, rest: [8, 18], extra: { cutoff: 1700, wow: 5, echo: 0.45, reverb: 0.7 } }),
+                new FigureLane(s, r.fork('pluck'), { gen: 'walk', density: 0.4, instrument: 'pluck', lo: 62, hi: 86, repeat: 0.7, gain: 0.8 }),
             ] },
-            grid: { weight: 2.5, build: (s, r) => [
-                new DroneLane(s, r.fork('pad'), { upper: true, gain: 0.05, cutoff: 1300, detune: 12, attack: 3, pump: 0.7 }),
-                new KitLane(s, r.fork('kit'), { style: 'halfstep', kick: BOOM_KICK, clap: 0.2, hat: 0.09 }),
-                new FigureLane(s, r.fork('acid'), { gen: 'bass', instrument: 'acid', root: true, lo: 33, hi: 55, bias: 1, repeat: 0.6, legato: 0.7 }),
-                new FigureLane(s, r.fork('arp'), { gen: 'arp', instrument: 'pluck', lo: 64, hi: 88, repeat: 0.7, gain: 0.7 }),
-                new BedLane(s, r.fork('rain'), { gain: 0.016, tone: 8000, low: 1400, crackle: 80 }),
+            // tension: the pad opens, the arp runs, a snare roll speeds up
+            // under a riser, the mix thins out and stops half a bar early
+            build: { weight: 0, build: (s, r) => [
+                new DroneLane(s, r.fork('pad'), { upper: true, gain: 0.045, cutoff: 1800, detune: 14, attack: 1, pump: 0.4 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', instrument: 'pluck', lo: 64, hi: 88, repeat: 0.8, gain: 0.85 }),
+                new RollLane(s, r.fork('roll')),
+                new RiserLane(s, r.fork('riser')),
+                new BedLane(s, r.fork('rain'), { gain: 0.012, tone: 9000, low: 2000, crackle: 60 }),
             ] },
-            drive: { weight: p0(0.7), build: (s, r) => [
-                new DroneLane(s, r.fork('pad'), { fifth: true, upper: true, gain: 0.05, cutoff: 1600, detune: 16, attack: 2, pump: 0.8, drive: 0.3 }),
-                new KitLane(s, r.fork('kit'), { style: 'four', kick: BOOM_KICK, clap: 0.18, hat: 0.1, open: 0.4 }),
-                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'ebass', root: true, lo: 31, hi: 50, bias: 2, repeat: 0.75, legato: 0.6 }),
-                new FigureLane(s, r.fork('hook'), { gen: 'hook', instrument: 'pluck', lo: 62, hi: 84, repeat: 0.6 }),
-                new FigureLane(s, r.fork('brass'), { gen: 'chord', hits: [1, 2], instrument: 'brass', lo: 55, hi: 76, repeat: 0.9, gain: 0.8 }),
+            // drop A: broken industrial drums, a reese, CS-80 brass stabs,
+            // distorted arps, everything pumping, landing on the horn
+            drop: { weight: 0, build: (s, r) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'breaks', kick: HARD_KICK, clap: 0.18, snare: 0.12, hat: 0.09, metal: 0.05 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'reese', root: true, lo: 28, hi: 47, bias: 1, repeat: 0.7, legato: 0.95 }),
+                new FigureLane(s, r.fork('brass'), { gen: 'chord', hits: [1, 3], instrument: 'brass', lo: 55, hi: 76, repeat: 0.85, legato: 1.2 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', instrument: 'grit', lo: 64, hi: 88, repeat: 0.7, gain: 0.8 }),
+                new DroneLane(s, r.fork('pad'), { upper: true, gain: 0.05, cutoff: 1500, detune: 14, attack: 0.3, pump: 0.8 }),
+            ] },
+            // drop B: four to the floor, an acid line and a screaming lead
+            drive: { weight: 0, build: (s, r) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'four', kick: BOOM_KICK, clap: 0.18, snare: 0.1, hat: 0.1, open: 0.4, metal: 0.04 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'acid', root: true, lo: 31, hi: 52, bias: 1, repeat: 0.6, legato: 0.7 }),
+                new FigureLane(s, r.fork('hook'), { gen: 'hook', instrument: 'scream', lo: 60, hi: 84, repeat: 0.6 }),
+                new FigureLane(s, r.fork('brass'), { gen: 'chord', hits: [1, 2], instrument: 'brass', lo: 55, hi: 76, repeat: 0.9, legato: 1.5, gain: 0.8 }),
+                new DroneLane(s, r.fork('pad'), { fifth: true, upper: true, gain: 0.05, cutoff: 1600, detune: 16, attack: 0.3, pump: 0.85, drive: 0.3 }),
+            ] },
+            // after the drop: the kick gone, the Blade Runner lead over the
+            // pad, ghost hats shuffling, a low chant far away
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new DroneLane(s, r.fork('pad'), { upper: true, fifth: true, gain: 0.05, cutoff: 1100, detune: 14, attack: 4, wow: 6, sub: 0.04 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: 'brasslead', lo: 60, hi: 84, rest: [3, 8], repeat: 0.65 }),
+                new KitLane(s, r.fork('ghost'), { style: 'halfstep', kickGain: 0, clap: 0.06, hat: 0.06, perc: 0.03 }),
+                new DroneLane(s, r.fork('chant'), { sample: 'monks', sampleOnly: true, octave: 1, gain: 0.035, attack: 8, release: 10, reverb: 0.85 }),
+                new BedLane(s, r.fork('rain'), { gain: 0.022, tone: 9000, low: 1400, crackle: 120 }),
             ] },
         },
     },

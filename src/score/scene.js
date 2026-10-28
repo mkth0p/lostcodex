@@ -4,8 +4,8 @@ import { sceneGrid } from './figure.js';
 // A scene is a few minutes of one texture inside a universe. Its lanes come
 // from the universe's builder for that scene type.
 export class Scene {
-    constructor({ type, start, end, fade, piece, harmony, rng }) {
-        Object.assign(this, { type, start, end, fade, piece, harmony, key: piece.key });
+    constructor({ type, start, end, fade, fadeIn = fade, fadeOut = fade, piece, harmony, rng }) {
+        Object.assign(this, { type, start, end, fade, fadeIn, fadeOut, piece, harmony, key: piece.key });
         // one onset grid for every figure and drum kit in the scene, on the
         // piece's clock and swing
         this.grid = sceneGrid(rng.fork('grid'), piece.swing);
@@ -13,7 +13,7 @@ export class Scene {
     }
 
     level(t) {
-        return smooth((t - this.start) / this.fade) * (1 - smooth((t - (this.end - this.fade)) / this.fade));
+        return smooth((t - this.start) / this.fadeIn) * (1 - smooth((t - (this.end - this.fadeOut)) / this.fadeOut));
     }
 
     // All events with time before `to`, in lane order.

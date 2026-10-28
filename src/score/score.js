@@ -1,6 +1,7 @@
 import { Rng } from '../core/rng.js';
 import { Harmony } from '../core/theory.js';
 import { Scene } from './scene.js';
+import { SongPlan } from './song.js';
 
 // The endless score for one piece: a shared chord timeline and a chain of
 // overlapping scenes, both generated lazily and deterministically.
@@ -9,7 +10,9 @@ export class Score {
         this.piece = piece;
         this.sceneOverride = sceneOverride;
         const rng = new Rng(piece.seed);
-        this.harmony = new Harmony(piece.key, rng.fork('harmony'), piece.harmony);
+        // universes with song form lay their scenes out as sections on bar lines
+        this.plan = piece.universe.song && !sceneOverride ? new SongPlan(piece, rng.fork('song')) : null;
+        this.harmony = new Harmony(piece.key, rng.fork('harmony'), { ...piece.harmony, plan: this.plan });
         this.sceneRng = rng.fork('scenes');
         this.scenes = [];
         this.history = [];
@@ -18,6 +21,7 @@ export class Score {
     }
 
     _appendScene(start) {
+        if (this.plan) return this._appendSection();
         const prev = this.scenes[this.scenes.length - 1];
         const rng = this.sceneRng;
         const weights = Object.entries(this.piece.sceneWeights)
@@ -54,10 +58,34 @@ export class Score {
         return scene;
     }
 
+    _appendSection() {
+        const s = this.plan.index(this.sceneIndex);
+        const scene = new Scene({
+            type: s.type,
+            start: s.start,
+            end: s.end,
+            fade: s.fadeIn,
+            fadeIn: s.fadeIn,
+            fadeOut: s.fadeOut,
+            piece: this.piece,
+            harmony: this.harmony,
+            rng: this.sceneRng.fork(`scene${this.sceneIndex++}`),
+        });
+        this.scenes.push(scene);
+        this.history.push(s.type);
+        return scene;
+    }
+
+    // Master-bus moves the song plan asks for (high-pass, dry level), or null.
+    mix(t) {
+        return this.plan ? this.plan.mix(t) : null;
+    }
+
     // Events with time < to, from every scene that is still emitting.
     collect(to) {
         let last = this.scenes[this.scenes.length - 1];
-        while (to > last.end - last.fade) {
+        // sections follow each other on the bar line; scenes overlap by their fade
+        while (to > last.end - (this.plan ? 1 : last.fade)) {
             last = this._appendScene(last.end - last.fade);
         }
         const out = [];
@@ -73,6 +101,7 @@ export class Score {
         for (const s of this.scenes) {
             if (s.start <= t && (!current || s.level(t) >= current.level(t))) current = s;
         }
-        return current;
+        // a finished scene is dropped a little before the next one starts
+        return current || this.scenes[0] || null;
     }
 }

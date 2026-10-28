@@ -36,6 +36,9 @@ export class Engine {
         this.hpL = new Svf(sampleRate, 28, 0.7);
         this.hpR = new Svf(sampleRate, 28, 0.7);
         this.master = 1.6;
+        // dry level the song plan can pull down (the gap before a drop)
+        this.dry = 1;
+        this.dryTarget = 1;
         this.reverbWet = 0.55;
         this.blockCap = 0;
         this._alloc(128);
@@ -112,6 +115,12 @@ export class Engine {
             this.pending = keep;
         }
 
+        const mix = this.score.mix(t0);
+        if (mix) {
+            this.hpL.set(mix.hp);
+            this.hpR.set(mix.hp);
+            this.dryTarget = mix.dry;
+        }
         const { dryL, dryR, revBus, echoBus } = this;
         dryL.fill(0, 0, n);
         dryR.fill(0, 0, n);
@@ -147,8 +156,10 @@ export class Engine {
             const eL = fx[0];
             const eR = fx[1];
             this.reverb.process(revBus[i] + (eL + eR) * 0.25, fx);
-            let l = dryL[i] + eL * 0.6 + fx[0] * wet;
-            let r = dryR[i] + eR * 0.6 + fx[1] * wet;
+            this.dry += (this.dryTarget - this.dry) * 0.002;
+            const d = this.dry;
+            let l = dryL[i] * d + eL * 0.6 + fx[0] * wet;
+            let r = dryR[i] * d + eR * 0.6 + fx[1] * wet;
             this.hpL.process(l);
             this.hpR.process(r);
             l = this.hpL.high * this.master;

@@ -76,7 +76,7 @@ describe('tempo', () => {
             const step = 60 / piece.bpm / 4;
             for (let t = 1; t < 900; t += 1) {
                 for (const ev of score.collect(t)) {
-                    if (!['bass', 'kick', 'snare', 'stab'].includes(ev.layer)) continue;
+                    if (!['bass', 'kick', 'snare', 'stab'].includes(ev.layer) || ev.roll) continue;
                     const i = Math.round(ev.time / step);
                     const swung = i * step + (i % 2 ? piece.swing * step : 0);
                     const plain = i * step;
