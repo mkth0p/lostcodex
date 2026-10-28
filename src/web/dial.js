@@ -8,7 +8,9 @@ export class Dial {
     constructor(canvas, { bands, perBand, onMove, onSettle, onTick }) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.bands = bands; // [{ name, color }]
+        this.bands = bands; // [{ name }]
+        this.ink = '#ffffff';
+        this.accent = '#ff2a1a';
         this.perBand = perBand;
         this.count = bands.length * perBand;
         this.step = TAU / this.count;
@@ -49,6 +51,12 @@ export class Dial {
         this.radius = Math.max(260, Math.min(w * 0.82, 520));
         this.cx = w / 2;
         this.cy = 34 + this.radius;
+    }
+
+    // Colours come from the look of the universe on screen.
+    setTheme({ ink, accent }) {
+        this.ink = ink;
+        this.accent = accent;
     }
 
     // Move to a station index, turning the short way round.
@@ -152,22 +160,13 @@ export class Dial {
         const base = -Math.PI / 2;
         const current = Math.floor(this.index / this.perBand);
 
-        // body of the wheel
-        const grd = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R + 30);
-        grd.addColorStop(0, 'rgba(255,255,255,0.015)');
-        grd.addColorStop(1, 'rgba(255,255,255,0.05)');
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.arc(cx, cy, R + 26, 0, TAU);
-        ctx.fill();
-
-        // band arcs
+        // band arcs: the one on air in the accent, the rest in faint ink
         for (let b = 0; b < this.bands.length; b++) {
             const start = base + (b * this.perBand - 0.5 - this.pos) * step;
             const end = start + this.perBand * step;
-            ctx.strokeStyle = this.bands[b].color;
-            ctx.globalAlpha = b === current ? 0.95 : 0.32;
-            ctx.lineWidth = b === current ? 3 : 2;
+            ctx.strokeStyle = b === current ? this.accent : this.ink;
+            ctx.globalAlpha = b === current ? 1 : 0.3;
+            ctx.lineWidth = b === current ? 4 : 1;
             ctx.beginPath();
             ctx.arc(cx, cy, R + 12, start + 0.01, end - 0.01);
             ctx.stroke();
@@ -181,16 +180,18 @@ export class Dial {
             const bandStart = i % this.perBand === 0;
             const len = bandStart ? 22 : i % 3 === 0 ? 13 : 8;
             const near = Math.max(0, 1 - Math.abs(i - this.pos) / 5);
-            ctx.strokeStyle = `rgba(236,231,220,${0.25 + near * 0.6})`;
+            ctx.strokeStyle = this.ink;
+            ctx.globalAlpha = 0.35 + near * 0.65;
             ctx.lineWidth = bandStart ? 1.6 : 1;
             ctx.beginPath();
             ctx.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
             ctx.lineTo(cx + Math.cos(a) * (R - len), cy + Math.sin(a) * (R - len));
             ctx.stroke();
         }
+        ctx.globalAlpha = 1;
 
         // band names, set along the rim
-        ctx.font = '400 11px Compagnon, "Courier New", monospace';
+        ctx.font = '300 17px Basteleur, Georgia, serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         for (let b = 0; b < this.bands.length; b++) {
@@ -200,8 +201,9 @@ export class Dial {
             ctx.save();
             ctx.translate(cx + Math.cos(a) * (R - 44), cy + Math.sin(a) * (R - 44));
             ctx.rotate(a + Math.PI / 2);
-            ctx.fillStyle = b === current ? '#ece7dc' : 'rgba(236,231,220,0.45)';
-            ctx.fillText(spaced(this.bands[b].name.toUpperCase()), 0, 0);
+            ctx.fillStyle = this.ink;
+            ctx.globalAlpha = b === current ? 1 : 0.5;
+            ctx.fillText(this.bands[b].name, 0, 0);
             ctx.restore();
         }
 
@@ -213,13 +215,15 @@ export class Dial {
             ctx.save();
             ctx.translate(cx + Math.cos(a) * (R - 70), cy + Math.sin(a) * (R - 70));
             ctx.rotate(a + Math.PI / 2);
-            ctx.fillStyle = 'rgba(236,231,220,0.35)';
+            ctx.fillStyle = this.ink;
+            ctx.globalAlpha = 0.45;
             ctx.fillText(frequency(i).toFixed(1), 0, 0);
             ctx.restore();
         }
 
         // knurled inner edge, so turning reads as turning
-        ctx.strokeStyle = 'rgba(236,231,220,0.08)';
+        ctx.strokeStyle = this.ink;
+        ctx.globalAlpha = 0.15;
         ctx.lineWidth = 1;
         for (let k = 0; k < 180; k++) {
             const a = base + (k / 180) * TAU - this.pos * step;
@@ -229,11 +233,8 @@ export class Dial {
             ctx.lineTo(cx + Math.cos(a) * (R - 98), cy + Math.sin(a) * (R - 98));
             ctx.stroke();
         }
+        ctx.globalAlpha = 1;
     }
-}
-
-function spaced(text) {
-    return text.split('').join(' ');
 }
 
 export function frequency(index) {

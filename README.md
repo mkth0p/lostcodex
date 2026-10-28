@@ -4,6 +4,8 @@ Endless ambient radio in the browser. Turn the dial through eight universes of s
 
 Open `index.html` through any static server and touch the dial to power on. Turning it gives static between stations; letting go settles on the nearest one after a moment and crossfades to it. Scan moves to a new station every few minutes. You can also type any code in the Station field: `ice-K7QX2M` plays in Ice, and a bare code like `K7QX2M` is given a universe by its hash. After a few seconds without input everything but the dial fades away, so it works as an installation screen.
 
+Each universe has its own look, like a label giving each release its own sleeve: Tide is Raster (black and white signal), Cathedral is Musica Viva (Swiss concert-poster arcs), Dub is Slice (the name cut into strips that echo), Ice is Frost (hairline fractures), Garden is Kankyō (pastel blocks after 80s environmental music sleeves), Ash is Photocopy (halftone on fluorescent paper), Orbit is Soft Signal (grained colour field under a grid) and Voices is Riso (vowels overprinted in two inks). Every poster reacts only to the notes being played, and any choice it makes is seeded by the station.
+
 ## Universes
 
 | Universe | Sound | Scenes |
@@ -45,7 +47,8 @@ station ──hash──▶ piece (universe, key, tempo, mood numbers)
 | `src/score/` | stations and pieces, lanes, scenes, the scene chain |
 | `src/dsp/` | filters, oscillators, reverb (8-line FDN), echo, limiter |
 | `src/engine/` | voices and the block renderer |
-| `src/web/` | AudioWorklet wrapper, the dial, page logic, visuals for each universe |
+| `src/web/` | AudioWorklet wrapper, the dial, page logic, and the poster canvas |
+| `src/web/looks.js` | one look per universe: page colours and a poster drawn from the notes |
 | `fonts/` | Basteleur and Compagnon by Velvetyne (SIL Open Font License) |
 | `scripts/render.mjs` | offline render to WAV |
 
