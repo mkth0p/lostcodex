@@ -3,6 +3,7 @@ import { normalizeStation, stationId, STATIONS_PER_UNIVERSE } from '../score/pie
 import { UNIVERSES, getUniverse } from '../universes.js';
 import { Dial, frequency } from './dial.js';
 import { Field } from './field.js';
+import { LOOKS } from './looks.js';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 const FADE = 3; // seconds of crossfade between stations
@@ -63,11 +64,18 @@ function show(id, { tuning = false } = {}) {
     $('name').textContent = universe.name;
     $('blurb').textContent = universe.blurb;
     $('freq').textContent = index === null
-        ? `${universe.name} · ${id.split('-').slice(1).join('-')}`
-        : `FM ${frequency(index).toFixed(1)} · ${universe.name} ${id.split('-')[1]}`;
-    document.documentElement.style.setProperty('--hue', universe.color);
+        ? 'Off the dial'
+        : `${frequency(index).toFixed(1)} FM`;
+    const look = LOOKS[universe.id];
+    const root = document.documentElement.style;
+    root.setProperty('--paper', look.paper);
+    root.setProperty('--ink', look.ink);
+    root.setProperty('--accent', look.accent);
+    document.body.dataset.look = universe.id;
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', look.paper);
     document.body.classList.toggle('tuning', tuning);
-    field.setUniverse(universe);
+    field.setStation(id, universe);
+    dial.setTheme(look);
 }
 
 function setStation(id) {
@@ -181,7 +189,7 @@ function onMessage(node, msg) {
     if (msg.type === 'state') {
         const s = msg.state;
         field.update(s);
-        $('now').textContent = `${NOTE_NAMES[s.tonic % 12]} ${s.mode} · ${s.scene || ''}`;
+        $('now').textContent = `${NOTE_NAMES[s.tonic % 12]} ${s.mode}, ${s.scene || ''}`;
     }
 }
 
@@ -220,7 +228,7 @@ async function requestWakeLock() {
 }
 
 const dial = new Dial($('dial'), {
-    bands: UNIVERSES.map((u) => ({ name: u.name, color: u.color })),
+    bands: UNIVERSES.map((u) => ({ name: u.name })),
     perBand: STATIONS_PER_UNIVERSE,
     onTick(index) {
         const id = stationId(Math.floor(index / STATIONS_PER_UNIVERSE), index % STATIONS_PER_UNIVERSE);
