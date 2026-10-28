@@ -42,6 +42,31 @@ export function formatOf(raw) {
     return formats[i % formats.length];
 }
 
+// Which pass over its universe's formats a station is: neon-01 and neon-07
+// play the same format, but neon-07 is the second pass, so it takes the next
+// option for every role of the palette and never shares its sound set.
+function formatPass(station, count) {
+    const code = station.split('-')[1];
+    const n = /^\d{2}$/.test(code) ? Number(code) : 0;
+    if (n >= 1 && n <= STATIONS_PER_UNIVERSE) return Math.floor((n - 1) / count);
+    return hashString(`pass:${station}`) % 97;
+}
+
+// A format's palette lists options for each role (bass, lead, pad, kit...).
+// A station plays one option per role, and keeps a second one that its
+// sections can swap in now and then, so a long listen keeps changing.
+export function paletteFor(format, station, count) {
+    const main = {};
+    const alt = {};
+    const pass = formatPass(station, count);
+    for (const [role, options] of Object.entries(format.palette || {})) {
+        const base = hashString(`${format.id}:${role}`) % options.length;
+        main[role] = options[(base + pass) % options.length];
+        alt[role] = options[(base + pass + 1) % options.length];
+    }
+    return { main, alt };
+}
+
 // A piece is the handful of numbers a station turns into. Everything else is
 // derived from these plus named random streams.
 export function createPiece(raw) {
@@ -89,6 +114,11 @@ export function createPiece(raw) {
             holdMax: h.holdMax * (1.2 - density * 0.4),
         },
     };
+    if (format) {
+        const { main, alt } = paletteFor(format, station, getUniverse(station.split('-')[0]).formats.length);
+        piece.palette = main;
+        piece.paletteAlt = alt;
+    }
     piece.sceneWeights = universe.sceneWeights ? { ...universe.sceneWeights } : Object.fromEntries(Object.entries(universe.scenes).map(([name, s]) => [
         name, typeof s.weight === 'function' ? s.weight(piece) : s.weight,
     ]));
