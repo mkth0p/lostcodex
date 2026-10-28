@@ -286,7 +286,7 @@ const NEON_FORMATS = [
             build: { weight: 0, build: (s, r, p) => buildUp(s, r, [
                 new FigureLane(s, r.fork('bass'), { gen: 'octaves', instrument: role(p, r, 'outrun', 'bass').ins, root: true, lo: 31, hi: 52, gain: 0.5 }),
                 new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'outrun', 'arp'), lo: 62, hi: 86, repeat: 0.9, gain: 0.9 }),
-                new DroneLane(s, r.fork('pad'), { sample: 'jup8pad', upper: true, gain: 0.045, cutoff: 2000, detune: 14, attack: 1, pump: 0.5, release: 2.5 }),
+                new DroneLane(s, r.fork('pad'), { sample: 'jup8pad', fifth: true, gain: 0.05, cutoff: 2000, detune: 14, attack: 1, pump: 0.5, release: 1.5 }),
             ]) },
             drop: { weight: 0, build: (s, r, p) => {
                 const bass = role(p, r, 'outrun', 'bass');
@@ -294,9 +294,9 @@ const NEON_FORMATS = [
                     new ImpactLane(s, r.fork('impact')),
                     new KitLane(s, r.fork('kit'), { clap: 0.08, hat: 0.08, open: 0.3, ...role(p, r, 'outrun', 'kit') }),
                     new FigureLane(s, r.fork('bass'), { gen: bass.gen, instrument: bass.ins, root: true, lo: 31, hi: 52, bias: 1, repeat: 0.7, gain: 0.8 }),
-                    new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'outrun', 'lead', 0.25), lo: 62, hi: 86, repeat: 0.75, legato: 1 }),
+                    new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'outrun', 'lead', 0.25), lo: 62, hi: 86, repeat: 0.75, legato: 1, extra: { release: 0.5 } }),
                     new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'outrun', 'arp'), lo: 64, hi: 88, repeat: 0.9, gain: 0.7 }),
-                    new DroneLane(s, r.fork('pad'), { sample: 'jup8pad', upper: true, gain: 0.045, cutoff: 1800, detune: 14, attack: 0.3, pump: 0.8, release: 2.5 }),
+                    new DroneLane(s, r.fork('pad'), { sample: 'jup8pad', fifth: true, gain: 0.05, cutoff: 1800, detune: 14, attack: 0.3, pump: 0.8, release: 1.5 }),
                 ];
             } },
             drive: { weight: 0, build: (s, r, p) => [
@@ -304,7 +304,7 @@ const NEON_FORMATS = [
                 new KitLane(s, r.fork('kit'), { style: 'breaks', kick: HARD_KICK, clap: 0.1, snare: 0.14, hat: 0.09, metal: 0.03 }),
                 new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: 'reese', root: true, lo: 28, hi: 47, bias: 1, repeat: 0.7, legato: 0.95 }),
                 new FigureLane(s, r.fork('brass'), { gen: 'chord', hits: [1, 3], instrument: 'cs80', lo: 55, hi: 76, repeat: 0.85, legato: 1.2 }),
-                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'outrun', 'lead', 0.4), lo: 62, hi: 86, repeat: 0.7 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'outrun', 'lead', 0.4), lo: 62, hi: 86, repeat: 0.7, extra: { release: 0.5 } }),
             ] },
             break: { weight: 0, build: (s, r, p) => [
                 new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
@@ -609,13 +609,13 @@ const DUB_FORMATS = [
             rain: { weight: 1, build: (s, r, p) => [
                 new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
                 new KitLane(s, r.fork('kit'), { style: 'halfstep', kick: DUB_KICK, kickGain: 0.5, clap: 0.05, hat: 0.05, perc: 0.03 }),
-                new DroneLane(s, r.fork('pad'), { sample: role(p, r, 'sub', 'pad', 0.3), upper: true, gain: 0.04, cutoff: 900, detune: 16, attack: 6, wow: 8, release: 6 }),
+                new DroneLane(s, r.fork('pad'), { sample: role(p, r, 'sub', 'pad', 0.3), fifth: true, gain: 0.045, cutoff: 900, detune: 16, attack: 6, wow: 8, release: 3 }),
                 new FigureLane(s, r.fork('lead'), { gen: 'walk', density: 0.35, instrument: role(p, r, 'sub', 'lead', 0.3), lo: 64, hi: 86, repeat: 0.85 }),
                 new BedLane(s, r.fork('bed'), { gain: 0.025, tone: 6000, low: 700, crackle: 60 }),
             ] },
             build: { weight: 0, build: (s, r, p) => buildUp(s, r, [
                 new KitLane(s, r.fork('kit'), { style: 'halfstep', kick: DUB_KICK, kickGain: 0.6, clap: 0, hat: 0.07 }),
-                new DroneLane(s, r.fork('pad'), { sample: role(p, r, 'sub', 'pad'), upper: true, gain: 0.04, cutoff: 1400, detune: 16, attack: 1, release: 2.5 }),
+                new DroneLane(s, r.fork('pad'), { sample: role(p, r, 'sub', 'pad'), fifth: true, gain: 0.045, cutoff: 1400, detune: 16, attack: 1, release: 1.5 }),
             ]) },
             drop: { weight: 0, build: (s, r, p) => {
                 const bass = role(p, r, 'sub', 'bass');
@@ -624,7 +624,7 @@ const DUB_FORMATS = [
                     new KitLane(s, r.fork('kit'), { style: 'halfstep', kick: DUB_KICK, clap: 0.15, snare: 0.1, hat: 0.07, perc: 0.04 }),
                     new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: bass.ins, extra: bass.extra, root: true, lo: 28, hi: 43, bias: 1, repeat: 0.8, legato: 1 }),
                     new FigureLane(s, r.fork('lead'), { gen: 'splatter', bias: 2, instrument: role(p, r, 'sub', 'lead', 0.3), lo: 64, hi: 86, repeat: 0.8 }),
-                    new DroneLane(s, r.fork('pad'), { sample: role(p, r, 'sub', 'pad'), upper: true, gain: 0.03, cutoff: 900, detune: 16, attack: 1, release: 2.5 }),
+                    new DroneLane(s, r.fork('pad'), { sample: role(p, r, 'sub', 'pad'), fifth: true, gain: 0.035, cutoff: 900, detune: 16, attack: 1, release: 1.5 }),
                 ];
             } },
             drive: { weight: 0, build: (s, r, p) => [
@@ -636,7 +636,7 @@ const DUB_FORMATS = [
             break: { weight: 0, build: (s, r, p) => [
                 new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
                 new KitLane(s, r.fork('kit'), { style: 'halfstep', kick: DUB_KICK, kickGain: 0.4, clap: 0.05, hat: 0.05 }),
-                new DroneLane(s, r.fork('voice'), { sample: role(p, r, 'sub', 'pad', 0.4), grain: { density: 3, size: [0.2, 0.6], octaves: [0, 1], reverse: 0.4 }, octave: 1, gain: 0.035, attack: 6, release: 8, reverb: 0.8, echo: 0.5 }),
+                new DroneLane(s, r.fork('voice'), { sample: role(p, r, 'sub', 'pad', 0.4), grain: { density: 2, size: [0.2, 0.6], octaves: [0, 1], reverse: 0.4 }, octave: 1, gain: 0.035, attack: 6, release: 8, reverb: 0.8, echo: 0.5 }),
                 new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: role(p, r, 'sub', 'lead', 0.4), lo: 64, hi: 86, rest: [4, 10], repeat: 0.7 }),
             ] },
         },
