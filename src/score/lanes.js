@@ -1,4 +1,5 @@
 import { notesInRange, pitchClass } from '../core/theory.js';
+import { PATCHES } from './patches.js';
 
 // Lanes are tiny state machines owned by a scene. Each fires at `next`,
 // returns events and moves `next` on. They never read wall-clock time, so
@@ -62,6 +63,10 @@ function nearestFifth(chord, root) {
 export function instrumentEvent(name, time, midi, level, pan, rng, extra = {}) {
     const vel = extra.vel ?? 0.3 + rng.next() * 0.4;
     const base = { time, midi, pan };
+    const patch = PATCHES[name];
+    if (patch) {
+        return { ...patch, gain: patch.gain * level * (patch.vel ? 0.6 + 0.6 * vel : 1), velocity: vel, ...base, ...extra };
+    }
     let ev;
     switch (name) {
         case 'piano':

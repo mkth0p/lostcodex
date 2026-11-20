@@ -221,7 +221,120 @@ export const GENERATORS = {
             steps: (steps[i + 1] ?? STEPS) - step,
         }));
     },
+    // complextro: a sixteenth line on the root and its octaves that switches
+    // patch every few notes (Porter Robinson, Wolfgang Gartner, Zedd), with
+    // rests, slides and the odd ratchet; the order of the patches is part of
+    // the figure, so the switch-ups come back as written
+    complex(rng, grid, { patches = [], fill = 0.72 }) {
+        const count = patches.length || 4;
+        const every = rng.weighted([[1, 2], [2, 3], [3, 1], [4, 2]]);
+        const order = Array.from({ length: count }, (_, i) => i);
+        for (let i = count - 1; i > 0; i--) {
+            const j = rng.int(0, i);
+            [order[i], order[j]] = [order[j], order[i]];
+        }
+        const cell = rng.pick([[0, 0, 12, 0], [0, 12, 0, 0], [0, 0, 0, 12], [0, null, 0, 12], [0, 0, null, 0], [0, 12, null, 24], [0, null, 12, 0]]);
+        const notes = [];
+        let k = 0;
+        for (let s = 0; s < STEPS; s++) {
+            const oct = cell[s % 4];
+            if (oct === null || (s % 8 && !rng.chance(fill))) continue;
+            const patch = rng.chance(0.15) ? rng.int(0, count - 1) : order[Math.floor(k / every) % count];
+            notes.push({
+                step: s,
+                row: rng.chance(0.12) ? 1 : 0,
+                oct,
+                steps: rng.weighted([[1, 4], [2, 3], [3, 1], [4, 1]]),
+                patch,
+                slide: rng.chance(0.1),
+                ratchet: rng.chance(0.07) ? rng.pick([2, 3, 4]) : 0,
+            });
+            k++;
+        }
+        return notes;
+    },
+    // dubstep: long notes, each its own patch and its own wobble speed
+    // (cycles per beat), short ones sometimes doubled
+    wub(rng, grid, { patches = [] }) {
+        const count = patches.length || 4;
+        const lens = rng.pick([[4, 4, 8, 4, 4, 8], [8, 2, 2, 4, 8, 8], [6, 6, 4, 8, 8], [3, 3, 2, 8, 4, 4, 8], [2, 2, 4, 2, 2, 4, 8, 8], [12, 4, 6, 6, 4]]);
+        const notes = [];
+        for (let s = 0, i = 0; s < STEPS; s += lens[i % lens.length], i++) {
+            const len = lens[i % lens.length];
+            if (s && rng.chance(0.12)) continue;
+            notes.push({
+                step: s,
+                row: rng.chance(0.2) ? 1 : 0,
+                oct: rng.chance(0.25) ? 12 : 0,
+                steps: len,
+                patch: rng.int(0, count - 1),
+                lfoDiv: rng.pick([0.5, 1, 1, 1.5, 2, 2, 3, 4]),
+                ratchet: len <= 2 && rng.chance(0.4) ? 2 : 0,
+                slide: rng.chance(0.15),
+            });
+        }
+        return notes;
+    },
+    // vocal chops: syllables of the station's word on a syncopated rhythm,
+    // high in the chord; some stutter, some jump an octave (pitched-up chops)
+    chop(rng, grid, { word = [{ vowels: ['a'] }], stutter = 0.14, up = 0.15 }) {
+        const rhythm = rng.pick([[0, 3, 6, 8, 11, 14], [0, 2, 3, 6, 8, 10, 11, 14], [0, 3, 6, 10, 12], [2, 4, 6, 10, 14], [0, 6, 8, 10, 14], [0, 1, 2, 3, 8, 11, 14], [0, 3, 4, 7, 8, 12]]);
+        const notes = [];
+        let k = rng.int(0, word.length - 1);
+        for (const half of [0, 16]) {
+            const keep = half && rng.chance(0.5) ? rhythm.filter(() => rng.chance(0.75)) : rhythm;
+            keep.forEach((step, i) => {
+                const next = keep[i + 1] ?? 16;
+                const syl = word[k++ % word.length];
+                notes.push({
+                    step: half + step,
+                    row: rng.weighted([[2, 1], [3, 3], [4, 3], [5, 2]]),
+                    oct: rng.chance(up) ? 12 : 0,
+                    steps: Math.max(1, Math.min(4, next - step)),
+                    ratchet: rng.chance(stutter) ? rng.pick([2, 3, 4]) : 0,
+                    ev: { vowels: syl.vowels, cons: syl.cons },
+                });
+            });
+        }
+        return notes;
+    },
+    // trance: the bass rolls on the sixteenths between the kicks
+    roll(rng, grid, { offsets = null }) {
+        const offs = offsets ?? rng.pick([[1, 2, 3], [1, 2, 3], [2, 3], [1, 3], [2]]);
+        const jump = rng.chance(0.4);
+        const notes = [];
+        for (let beat = 0; beat < STEPS; beat += 4) {
+            for (const o of offs) notes.push({ step: beat + o, row: 0, oct: jump && o === 3 && beat % 8 === 4 ? 12 : 0, steps: 1 });
+        }
+        return notes;
+    },
+    // the whole chord on a rhythm: offbeat house stabs, a 3-3-2, a future
+    // bass swell, a complextro syncopation
+    stabs(rng, grid, { pattern = null, rows = [1, 4] }) {
+        const p = pattern ?? rng.pick(STAB_RHYTHMS);
+        const notes = [];
+        for (const [step, steps] of p) for (let row = rows[0]; row <= rows[1]; row++) notes.push({ step, row, steps });
+        return notes;
+    },
+    // a trance gate: the chord chopped in sixteenths by a fixed pattern
+    gate(rng, grid, { rows = [1, 4] }) {
+        const bits = rng.pick(['1011101110111011', '1101101101101101', '1110111011101110', '1011011010110110', '1111011101110111']);
+        const notes = [];
+        for (let s = 0; s < STEPS; s++) {
+            if (bits[s % 16] === '1') for (let row = rows[0]; row <= rows[1]; row++) notes.push({ step: s, row, steps: 1 });
+        }
+        return notes;
+    },
 };
+
+// [step, length] pairs over two bars
+const STAB_RHYTHMS = [
+    [2, 6, 10, 14, 18, 22, 26, 30].map((s) => [s, 2]),
+    [[0, 3], [3, 3], [6, 2], [8, 3], [11, 3], [14, 2], [16, 3], [19, 3], [22, 2], [24, 3], [27, 3], [30, 2]],
+    [[0, 6], [6, 4], [10, 6], [16, 6], [22, 4], [26, 6]],
+    [[0, 2], [3, 1], [6, 2], [10, 1], [12, 2], [14, 2], [16, 2], [19, 1], [22, 2], [24, 1], [27, 1], [30, 2]],
+    [[0, 3], [3, 3], [6, 4], [12, 4], [16, 3], [19, 3], [22, 2], [26, 6]],
+];
 
 // Cut the two bars into slots and let later slots repeat earlier ones,
 // so a figure answers itself (cluster.lua's arrange step).
@@ -298,7 +411,7 @@ export class FigureLane extends Lane {
         const o = this.o;
         const rng = this.build;
         let notes = GENERATORS[o.gen](rng, this.grid, o);
-        if (!['arp', 'line', 'pump', 'octaves', 'trap', 'skank', 'bubble'].includes(o.gen)) notes = arrange(rng, notes, o.clusters, o.repeat);
+        if (!['arp', 'line', 'pump', 'octaves', 'trap', 'skank', 'bubble', 'roll', 'stabs', 'gate', 'wub', 'chop'].includes(o.gen)) notes = arrange(rng, notes, o.clusters, o.repeat);
         notes = clean(notes);
         if (o.interlock !== undefined) {
             notes = notes.filter((n) => n.step % 2 === o.interlock).map((n) => ({ ...n, row: n.row + o.interlock }));
@@ -342,18 +455,33 @@ export class FigureLane extends Lane {
         if (!voices.length) return [];
         const o = this.o;
         const fade = smooth((level - 0.12) / 0.4);
-        return here.map((n) => {
+        const out = [];
+        for (const n of here) {
             const midi = voices[Math.min(n.row, voices.length - 1)] + (n.oct || 0);
             // a slide starts from the lane's last note (303 and 808 glides)
             const slide = n.slide && this.last !== null ? { fromMidi: this.last } : {};
             this.last = midi;
-            return instrumentEvent(
-                o.instrument, t, midi,
-                fade * o.gain * (0.55 + 0.45 * n.vel), this.pan, this.rng,
-                // `ring` lets struck instruments sound out instead of being damped
-                { ...(o.ring ? {} : { dur: n.steps * this.step * o.legato }), vel: n.vel, ...slide, ...o.extra },
-            );
-        });
+            // a lane can switch patch from note to note (complextro)
+            const instrument = o.patches ? o.patches[(n.patch || 0) % o.patches.length] : o.instrument;
+            const per = { ...n.ev };
+            if (n.lfoDiv) per.lfo = n.lfoDiv * this.scene.piece.bpm / 60;
+            // the chord as a chip arpeggio, from this note up
+            // ducked by an imagined kick on every beat (side-chain)
+            if (o.pump) per.pump = { beat: 60 / this.scene.piece.bpm, depth: o.pump };
+            if (o.chordArp) per.arp = [0, ...voices.filter((v) => v > midi && v < midi + 12).map((v) => v - midi)];
+            const gain = fade * o.gain * (0.55 + 0.45 * n.vel);
+            const len = n.steps * this.step;
+            const hits = n.ratchet > 1 ? n.ratchet : 1;
+            for (let j = 0; j < hits; j++) {
+                out.push(instrumentEvent(
+                    instrument, t + (j * len) / hits, midi,
+                    gain * (j ? 0.85 : 1), this.pan, this.rng,
+                    // `ring` lets struck instruments sound out instead of being damped
+                    { ...(o.ring ? {} : { dur: (len / hits) * (hits > 1 ? 0.7 : o.legato) }), vel: n.vel, ...(j ? {} : slide), ...per, ...o.extra },
+                ));
+            }
+        }
+        return out;
     }
 }
 
@@ -375,8 +503,12 @@ const KICKS = {
     onedrop: [[8]],
     // UK steppers: a kick on every beat under a half-time snare
     steppers: [[0, 4, 8, 12]],
+    // hyperpop bounce: half-time, the kick skipping around the clap
+    bounce: [[0, 3, 6, 10], [0, 7, 10, 11], [0, 3, 10, 14], [0, 6, 7, 10]],
+    // drum & bass: the two-step, snares on two and four of the half-time bar
+    dnb: [[0, 10], [0, 7, 10], [0, 10, 11], [0, 6, 10]],
 };
-const HALF_TIME = ['halfstep', 'trap', 'tribal', 'onedrop', 'steppers'];
+const HALF_TIME = ['halfstep', 'trap', 'tribal', 'onedrop', 'steppers', 'bounce'];
 
 export class KitLane extends Lane {
     constructor(scene, rng, { style = 'four', kick = {}, kickGain = 1, gain = 1, clap = 0.11, snare = 0, hat = 0.1, perc = 0.06, metal = 0, open = 0.3, toms = 0, rolls = 0 } = {}) {
@@ -400,13 +532,14 @@ export class KitLane extends Lane {
             else for (const s of [4, 12]) base.push({ step: half + s, kind: 'clap' });
         }
         // hats: eighths, sixteenths or the shared grid, with Gyro accents
-        const hatEvery = style === 'halfstep' || style === 'tribal' ? 0 : style === 'trap' || style === 'onedrop' ? 2 : b.pick([1, 2, 2]);
+        const rolling = style === 'trap' || style === 'bounce';
+        const hatEvery = style === 'halfstep' || style === 'tribal' ? 0 : rolling || style === 'onedrop' ? 2 : b.pick([1, 2, 2]);
         for (let s = 0; s < STEPS; s++) {
             const onGrid = this.grid.onsets.includes(s);
             // EBM and techno: the open hat on every offbeat
             const open = style === 'ebm' ? s % 4 === 2 : style === 'four' && s % 4 === 2 && b.chance(this.open * 2);
             // trap: now and then the hat breaks into a roll of triplets or 32nds
-            if (style === 'trap' && s % 2 === 0 && b.chance(rolls)) base.push({ step: s, kind: 'roll', n: b.pick([3, 4, 6]), len: b.pick([1, 2, 2]) });
+            if (rolling && s % 2 === 0 && b.chance(rolls)) base.push({ step: s, kind: 'roll', n: b.pick([3, 4, 6]), len: b.pick([1, 2, 2]) });
             else if (hatEvery ? s % hatEvery === 0 : onGrid || b.chance(0.3)) base.push({ step: s, kind: open ? 'open' : 'hat' });
             if (onGrid && s % 4 !== 0 && b.chance(0.5)) base.push({ step: s, kind: 'perc' });
             if (toms && onGrid && s % 8 !== 0 && b.chance(0.6)) base.push({ step: s, kind: 'tom', pitch: b.pick([7, 12, 15, 19]) });

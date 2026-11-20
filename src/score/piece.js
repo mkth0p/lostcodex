@@ -6,6 +6,7 @@ import { UNIVERSES, getUniverse } from '../universes.js';
 // A bare code with no known universe prefix is assigned one by its hash.
 
 export const STATIONS_PER_UNIVERSE = 12;
+const BARE_UNIVERSES = 11;
 
 export function normalizeStation(raw) {
     const text = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24);
@@ -13,7 +14,9 @@ export function normalizeStation(raw) {
     const [head, ...rest] = text.split('-');
     if (getUniverse(head) && rest.join('')) return `${head}-${rest.join('').toUpperCase()}`;
     const code = text.replace(/-/g, '').toUpperCase() || 'LOSTCODEX';
-    const universe = UNIVERSES[hashString(code) % UNIVERSES.length];
+    // only the first eleven universes take bare codes, so a code someone
+    // saved before Pixel was added still plays where it always did
+    const universe = UNIVERSES[hashString(code) % Math.min(BARE_UNIVERSES, UNIVERSES.length)];
     return `${universe.id}-${code}`;
 }
 

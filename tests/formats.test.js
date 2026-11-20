@@ -6,7 +6,7 @@ import { getUniverse } from '../src/universes.js';
 const code = (u, n) => `${u}-${String(n).padStart(2, '0')}`;
 
 describe('formats', () => {
-    for (const u of ['neon', 'dub']) {
+    for (const u of ['neon', 'dub', 'pixel']) {
         const formats = getUniverse(u).formats;
 
         it(`puts every ${u} format on the dial`, () => {

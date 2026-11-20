@@ -3,6 +3,8 @@ import {
 } from './score/lanes.js';
 import { CycleLane, FigureLane, KitLane } from './score/figure.js';
 import { ImpactLane, RiserLane, RollLane } from './score/song.js';
+import { wordFor } from './score/patches.js';
+import { Rng } from './core/rng.js';
 
 // A universe is a whole sound world: its scales, tuning, tempo, harmony
 // pace, room, and the scenes it moves between. A code picks a station inside
@@ -643,7 +645,423 @@ const DUB_FORMATS = [
     },
 ];
 
-for (const f of [...NEON_FORMATS, ...DUB_FORMATS]) PALETTES[f.id] = f.palette;
+// Pixel: hyperpop and electro after Ninajirachi (I Love My Computer, girl
+// EDM): complextro, bubblegum bass, blog house, Y2K trance and dubstep-sized
+// drops, made on a laptop, with her voice chopped, pitched up and treated as
+// an instrument, and a build-up and a drop in every song (Mixmag, Bandcamp
+// Daily, The Needle Drop). Every format plays a song (src/score/song.js)
+// cut up by edits on the master: rolls, stutters, tape stops, reverses and
+// crushed beats. All of its instruments are synthesized (src/score/patches.js),
+// and no two formats share one.
+
+// a station's own word, the syllables its vocal chops are cut from
+const wordOf = (p) => wordFor(new Rng(p.seed).fork('word'), 4);
+const chops = (s, r, p, instrument, o = {}) => new FigureLane(s, r.fork(o.fork || 'vox'), {
+    gen: 'chop', instrument, word: wordOf(p), lo: 64, hi: 84, repeat: 0.7, legato: 0.85, pan: 0.1, ...o,
+});
+// the build-up of every Pixel format: the roll and the riser, the chops
+// stuttering harder, plus what the format adds
+const pixelBuild = (s, r, p, vox, lanes) => buildUp(s, r, [chops(s, r, p, vox, { stutter: 0.45, up: 0.3, gain: 0.8 }), ...lanes]);
+// seven detuned saws held on the chord, ducking on every beat
+const sawPad = (s, r, o = {}) => new DroneLane(s, r.fork(o.fork || 'pad'), {
+    upper: true, oscs: 7, detune: 24, gain: 0.03, cutoff: 1600, attack: 0.4, release: 1.5, reverb: 0.6, pump: 0.7, ...o,
+});
+
+// kicks: electro house, a clipped 808, blog house, trance, brostep, d&b
+const CX_KICK = { tone: 2400, punch: 160, sweep: 0.035, decay: 0.38, click: 0.7, drive: 1.3 };
+const BG_KICK = { tone: 3000, punch: 120, sweep: 0.05, decay: 0.55, click: 0.6, drive: 2.2 };
+const BH_KICK = { tone: 1800, punch: 130, sweep: 0.03, decay: 0.3, click: 0.5, drive: 1.6 };
+const TR_KICK = { tone: 1600, punch: 150, sweep: 0.04, decay: 0.45, click: 0.5, drive: 0.9 };
+const RR_KICK = { tone: 2600, punch: 170, sweep: 0.03, decay: 0.4, click: 0.8, drive: 1.5 };
+const HZ_KICK = { tone: 2200, punch: 150, sweep: 0.025, decay: 0.3, click: 0.7, drive: 1.0 };
+
+const PIXEL_FORMATS = [
+    {
+        id: 'complextro',
+        label: 'Complextro',
+        refs: 'Ninajirachi, Porter Robinson, Wolfgang Gartner, Zedd',
+        blurb: 'A bass that changes its sound every few notes, electro-house stabs, chopped vocals and a drop every minute.',
+        modes: [['aeolian', 3], ['dorian', 2], ['phrygian', 1]],
+        tonic: [40, 46],
+        bpm: [126, 130],
+        swing: [0, 0],
+        song: { bars: { intro: [8], rain: [8, 16], build: [8], drop: [16], break: [8], build2: [4, 8], drop2: [16, 32] }, glitch: { rate: 0.8, stutter: 0.4, crush: 0.15 } },
+        harmony: { holdMin: 8, holdMax: 16, pedalProb: 0.1, shapes: ['seventh', 'add9', 'open'], loops: [[0, 5, 3, 4], [0, 3, 5, 4], [0, 6, 5, 3], [0, 4, 5, 3]], loopBars: [2] },
+        reverb: { t60: [2.5, 4], damping: [7000, 10000], size: 1.3 },
+        echoBeats: 0.75,
+        opening: ['rain'],
+        palette: {
+            bass: [['cx_growl', 'cx_square', 'cx_fm', 'cx_laser'], ['cx_yoi', 'cx_saw', 'cx_wob', 'cx_fold'], ['cx_reese', 'cx_bark', 'cx_pulse', 'cx_zap']],
+            stab: ['cx_stab', 'cx_brass', 'cx_organ'],
+            lead: ['cx_lead', 'cx_chip', 'cx_pluck'],
+            vox: ['cx_vox', 'cx_voxlo', 'cx_voxair'],
+            kit: [
+                { kick: CX_KICK, hat: 0.09, open: 0.4 },
+                { kick: { ...CX_KICK, decay: 0.5, tone: 1800 }, hat: 0.1, open: 0.2, perc: 0.07 },
+                { kick: { ...CX_KICK, click: 1, punch: 190 }, hat: 0.08, open: 0.5 },
+            ],
+        },
+        scenes: {
+            // the verse: the chops over a filtered saw pad, hats ticking
+            rain: { weight: 1, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                sawPad(s, r, { cutoff: 1300 }),
+                chops(s, r, p, role(p, r, 'complextro', 'vox', 0.3), { gain: 0.9 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'complextro', 'lead', 0.3), lo: 64, hi: 86, repeat: 0.75, gain: 0.6 }),
+                new KitLane(s, r.fork('hats'), { kickGain: 0, clap: 0, hat: 0.06, open: 0.3 }),
+            ] },
+            build: { weight: 0, build: (s, r, p) => pixelBuild(s, r, p, role(p, r, 'complextro', 'vox'), [
+                new KitLane(s, r.fork('kit'), { style: 'four', kick: CX_KICK, kickGain: 0.8, clap: 0, hat: 0.07 }),
+                new FigureLane(s, r.fork('stab'), { gen: 'stabs', instrument: role(p, r, 'complextro', 'stab'), lo: 52, hi: 76, repeat: 0.8, gain: 0.7 }),
+            ]) },
+            // the switch-up: one bass line, a new patch every few notes
+            drop: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'four', clap: 0.15, snare: 0.12, ...role(p, r, 'complextro', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'complex', patches: role(p, r, 'complextro', 'bass'), root: true, lo: 33, hi: 50, repeat: 0.7, legato: 0.85, pan: 0, pump: 0.5 }),
+                new FigureLane(s, r.fork('stab'), { gen: 'stabs', instrument: role(p, r, 'complextro', 'stab', 0.25), lo: 55, hi: 79, repeat: 0.8, gain: 0.75, pump: 0.6 }),
+                chops(s, r, p, role(p, r, 'complextro', 'vox'), { gain: 0.8 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'complextro', 'lead', 0.25), lo: 67, hi: 88, repeat: 0.75, gain: 0.55 }),
+            ] },
+            // the second drop: the same patches wobbling, the lead as an arpeggio
+            drive: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'four', clap: 0.16, snare: 0.14, ...role(p, r, 'complextro', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'wub', patches: role(p, r, 'complextro', 'bass'), root: true, lo: 31, hi: 48, repeat: 0.75, legato: 0.95, pan: 0, pump: 0.5 }),
+                new FigureLane(s, r.fork('stab'), { gen: 'stabs', instrument: role(p, r, 'complextro', 'stab'), lo: 55, hi: 79, repeat: 0.85, gain: 0.7 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'complextro', 'lead', 0.3), lo: 67, hi: 91, repeat: 0.9, gain: 0.5 }),
+            ] },
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                sawPad(s, r, { cutoff: 2200, attack: 1, pump: 0.3, gain: 0.035 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: role(p, r, 'complextro', 'lead', 0.3), lo: 64, hi: 86, rest: [1, 4], repeat: 0.7 }),
+                chops(s, r, p, role(p, r, 'complextro', 'vox', 0.3), { stutter: 0, gain: 0.7, fork: 'vox2' }),
+            ] },
+        },
+    },
+    {
+        id: 'bubblegum',
+        label: 'Bubblegum',
+        refs: 'Ninajirachi, SOPHIE, PC Music, Kero Kero Bonito',
+        blurb: 'Bubblegum bass: a rubber bassline, latex drips, chipmunk vocal chops and bells, sweet until it clips.',
+        modes: [['ionian', 3], ['lydian', 2], ['mixolydian', 1]],
+        tonic: [41, 47],
+        bpm: [150, 160],
+        swing: [0, 0.03],
+        song: { bars: { intro: [8], rain: [8], build: [4, 8], drop: [16], break: [8], build2: [4], drop2: [16] }, glitch: { rate: 0.85, stutter: 0.5, crush: 0.25 } },
+        harmony: { holdMin: 6, holdMax: 12, pedalProb: 0.05, shapes: ['add9', 'seventh', 'sus2'], loops: [[0, 4, 5, 3], [0, 5, 3, 4], [0, 3, 4, 5], [0, 1, 3, 4]], loopBars: [1, 2] },
+        reverb: { t60: [2, 3.5], damping: [8000, 11000], size: 1.2 },
+        echoBeats: 0.75,
+        opening: ['rain'],
+        palette: {
+            bass: ['bg_rubber', 'bg_squish', 'bg_gum'],
+            latex: ['bg_latex', 'bg_drip', 'bg_snap'],
+            vox: ['bg_chip', 'bg_baby', 'bg_kawaii'],
+            lead: ['bg_saw', 'bg_bell', 'bg_flute'],
+            metal: ['bg_clang', 'bg_ting'],
+            chords: ['bg_chords', 'bg_keys'],
+            kit: [
+                { style: 'bounce', kick: BG_KICK, clap: 0.16, snare: 0.1, hat: 0.07, rolls: 0.3 },
+                { style: 'bounce', kick: { ...BG_KICK, decay: 0.8, punch: 90 }, clap: 0.18, hat: 0.08, rolls: 0.45 },
+                { style: 'four', kick: BG_KICK, clap: 0.15, hat: 0.08 },
+            ],
+        },
+        scenes: {
+            rain: { weight: 1, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new FigureLane(s, r.fork('chords'), { gen: 'stabs', instrument: role(p, r, 'bubblegum', 'chords', 0.3), lo: 57, hi: 79, repeat: 0.85, gain: 0.8 }),
+                chops(s, r, p, role(p, r, 'bubblegum', 'vox', 0.3), { up: 0.3, gain: 0.9 }),
+                new FigureLane(s, r.fork('latex'), { gen: 'splatter', bias: 1, instrument: role(p, r, 'bubblegum', 'latex'), lo: 72, hi: 96, repeat: 0.8, gain: 0.6 }),
+                new KitLane(s, r.fork('hats'), { style: 'bounce', kickGain: 0, clap: 0.06, hat: 0.06, rolls: 0.2 }),
+            ] },
+            build: { weight: 0, build: (s, r, p) => pixelBuild(s, r, p, role(p, r, 'bubblegum', 'vox'), [
+                new FigureLane(s, r.fork('chords'), { gen: 'gate', instrument: role(p, r, 'bubblegum', 'chords'), lo: 57, hi: 79, repeat: 0.9, gain: 0.6 }),
+                new FigureLane(s, r.fork('latex'), { gen: 'splatter', instrument: role(p, r, 'bubblegum', 'latex'), lo: 72, hi: 96, repeat: 0.8, gain: 0.6 }),
+            ]) },
+            // the rubber bass bouncing under the chops, latex everywhere
+            drop: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), role(p, r, 'bubblegum', 'kit')),
+                new FigureLane(s, r.fork('bass'), { gen: 'trap', instrument: role(p, r, 'bubblegum', 'bass'), root: true, lo: 33, hi: 48, legato: 0.95, pan: 0 }),
+                chops(s, r, p, role(p, r, 'bubblegum', 'vox'), { up: 0.35, stutter: 0.25 }),
+                new FigureLane(s, r.fork('latex'), { gen: 'splatter', bias: 0, instrument: role(p, r, 'bubblegum', 'latex', 0.3), lo: 72, hi: 96, repeat: 0.8, gain: 0.7 }),
+                new FigureLane(s, r.fork('metal'), { gen: 'chord', hits: [1, 3], instrument: role(p, r, 'bubblegum', 'metal'), lo: 76, hi: 96, repeat: 0.9, gain: 0.8 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'bubblegum', 'lead', 0.3), lo: 69, hi: 91, repeat: 0.75, gain: 0.6 }),
+            ] },
+            // the chops take over, stuttering on top of a gated chord
+            drive: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { ...role(p, r, 'bubblegum', 'kit'), rolls: 0.5 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', instrument: role(p, r, 'bubblegum', 'bass', 0.3), root: true, lo: 33, hi: 48, bias: 1, legato: 0.9, pan: 0 }),
+                chops(s, r, p, role(p, r, 'bubblegum', 'vox'), { up: 0.5, stutter: 0.45 }),
+                new FigureLane(s, r.fork('chords'), { gen: 'gate', instrument: role(p, r, 'bubblegum', 'chords'), lo: 57, hi: 79, repeat: 0.9, gain: 0.6 }),
+                new FigureLane(s, r.fork('latex'), { gen: 'splatter', bias: 1, instrument: role(p, r, 'bubblegum', 'latex'), lo: 72, hi: 96, repeat: 0.8, gain: 0.6 }),
+            ] },
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new FigureLane(s, r.fork('chords'), { gen: 'stabs', pattern: [[0, 8], [8, 8], [16, 8], [24, 8]], instrument: role(p, r, 'bubblegum', 'chords', 0.3), lo: 57, hi: 79, gain: 0.8, legato: 1 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: role(p, r, 'bubblegum', 'lead', 0.3), lo: 67, hi: 91, rest: [1, 4], repeat: 0.7 }),
+                chops(s, r, p, role(p, r, 'bubblegum', 'vox', 0.3), { stutter: 0, up: 0.2, gain: 0.7, fork: 'vox2' }),
+                new FigureLane(s, r.fork('bells'), { gen: 'arp', rate: 2, instrument: role(p, r, 'bubblegum', 'metal'), lo: 76, hi: 96, repeat: 0.9, gain: 0.5 }),
+            ] },
+        },
+    },
+    {
+        id: 'bloghouse',
+        label: 'Bloghouse',
+        refs: 'Ninajirachi, Justice, Crystal Castles, Daft Punk',
+        blurb: 'Blog house in 2008 colours: a fuzzed electro bass, Atari leads, a deadpan robot voice and filter sweeps.',
+        modes: [['aeolian', 2], ['dorian', 2], ['phrygian', 1]],
+        tonic: [40, 45],
+        bpm: [122, 128],
+        swing: [0.02, 0.06],
+        song: { bars: { intro: [16], rain: [16], build: [8], drop: [16, 32], break: [8, 16], build2: [8], drop2: [32] }, glitch: { rate: 0.6, stutter: 0.3, crush: 0.3 } },
+        harmony: { holdMin: 8, holdMax: 16, pedalProb: 0.2, shapes: ['open', 'seventh', 'sus2'], loops: [[0, 5, 3, 4], [0, 6, 5, 6], [0, 3, 6, 4]], loopBars: [2, 4] },
+        reverb: { t60: [2, 3.5], damping: [5000, 8000], size: 1.2 },
+        echoBeats: 0.75,
+        opening: ['rain'],
+        palette: {
+            bass: [{ ins: 'bh_fuzz', gen: 'pump' }, { ins: 'bh_buzz', gen: 'octaves' }, { ins: 'bh_hum', gen: 'bass' }],
+            lead: ['bh_atari', 'bh_nes', 'bh_tri'],
+            arp: ['bh_arp', 'bh_arp2'],
+            vox: ['bh_robot', 'bh_deadpan'],
+            stab: ['bh_disco', 'bh_organ'],
+            kit: [
+                { style: 'four', kick: BH_KICK, clap: 0.15, hat: 0.08, open: 0.5 },
+                { style: 'four', kick: { ...BH_KICK, decay: 0.4, drive: 2.2 }, clap: 0.13, snare: 0.1, hat: 0.1, open: 0.3 },
+                { style: 'electro', kick: BH_KICK, clap: 0.16, hat: 0.09 },
+            ],
+        },
+        scenes: {
+            // a kick from the start, a disco stab and the chip arpeggio
+            rain: { weight: 1, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new KitLane(s, r.fork('kit'), { style: 'four', kick: BH_KICK, kickGain: 0.8, clap: 0, hat: 0.07, open: 0.4 }),
+                new FigureLane(s, r.fork('stab'), { gen: 'stabs', instrument: role(p, r, 'bloghouse', 'stab', 0.3), lo: 55, hi: 76, repeat: 0.85, gain: 0.8 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'walk', density: 0.6, instrument: role(p, r, 'bloghouse', 'arp'), chordArp: true, lo: 60, hi: 79, repeat: 0.8, gain: 0.7 }),
+                chops(s, r, p, role(p, r, 'bloghouse', 'vox', 0.3), { stutter: 0.08, up: 0, gain: 0.8, lo: 57, hi: 76 }),
+            ] },
+            build: { weight: 0, build: (s, r, p) => {
+                const bass = role(p, r, 'bloghouse', 'bass');
+                return pixelBuild(s, r, p, role(p, r, 'bloghouse', 'vox'), [
+                    new FigureLane(s, r.fork('bass'), { gen: bass.gen, instrument: bass.ins, root: true, lo: 31, hi: 50, gain: 0.7, pan: 0 }),
+                    new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'bloghouse', 'arp'), chordArp: true, lo: 60, hi: 79, repeat: 0.9, gain: 0.6 }),
+                ]);
+            } },
+            drop: { weight: 0, build: (s, r, p) => {
+                const bass = role(p, r, 'bloghouse', 'bass');
+                return [
+                    new ImpactLane(s, r.fork('impact')),
+                    new KitLane(s, r.fork('kit'), role(p, r, 'bloghouse', 'kit')),
+                    new FigureLane(s, r.fork('bass'), { gen: bass.gen, instrument: bass.ins, root: true, lo: 31, hi: 50, bias: 1, repeat: 0.7, pan: 0, pump: 0.5 }),
+                    new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'bloghouse', 'lead', 0.3), lo: 64, hi: 88, repeat: 0.75, gain: 0.8 }),
+                    new FigureLane(s, r.fork('stab'), { gen: 'stabs', instrument: role(p, r, 'bloghouse', 'stab'), lo: 55, hi: 76, repeat: 0.85, gain: 0.7 }),
+                    chops(s, r, p, role(p, r, 'bloghouse', 'vox'), { stutter: 0.15, up: 0, gain: 0.8, lo: 57, hi: 76 }),
+                ];
+            } },
+            // the electro version: broken kick, the bass as a 303-ish line
+            drive: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'electro', kick: BH_KICK, clap: 0.16, snare: 0.08, hat: 0.09 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'acid', fill: 0.6, instrument: role(p, r, 'bloghouse', 'bass').ins, root: true, lo: 31, hi: 50, pan: 0 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'bloghouse', 'arp'), chordArp: true, lo: 64, hi: 84, repeat: 0.9, gain: 0.6 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'walk', density: 0.6, instrument: role(p, r, 'bloghouse', 'lead', 0.4), lo: 67, hi: 88, repeat: 0.8, gain: 0.7 }),
+            ] },
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new DroneLane(s, r.fork('pad'), { upper: true, oscs: 3, detune: 10, gain: 0.035, cutoff: 900, attack: 2, release: 3, reverb: 0.6 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: role(p, r, 'bloghouse', 'lead', 0.3), lo: 64, hi: 86, rest: [2, 5], repeat: 0.7 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 2, instrument: role(p, r, 'bloghouse', 'arp'), chordArp: true, lo: 60, hi: 79, repeat: 0.9, gain: 0.5 }),
+                chops(s, r, p, role(p, r, 'bloghouse', 'vox', 0.3), { stutter: 0, up: 0, gain: 0.7, lo: 57, hi: 76, fork: 'vox2' }),
+            ] },
+        },
+    },
+    {
+        id: 'trance',
+        label: 'Trance',
+        refs: 'Ninajirachi, ATB, Tiësto, the Y2K trance revival',
+        blurb: 'Y2K trance: a rolling bass, gated supersaws, a pluck arpeggio and a lead that goes for the sky.',
+        modes: [['aeolian', 3], ['dorian', 1], ['ionian', 1]],
+        tonic: [40, 46],
+        bpm: [136, 142],
+        swing: [0, 0],
+        song: { bars: { intro: [16], rain: [16], build: [8, 16], drop: [32], break: [16], build2: [8], drop2: [32] }, glitch: { rate: 0.4, stutter: 0.2, crush: 0.05 } },
+        harmony: { holdMin: 8, holdMax: 16, pedalProb: 0.05, shapes: ['add9', 'open', 'seventh'], loops: [[0, 5, 3, 4], [0, 3, 5, 4], [0, 6, 5, 4]], loopBars: [2, 4] },
+        reverb: { t60: [4, 7], damping: [7000, 10000], size: 1.6 },
+        echoBeats: 0.75,
+        opening: ['rain'],
+        palette: {
+            bass: ['tr_roll', 'tr_rollsq', 'tr_rollfm'],
+            gate: ['tr_gate', 'tr_gatesoft'],
+            lead: ['tr_lead', 'tr_pluck'],
+            arp: ['tr_arp', 'tr_bellarp'],
+            vox: ['tr_ah', 'tr_oh'],
+            kit: [
+                { kick: TR_KICK, clap: 0.12, hat: 0.07, open: 0.6 },
+                { kick: { ...TR_KICK, decay: 0.55, tone: 1200 }, clap: 0.1, snare: 0.08, hat: 0.08, open: 0.5 },
+            ],
+        },
+        scenes: {
+            rain: { weight: 1, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new KitLane(s, r.fork('kit'), { style: 'four', kick: TR_KICK, kickGain: 0.85, clap: 0, hat: 0.06, open: 0.5 }),
+                new FigureLane(s, r.fork('bass'), { gen: 'roll', instrument: role(p, r, 'trance', 'bass'), root: true, lo: 33, hi: 50, gain: 0.8, pan: 0 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'trance', 'arp', 0.3), lo: 64, hi: 88, repeat: 0.9, gain: 0.7 }),
+                new PhraseLane(s, r.fork('vox'), { bpm: p.bpm, instrument: role(p, r, 'trance', 'vox'), lo: 67, hi: 84, rest: [4, 10], repeat: 0.7 }),
+            ] },
+            build: { weight: 0, build: (s, r, p) => pixelBuild(s, r, p, role(p, r, 'trance', 'vox'), [
+                new FigureLane(s, r.fork('bass'), { gen: 'roll', instrument: role(p, r, 'trance', 'bass'), root: true, lo: 33, hi: 50, gain: 0.7, pan: 0 }),
+                new FigureLane(s, r.fork('gate'), { gen: 'gate', instrument: role(p, r, 'trance', 'gate'), lo: 57, hi: 81, repeat: 0.9, gain: 0.6 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'trance', 'arp'), lo: 64, hi: 88, repeat: 0.9, gain: 0.6 }),
+            ]) },
+            drop: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'four', ...role(p, r, 'trance', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'roll', instrument: role(p, r, 'trance', 'bass'), root: true, lo: 33, hi: 50, pan: 0 }),
+                new FigureLane(s, r.fork('gate'), { gen: 'gate', instrument: role(p, r, 'trance', 'gate', 0.25), lo: 57, hi: 81, repeat: 0.9, gain: 0.7, pump: 0.5 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'trance', 'lead', 0.25), lo: 67, hi: 91, repeat: 0.8, legato: 1, gain: 0.8 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'trance', 'arp'), lo: 64, hi: 88, repeat: 0.9, gain: 0.5 }),
+                sawPad(s, r, { cutoff: 2400, gain: 0.025, pump: 0.9 }),
+            ] },
+            // offbeat bass and stabs, the anthem lead
+            drive: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'four', ...role(p, r, 'trance', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'roll', offsets: [2], instrument: role(p, r, 'trance', 'bass'), root: true, lo: 33, hi: 50, legato: 1.2, pan: 0 }),
+                new FigureLane(s, r.fork('stab'), { gen: 'stabs', pattern: [2, 6, 10, 14, 18, 22, 26, 30].map((x) => [x, 2]), instrument: role(p, r, 'trance', 'gate'), lo: 57, hi: 81, gain: 0.8 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: role(p, r, 'trance', 'lead', 0.3), lo: 67, hi: 91, rest: [1, 3], repeat: 0.75 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 1, instrument: role(p, r, 'trance', 'arp'), lo: 64, hi: 88, repeat: 0.9, gain: 0.5 }),
+            ] },
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                sawPad(s, r, { cutoff: 1800, attack: 2, release: 3, gain: 0.04, pump: 0 }),
+                new PhraseLane(s, r.fork('lead'), { bpm: p.bpm, instrument: role(p, r, 'trance', 'lead', 0.3), lo: 67, hi: 91, rest: [2, 6], repeat: 0.7 }),
+                new PhraseLane(s, r.fork('vox'), { bpm: p.bpm / 2, instrument: role(p, r, 'trance', 'vox'), lo: 64, hi: 81, rest: [2, 6], repeat: 0.7 }),
+                new FigureLane(s, r.fork('arp'), { gen: 'arp', rate: 2, instrument: role(p, r, 'trance', 'arp', 0.3), lo: 64, hi: 88, repeat: 0.9, gain: 0.45 }),
+            ] },
+        },
+    },
+    {
+        id: 'roar',
+        label: 'Roar',
+        refs: 'Ninajirachi, Skrillex, Knife Party',
+        blurb: 'Drops the size of a stadium: half-time drums, basses that growl, yoi and wobble at a new speed every note, shouted chops.',
+        modes: [['phrygian', 2], ['aeolian', 2]],
+        tonic: [40, 45],
+        bpm: [140, 150],
+        swing: [0, 0],
+        song: { bars: { intro: [8], rain: [8], build: [8], drop: [16], break: [8], build2: [8], drop2: [16] }, glitch: { rate: 0.9, stutter: 0.45, crush: 0.2 } },
+        harmony: { holdMin: 8, holdMax: 16, pedalProb: 0.2, shapes: ['open', 'sus2', 'seventh'], loops: [[0, 5, 3, 6], [0, 3, 5, 4], [0, 1, 5, 6]], loopBars: [2] },
+        reverb: { t60: [2.5, 4.5], damping: [6000, 9000], size: 1.4 },
+        echoBeats: 0.75,
+        opening: ['rain'],
+        palette: {
+            bass: [['rr_growl', 'rr_wob', 'rr_yoi', 'rr_screech'], ['rr_tear', 'rr_robot', 'rr_metal', 'rr_gargle']],
+            lead: ['rr_scream', 'rr_siren'],
+            vox: ['rr_yeah', 'rr_shout'],
+            keys: ['rr_pluck', 'rr_keys'],
+            kit: [
+                { kick: RR_KICK, clap: 0.17, snare: 0.17, hat: 0.08, perc: 0.05 },
+                { kick: { ...RR_KICK, decay: 0.55, tone: 2000 }, clap: 0.15, snare: 0.2, hat: 0.09, metal: 0.04 },
+            ],
+        },
+        scenes: {
+            rain: { weight: 1, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                sawPad(s, r, { cutoff: 1100, pump: 0, attack: 1.5, gain: 0.03 }),
+                new FigureLane(s, r.fork('keys'), { gen: 'arp', rate: 2, instrument: role(p, r, 'roar', 'keys', 0.3), lo: 60, hi: 84, repeat: 0.9, gain: 0.8 }),
+                chops(s, r, p, role(p, r, 'roar', 'vox', 0.3), { stutter: 0.1, up: 0.1, gain: 0.7 }),
+                new KitLane(s, r.fork('hats'), { style: 'halfstep', kickGain: 0, clap: 0.05, hat: 0.06 }),
+            ] },
+            build: { weight: 0, build: (s, r, p) => pixelBuild(s, r, p, role(p, r, 'roar', 'vox'), [
+                new KitLane(s, r.fork('kit'), { style: 'four', kick: RR_KICK, kickGain: 0.8, clap: 0, hat: 0.05 }),
+                new FigureLane(s, r.fork('keys'), { gen: 'arp', rate: 1, instrument: role(p, r, 'roar', 'keys'), lo: 60, hi: 84, repeat: 0.9, gain: 0.7 }),
+            ]) },
+            // the roar: long notes, each its own patch and wobble speed
+            drop: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'halfstep', ...role(p, r, 'roar', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'wub', patches: role(p, r, 'roar', 'bass'), root: true, lo: 28, hi: 45, repeat: 0.75, legato: 0.95, pan: 0 }),
+                chops(s, r, p, role(p, r, 'roar', 'vox'), { stutter: 0.3, up: 0, gain: 0.7, repeat: 0.85 }),
+            ] },
+            // the switch-up in half time, the lead screaming over it
+            drive: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'halfstep', ...role(p, r, 'roar', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'complex', fill: 0.55, patches: role(p, r, 'roar', 'bass'), root: true, lo: 28, hi: 45, repeat: 0.75, legato: 0.9, pan: 0 }),
+                new FigureLane(s, r.fork('lead'), { gen: 'hook', instrument: role(p, r, 'roar', 'lead', 0.3), lo: 64, hi: 86, repeat: 0.75, gain: 0.6 }),
+            ] },
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                sawPad(s, r, { cutoff: 1500, pump: 0, attack: 1.5, release: 3, gain: 0.035 }),
+                new PhraseLane(s, r.fork('keys'), { bpm: p.bpm, instrument: role(p, r, 'roar', 'keys', 0.3), lo: 60, hi: 84, rest: [1, 4], repeat: 0.7 }),
+                chops(s, r, p, role(p, r, 'roar', 'vox', 0.3), { stutter: 0, gain: 0.6, fork: 'vox2' }),
+            ] },
+        },
+    },
+    {
+        id: 'hazard',
+        label: 'Hazard',
+        refs: 'Ninajirachi, Crystal Castles, Noisia',
+        blurb: 'Drum & bass at the edge of a corrupted file: a reese in the dark, a music box, crushed whispers and alarms.',
+        modes: [['phrygian', 2], ['aeolian', 2]],
+        tonic: [38, 44],
+        bpm: [168, 174],
+        swing: [0, 0],
+        song: { bars: { intro: [16], rain: [8, 16], build: [8], drop: [32], break: [16], build2: [8], drop2: [32] }, glitch: { rate: 0.8, stutter: 0.5, crush: 0.4 } },
+        harmony: { holdMin: 8, holdMax: 16, pedalProb: 0.3, shapes: ['open', 'seventh', 'quartal'], loops: [[0, 1, 5, 4], [0, 5, 6, 1], [0, 3, 1, 5]], loopBars: [2, 4] },
+        reverb: { t60: [4, 7], damping: [3500, 6000], size: 1.5 },
+        echoBeats: 0.75,
+        opening: ['rain'],
+        palette: {
+            bass: ['hz_reese', 'hz_neuro', 'hz_sub'],
+            vox: ['hz_crushvox', 'hz_whisper'],
+            bell: ['hz_musicbox', 'hz_glass'],
+            alarm: ['hz_alarm', 'hz_static'],
+            kit: [
+                { kick: HZ_KICK, clap: 0.1, snare: 0.2, hat: 0.09, perc: 0.06 },
+                { kick: { ...HZ_KICK, decay: 0.4, drive: 1.6 }, clap: 0.12, snare: 0.18, hat: 0.1, metal: 0.05 },
+            ],
+        },
+        scenes: {
+            rain: { weight: 1, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new DroneLane(s, r.fork('pad'), { fifth: true, gain: 0.04, cutoff: 700, detune: 18, attack: 4, drive: 0.5, sub: 0.06 }),
+                new FigureLane(s, r.fork('bell'), { gen: 'walk', rate: 2, density: 0.7, instrument: role(p, r, 'hazard', 'bell', 0.3), lo: 72, hi: 93, repeat: 0.85, ring: true, gain: 0.9 }),
+                chops(s, r, p, role(p, r, 'hazard', 'vox', 0.3), { stutter: 0.2, up: 0, gain: 0.6, repeat: 0.85 }),
+                new BedLane(s, r.fork('hiss'), { gain: 0.02, tone: 7000, low: 900, crackle: 120 }),
+            ] },
+            build: { weight: 0, build: (s, r, p) => pixelBuild(s, r, p, role(p, r, 'hazard', 'vox'), [
+                new KitLane(s, r.fork('hats'), { style: 'dnb', kickGain: 0, clap: 0, hat: 0.07 }),
+                new FigureLane(s, r.fork('bell'), { gen: 'arp', rate: 1, instrument: role(p, r, 'hazard', 'bell'), lo: 72, hi: 93, repeat: 0.9, ring: true, gain: 0.7 }),
+            ]) },
+            drop: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'dnb', ...role(p, r, 'hazard', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'bass', bias: 1, instrument: role(p, r, 'hazard', 'bass'), root: true, lo: 28, hi: 45, repeat: 0.7, legato: 1.1, pan: 0 }),
+                new FigureLane(s, r.fork('alarm'), { gen: 'splatter', bias: 2, instrument: role(p, r, 'hazard', 'alarm'), lo: 72, hi: 91, repeat: 0.85, gain: 0.7 }),
+                chops(s, r, p, role(p, r, 'hazard', 'vox'), { stutter: 0.35, up: 0.1, gain: 0.7 }),
+            ] },
+            // the reese wobbling, the music box over it
+            drive: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact')),
+                new KitLane(s, r.fork('kit'), { style: 'dnb', ...role(p, r, 'hazard', 'kit') }),
+                new FigureLane(s, r.fork('bass'), { gen: 'wub', patches: [role(p, r, 'hazard', 'bass')], root: true, lo: 28, hi: 45, repeat: 0.75, legato: 1, pan: 0 }),
+                new FigureLane(s, r.fork('bell'), { gen: 'hook', instrument: role(p, r, 'hazard', 'bell'), lo: 72, hi: 93, repeat: 0.8, ring: true, gain: 0.8 }),
+                new FigureLane(s, r.fork('alarm'), { gen: 'splatter', bias: 3, instrument: role(p, r, 'hazard', 'alarm', 0.4), lo: 72, hi: 91, repeat: 0.85, gain: 0.6 }),
+            ] },
+            break: { weight: 0, build: (s, r, p) => [
+                new ImpactLane(s, r.fork('impact'), { kind: 'down' }),
+                new DroneLane(s, r.fork('pad'), { upper: true, gain: 0.035, cutoff: 900, detune: 18, attack: 3, release: 4, drive: 0.4 }),
+                new PhraseLane(s, r.fork('bell'), { bpm: p.bpm / 2, instrument: role(p, r, 'hazard', 'bell', 0.3), lo: 72, hi: 93, rest: [2, 6], repeat: 0.7 }),
+                chops(s, r, p, role(p, r, 'hazard', 'vox', 0.3), { stutter: 0.1, gain: 0.5, fork: 'vox2' }),
+                new KitLane(s, r.fork('hats'), { style: 'dnb', kickGain: 0, clap: 0.05, hat: 0.05 }),
+            ] },
+        },
+    },
+];
+
+for (const f of [...NEON_FORMATS, ...DUB_FORMATS, ...PIXEL_FORMATS]) PALETTES[f.id] = f.palette;
 
 // A universe with formats keeps every format's scenes, named
 // "<format>:<scene>", so tests and the scene override can reach all of them;
@@ -1004,6 +1422,14 @@ export const UNIVERSES = [
                 new WanderLane(s, r.fork('bowl'), { mean: 20, lo: 48, hi: 67, instrument: 'bowl' }),
             ] },
         },
+    },
+    {
+        id: 'pixel',
+        name: 'Pixel',
+        color: '#ff3ea5',
+        refs: 'Ninajirachi, and the 2010s EDM she grew up on',
+        blurb: 'Hyperpop and electro made on a laptop, on six frequencies: complextro, bubblegum bass, blog house, trance, brostep and drum & bass.',
+        formats: PIXEL_FORMATS,
     },
 ];
 

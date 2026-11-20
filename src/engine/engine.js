@@ -1,7 +1,7 @@
 import { Rng } from '../core/rng.js';
 import { tuneHz } from '../core/theory.js';
 import { Svf, dbToGain } from '../dsp/primitives.js';
-import { Echo, Limiter, Reverb } from '../dsp/effects.js';
+import { Echo, Glitch, Limiter, Reverb } from '../dsp/effects.js';
 import { createPiece } from '../score/piece.js';
 import { Score } from '../score/score.js';
 import { VOICE_TYPES } from './voices.js';
@@ -32,6 +32,9 @@ export class Engine {
         });
         this.echo = new Echo(sampleRate, { seconds: this.piece.echoSeconds, feedback: 0.55 });
         this.limiter = new Limiter(sampleRate, dbToGain(-1));
+        // stutter and tape-stop edits, for song plans that ask for them
+        this.glitch = this.piece.universe.song?.glitch ? new Glitch(sampleRate) : null;
+        this.edit = null;
         // rumble filter: nothing useful lives below ~28 Hz
         this.hpL = new Svf(sampleRate, 28, 0.7);
         this.hpR = new Svf(sampleRate, 28, 0.7);
@@ -120,6 +123,7 @@ export class Engine {
             this.hpL.set(mix.hp);
             this.hpR.set(mix.hp);
             this.dryTarget = mix.dry;
+            if (this.glitch) this._edit(mix.fx, t0, t1);
         }
         const { dryL, dryR, revBus, echoBus } = this;
         dryL.fill(0, 0, n);
@@ -166,11 +170,27 @@ export class Engine {
             r = this.hpR.high * this.master;
             lr[0] = l;
             lr[1] = r;
+            if (this.glitch) this.glitch.process(lr, this.frame + i);
             this.limiter.process(lr);
             outL[i] = lr[0];
             outR[i] = lr[1];
         }
         this.frame += n;
+    }
+
+    // The next edit the song plan has in store, in frames; the visuals hear
+    // about each one as it starts.
+    _edit(fx, t0, t1) {
+        if (fx !== this.edit) {
+            this.edit = fx;
+            this.glitch.set(fx ? {
+                ...fx, a: Math.round(fx.start * this.sr), b: Math.round(fx.end * this.sr), len: Math.max(1, Math.round((fx.len || 0) * this.sr)),
+            } : null);
+        }
+        if (fx && this.announced !== fx && fx.start < t1) {
+            this.announced = fx;
+            this.notes.push({ time: fx.start, layer: 'glitch', kind: fx.kind, gain: 1 });
+        }
     }
 
     // Snapshot for the visuals.
