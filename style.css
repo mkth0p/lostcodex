@@ -381,3 +381,26 @@ body[data-look="bronze"] #name {
     line-height: 0.9;
     color: var(--accent);
 }
+
+/* Pixel, Frozen Window: the window carries the format's name, so the
+   universe's name sits small and low like a taskbar. */
+body[data-look="pixel"] #station {
+    align-self: end;
+    padding-bottom: 3vh;
+}
+
+body[data-look="pixel"] #name {
+    font-size: clamp(56px, 11vw, 150px);
+    line-height: 0.9;
+    background: var(--ink);
+    color: var(--accent);
+    padding: 0 0.1em;
+    width: fit-content;
+}
+
+body[data-look="pixel"] .blurb,
+body[data-look="pixel"] #freq {
+    background: var(--paper);
+    padding: 0 0.2em;
+    width: fit-content;
+}

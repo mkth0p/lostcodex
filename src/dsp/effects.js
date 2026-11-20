@@ -141,3 +141,91 @@ export class Limiter {
         if (lr[1] > this.ceiling) lr[1] = this.ceiling; else if (lr[1] < -this.ceiling) lr[1] = -this.ceiling;
     }
 }
+
+// Edits on the master, the way a producer cuts the bounce of a track in the
+// DAW (glitch and stutter edits): `repeat` loops the first `len` frames of
+// its window like a beat repeat, `stop` slows the record to a halt (tape
+// stop), `reverse` plays the window's last moments backwards, `mute` cuts
+// everything, `crush` holds samples and drops bits. Everything is keyed to
+// absolute frames, so an edit sounds the same however the blocks fall.
+export class Glitch {
+    constructor(sr, seconds = 3) {
+        let size = 1;
+        while (size < sr * seconds) size <<= 1;
+        this.size = size;
+        this.mask = size - 1;
+        this.l = new Float32Array(size);
+        this.r = new Float32Array(size);
+        this.fx = null;
+        this.fade = Math.round(0.003 * sr);
+        this.held = [0, 0];
+    }
+
+    // fx: { kind, a, b (frames), len (frames, for repeat), bits, every }
+    set(fx) {
+        this.fx = fx;
+    }
+
+    _read(buf, p) {
+        const i = Math.floor(p);
+        const f = p - i;
+        const a = buf[i & this.mask];
+        return a + (buf[(i + 1) & this.mask] - a) * f;
+    }
+
+    process(lr, frame) {
+        const w = frame & this.mask;
+        this.l[w] = lr[0];
+        this.r[w] = lr[1];
+        const fx = this.fx;
+        if (!fx || frame < fx.a || frame >= fx.b) return;
+        const k = frame - fx.a;
+        const span = fx.b - fx.a;
+        // crossfade with the live signal at both ends of the window
+        const edge = Math.min(k, span - k);
+        const mix = edge < this.fade ? edge / this.fade : 1;
+        let g = 1;
+        let src;
+        switch (fx.kind) {
+            case 'repeat': {
+                // the first pass is the live signal itself
+                if (k < fx.len) return;
+                const n = k % fx.len;
+                src = fx.a + n;
+                // short fades where each slice restarts, so the cut never clicks
+                const e = Math.min(n, fx.len - n);
+                if (e < this.fade) g = e / this.fade;
+                break;
+            }
+            case 'stop': {
+                // the platter slows as (1 - x)^2: the position is its integral
+                const x = 1 - k / span;
+                src = fx.a + (span / 3) * (1 - x * x * x);
+                g = Math.min(1, x * 6) ** 2;
+                break;
+            }
+            case 'reverse':
+                src = fx.a - 1 - k;
+                break;
+            case 'mute':
+                lr[0] *= 1 - mix;
+                lr[1] *= 1 - mix;
+                return;
+            case 'crush': {
+                if (k % fx.every === 0) {
+                    this.held[0] = Math.round(lr[0] * fx.bits) / fx.bits;
+                    this.held[1] = Math.round(lr[1] * fx.bits) / fx.bits;
+                }
+                lr[0] += (this.held[0] - lr[0]) * mix;
+                lr[1] += (this.held[1] - lr[1]) * mix;
+                return;
+            }
+            default:
+                return;
+        }
+        const yl = this._read(this.l, src) * g;
+        const yr = this._read(this.r, src) * g;
+        lr[0] += (yl - lr[0]) * mix;
+        lr[1] += (yr - lr[1]) * mix;
+    }
+}

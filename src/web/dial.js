@@ -237,7 +237,7 @@ export class Dial {
     }
 }
 
-// eleven bands of twelve fit between 87.6 and 107.3
+// twelve bands of twelve fit between 87.6 and 107.6
 export function frequency(index) {
-    return 87.6 + index * 0.15;
+    return 87.6 + index * 0.14;
 }

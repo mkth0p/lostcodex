@@ -33,12 +33,67 @@ export class SongPlan {
         this.cycle = 0;
         this.drops = DROPS.filter((d) => u.scenes[this.prefix + d]);
         this.firstDrop = rng.pick(this.drops);
+        // edits on the master (src/dsp/effects.js Glitch), for formats that cut
+        // their tracks up: { rate, stutter, crush }
+        this.glitch = u.song.glitch || null;
+        this.glitchRng = rng.fork('glitch');
     }
 
     _push(role, bars, fadeIn, fadeOut) {
         const start = this.end;
         this.end = start + bars * this.bar;
-        this.sections.push({ type: this.prefix + role, role, bars, start, end: this.end, fadeIn, fadeOut });
+        const section = { type: this.prefix + role, role, bars, start, end: this.end, fadeIn, fadeOut };
+        if (this.glitch) section.fx = this._edits(section, this.sections.length);
+        this.sections.push(section);
+    }
+
+    // The edits of one section, drawn from its own stream: at the end of each
+    // four-bar phrase of a drop a beat is rolled (eighths, sixteenths, then
+    // thirty-seconds), repeated, stopped like a record, reversed or cut out;
+    // inside the phrase a beat now and then stutters or is crushed. A build
+    // rolls into its gap; quieter sections only now and then reverse.
+    _edits(s, index) {
+        const g = this.glitch;
+        const r = this.glitchRng.fork(`s${index}`);
+        const bar = this.bar;
+        const b = bar / 4;
+        const out = [];
+        const add = (kind, start, end, extra = {}) => out.push({ kind, start, end, ...extra });
+        const roll = (end, beats) => {
+            add('repeat', end - beats * b, end - beats * b / 2, { len: b / 4 });
+            add('repeat', end - beats * b / 2, end - beats * b / 4, { len: b / 8 });
+            add('repeat', end - beats * b / 4, end, { len: b / 16 });
+        };
+        if (s.role === 'build') {
+            if (r.chance(0.75)) roll(s.end - bar / 2, r.pick([1, 2]));
+            return out;
+        }
+        const drop = DROPS.includes(s.role);
+        for (let p = 0; p < s.bars; p += 4) {
+            const from = s.start + p * bar;
+            const end = Math.min(s.end, from + 4 * bar);
+            if (drop && end - from >= 4 * bar) {
+                if (r.chance(g.stutter ?? 0.35)) {
+                    const at = from + bar + 2 * b;
+                    add('repeat', at, at + b, { len: r.pick([b / 4, b / 8, b / 6]) });
+                }
+                if (r.chance(g.crush ?? 0.15)) add('crush', from + 2 * bar, from + 2 * bar + r.pick([2, 4]) * b, { bits: r.pick([12, 24]), every: r.pick([3, 5, 8]) });
+            }
+            if (!r.chance(drop ? g.rate ?? 0.75 : 0.3)) continue;
+            if (!drop) {
+                if (r.chance(0.5)) add('reverse', end - b / 2, end);
+                else add('repeat', end - b, end, { len: b / 2 });
+                continue;
+            }
+            const last = end >= s.end - 1e-6;
+            const kind = r.weighted([['roll', 3], ['repeat', 3], ['stop', last ? 4 : 1.2], ['reverse', 1.5], ['mute', 1]]);
+            if (kind === 'roll') roll(end, 1);
+            else if (kind === 'repeat') add('repeat', end - b, end, { len: r.pick([b / 2, b / 4, b / 3]) });
+            else if (kind === 'stop') add('stop', end - r.pick([1, 2]) * b, end);
+            else if (kind === 'reverse') add('reverse', end - b / 2, end);
+            else add('mute', end - b / 2, end);
+        }
+        return out.sort((x, y) => x.start - y.start);
     }
 
     // drops come back: mostly the piece's own drop, sometimes the other one
@@ -87,6 +142,13 @@ export class SongPlan {
     // dry signal pulled out in the gap so only the reverb is left.
     mix(t) {
         const s = this.at(t);
+        const out = this._mix(s, t);
+        // the next edit that has not finished yet (the engine starts it on its frame)
+        if (this.glitch) out.fx = s.fx.find((f) => f.end > t) || null;
+        return out;
+    }
+
+    _mix(s, t) {
         if (s.role !== 'build') return { hp: 28, dry: 1 };
         const gap = this.gap(s);
         if (t >= gap) return { hp: 900, dry: 0.08 };

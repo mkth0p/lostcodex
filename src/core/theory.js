@@ -153,7 +153,7 @@ const ROOT_WEIGHTS = [[0, 5], [3, 3], [5, 3], [4, 2], [1, 1.5], [6, 1.5], [2, 1]
 // Lazily extended chord timeline. Chords hold for a long time and change by
 // small voice-leading moves; the tonic pedal is common.
 export class Harmony {
-    constructor(key, rng, { holdMin = 36, holdMax = 90, pedalProb = 0.5, roots = null, shapes = null, plan = null } = {}) {
+    constructor(key, rng, { holdMin = 36, holdMax = 90, pedalProb = 0.5, roots = null, shapes = null, plan = null, loops = null, loopBars = [2] } = {}) {
         this.key = key;
         this.rng = rng;
         // a song plan (src/score/song.js) puts chord changes on bar lines,
@@ -166,6 +166,18 @@ export class Harmony {
         this.roots = roots ? ROOT_WEIGHTS.filter(([d]) => roots.includes(d)) : ROOT_WEIGHTS;
         this.shapes = shapes || Object.keys(SHAPES);
         this.chords = [];
+        // pop loops: a song plan can cycle one four-chord progression (degrees,
+        // starting on the tonic) through every section but the builds,
+        // a chord every `loopBars` bars, the way a pop or EDM track does
+        if (loops && plan) {
+            const pick = rng.fork('loop');
+            // only loops whose every chord can be built in this mode
+            const fits = loops.filter((loop) => loop.every((d) => d < key.steps.length && this._loopShapes().some((sh) => buildChord(key, d, sh, false))));
+            if (fits.length) {
+                this.loop = pick.pick(fits);
+                this.loopBars = pick.pick(loopBars);
+            }
+        }
         const openers = ['add9', 'open', 'sus2'].filter((name) => this.shapes.includes(name));
         const first = buildChord(key, 0, rng.pick(openers.length ? openers : this.shapes), true)
             || buildChord(key, 0, 'open', true)
@@ -191,9 +203,30 @@ export class Harmony {
         return this._nextChord(prev);
     }
 
+    // the universe's shapes first, then any shape, so a loop keeps its degree
+    _loopShapes() {
+        return [...this.shapes, ...Object.keys(SHAPES).filter((n) => !this.shapes.includes(n))];
+    }
+
+    _loopChord(prev, degree) {
+        let fallback = null;
+        for (const shape of this._loopShapes()) {
+            const chord = buildChord(this.key, degree, shape, false);
+            if (!chord) continue;
+            if (!(chord.rootDegree === prev.rootDegree && chord.shape === prev.shape)) return chord;
+            fallback = chord;
+        }
+        return fallback || this._nextChord(prev);
+    }
+
     _planned(prev, start) {
         const s = this.plan.at(start + 1e-6);
         if (s.role === 'build') return { chord: this._chordOn(prev, [6, 4, 5]), end: s.end };
+        if (this.loop) {
+            const len = this.loopBars * this.plan.bar;
+            const k = Math.round((start - s.start) / len);
+            return { chord: this._loopChord(prev, this.loop[k % this.loop.length]), end: Math.min(s.end, s.start + (k + 1) * len) };
+        }
         if (this.plan.isDrop(s) && start - s.start < 1e-6) return { chord: this._chordOn(prev, [0]), end: start + 4 * this.plan.bar };
         return { chord: this._nextChord(prev), end: this._planEnd(start) };
     }

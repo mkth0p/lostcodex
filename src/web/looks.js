@@ -839,6 +839,185 @@ const weave = {
     },
 };
 
+// Pixel: the frozen window. A dialog box with the format's name in it is
+// dragged across a hot pink screen and, like a computer that has stopped
+// redrawing, leaves a copy of itself wherever it has been. Kicks and bass
+// notes drag it, chops nudge it up, the snare flips it to negative; the
+// edits on the master damage the trail itself: a stutter slices it, a tape
+// stop melts it down, a reverse mirrors the window, a crush pixelates it, a
+// cut blacks the screen out. A drop wipes the screen and the trail starts
+// again in the drop's colours.
+const trail = {
+    paper: '#ff5cbf',
+    ink: '#15081f',
+    accent: '#d8ff3c',
+    init(f) {
+        const { s, rng } = f;
+        s.x = rng.range(0.2, 0.5);
+        s.y = rng.range(0.2, 0.5);
+        s.tx = s.x;
+        s.ty = s.y;
+        // a seeded path the kicks walk along
+        s.ax = rng.range(1.3, 2.7);
+        s.ay = rng.range(0.9, 1.9);
+        s.ph = rng.range(0, TAU);
+        s.k = 0;
+        s.flip = 0;
+        s.mirror = false;
+        s.black = 0;
+        s.role = null;
+        s.box = null;
+        s.layer = null;
+        s.hue = 0;
+    },
+    _canvas(w, h) {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w));
+        c.height = Math.max(1, Math.round(h));
+        return c;
+    },
+    // the window, drawn once per colour pair: a frame, a title bar with
+    // three blocks, and the name filling the body
+    _window(f, body, text) {
+        const u = Math.min(f.w, f.h);
+        const bw = Math.min(f.w * 0.82, u * 0.95);
+        const bh = bw * 0.46;
+        const c = this._canvas(bw, bh);
+        const q = c.getContext('2d');
+        const line = Math.max(3, bw * 0.012);
+        const bar = bh * 0.17;
+        q.fillStyle = text;
+        q.fillRect(0, 0, bw, bh);
+        q.fillStyle = body;
+        q.fillRect(line, bar, bw - 2 * line, bh - bar - line);
+        for (let i = 0; i < 3; i++) {
+            const sz = bar * 0.5;
+            q.fillRect(bw - line - (i + 1) * sz * 1.5, (bar - sz) / 2, sz, sz);
+        }
+        const name = (f.name || 'Pixel').toUpperCase();
+        let size = bh * 0.5;
+        q.font = `400 ${size}px Basteleur, Georgia, serif`;
+        const tw = q.measureText(name).width;
+        size = Math.min(size, size * (bw * 0.86) / tw);
+        q.font = `400 ${size}px Basteleur, Georgia, serif`;
+        q.fillStyle = text;
+        q.textAlign = 'center';
+        q.textBaseline = 'middle';
+        q.fillText(name, bw / 2, bar + (bh - bar) * 0.53);
+        return c;
+    },
+    _colours(drop) {
+        // rain and breaks: pink screen, light window; drops: dark screen
+        return drop
+            ? { screen: this.ink, a: [this.accent, this.ink], b: [this.paper, this.ink] }
+            : { screen: this.paper, a: ['#fff4fb', this.ink], b: [this.ink, '#fff4fb'] };
+    },
+    _setup(f, drop) {
+        const { s } = f;
+        const c = this._colours(drop);
+        s.screen = c.screen;
+        s.box = this._window(f, c.a[0], c.a[1]);
+        s.neg = this._window(f, c.b[0], c.b[1]);
+        s.layer = this._canvas(f.w, f.h);
+        const q = s.layer.getContext('2d');
+        q.fillStyle = s.screen;
+        q.fillRect(0, 0, f.w, f.h);
+    },
+    note(f, n) {
+        const { s, rng } = f;
+        if (n.layer === 'glitch') {
+            s.edit = n.kind;
+            s.editLife = 1;
+            if (n.kind === 'reverse') s.mirror = !s.mirror;
+            if (n.kind === 'mute') s.black = 1;
+            return;
+        }
+        if (n.layer === 'kick') {
+            s.k += 1;
+            const drop = f.role === 'drop' || f.role === 'drive';
+            const step = drop ? 0.55 : 0.3;
+            s.tx = 0.5 + 0.42 * Math.sin(s.ax * s.k * step + s.ph);
+            s.ty = 0.5 + 0.38 * Math.sin(s.ay * s.k * step);
+            return;
+        }
+        if (n.layer === 'snare') {
+            s.flip = 1;
+            if (f.role === 'build') s.tx += rng.range(-0.04, 0.04);
+            return;
+        }
+        if (n.layer === 'vox') {
+            s.ty -= 0.03;
+            return;
+        }
+        if (n.layer === 'bass' && PITCHED(n)) {
+            s.tx += (pitch(n) - 0.2) * 0.06 * (rng.chance(0.5) ? 1 : -1);
+        }
+    },
+    draw(f) {
+        const { ctx, w, h, s } = f;
+        const drop = f.role === 'drop' || f.role === 'drive';
+        if (!s.box || s.dropped !== drop || s.layer.width !== Math.round(w) || s.layer.height !== Math.round(h)) {
+            s.dropped = drop;
+            this._setup(f, drop);
+        }
+        const q = s.layer.getContext('2d');
+        // the edits damage what is already on the screen
+        if (s.editLife > 0) {
+            const lw = s.layer.width;
+            const lh = s.layer.height;
+            if (s.edit === 'repeat') {
+                // a band of the trail shoved sideways, again and again
+                const y = f.rng.range(0, lh * 0.9);
+                const bh = lh * f.rng.range(0.03, 0.12);
+                q.drawImage(s.layer, 0, y, lw, bh, f.rng.range(-0.15, 0.15) * lw, y, lw, bh);
+            } else if (s.edit === 'stop') {
+                // the screen sags like a record slowing down
+                q.drawImage(s.layer, 0, 0, lw, lh, 0, lh * 0.02, lw, lh);
+            } else if (s.edit === 'crush' && s.editLife > 0.9) {
+                const tiny = this._canvas(lw / 18, lh / 18);
+                const t = tiny.getContext('2d');
+                t.drawImage(s.layer, 0, 0, tiny.width, tiny.height);
+                q.imageSmoothingEnabled = false;
+                q.drawImage(tiny, 0, 0, lw, lh);
+                q.imageSmoothingEnabled = true;
+            }
+            s.editLife -= 0.12;
+        }
+        // with nothing playing it still drifts, so the screen is never frozen still
+        s.tx += Math.sin(f.t * 0.37) * 0.0008;
+        s.tx = Math.max(-0.05, Math.min(1.05, s.tx));
+        s.ty = Math.max(-0.05, Math.min(1.05, s.ty));
+        const ease = f.role === 'build' ? 0.5 : 0.22;
+        s.x += (s.tx - s.x) * ease;
+        s.y += (s.ty - s.y) * ease;
+        // the stamp: one copy of the window per frame where it is now
+        const box = s.flip > 0.5 ? s.neg : s.box;
+        const bx = s.x * (w - box.width * 0.5) - box.width * 0.25;
+        const by = s.y * (h - box.height * 0.5) - box.height * 0.25;
+        q.save();
+        if (s.mirror) {
+            q.translate(bx + box.width, by);
+            q.scale(-1, 1);
+            q.drawImage(box, 0, 0);
+        } else {
+            q.drawImage(box, bx, by);
+        }
+        q.restore();
+        s.flip *= 0.8;
+        ctx.drawImage(s.layer, 0, 0, w, h);
+        if (s.black > 0.05) {
+            ctx.fillStyle = this.ink;
+            ctx.globalAlpha = Math.min(1, s.black * 1.5);
+            ctx.fillRect(0, 0, w, h);
+            ctx.globalAlpha = 1;
+            s.black *= 0.7;
+        }
+    },
+    resize(f) {
+        f.s.box = null;
+    },
+};
+
 export const LOOKS = {
     tide: { name: 'Raster', ...raster },
     cathedral: { name: 'Musica Viva', ...viva },
@@ -851,4 +1030,5 @@ export const LOOKS = {
     neon: { name: 'Dot Matrix', ...matrix },
     abyss: { name: 'Bathymetry', ...bathymetry },
     bronze: { name: 'Weave', ...weave },
+    pixel: { name: 'Frozen Window', ...trail },
 };

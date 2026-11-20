@@ -245,7 +245,8 @@ export class ModalVoice extends Voice {
 
 // ---------------------------------------------------------------- pads
 
-const DETUNE_SHAPE = [-1, 0.37, -0.29, 0.83, 0.05];
+// five uneven offsets for the pads; the last two widen a seven-saw supersaw
+const DETUNE_SHAPE = [-1, 0.37, -0.29, 0.83, 0.05, -0.62, 0.58];
 const FORMANTS = [[800, 1, 7], [1150, 0.5, 9], [2900, 0.2, 12]];
 // vowel formants (F1, F2, F3) for the singing pad
 const VOWELS = {
@@ -1200,7 +1201,347 @@ export class GrainVoice extends Voice {
     }
 }
 
+// ---------------------------------------------------------------- hyperpop
+
+// Vowel formants of a high (soprano) voice, F1..F4, for the vocal chops and
+// the talking basses.
+const SUNG = {
+    a: [850, 1220, 2810, 3800],
+    e: [500, 2000, 2850, 3700],
+    i: [320, 2500, 3200, 3900],
+    o: [480, 860, 2700, 3600],
+    u: [340, 760, 2650, 3500],
+    y: [320, 1700, 2500, 3500],
+};
+const SUNG_GAINS = [1, 0.7, 0.3, 0.16];
+
+function vowelAt(list, x, out) {
+    const n = list.length;
+    const p = Math.max(0, Math.min(n - 1, x * (n - 1)));
+    const i = Math.min(n - 2, Math.floor(p));
+    const a = SUNG[list[Math.max(0, i)]] || SUNG.a;
+    const b = SUNG[list[Math.min(n - 1, i + 1)]] || a;
+    const f = n > 1 ? p - i : 0;
+    for (let k = 0; k < 4; k++) out[k] = a[k] + (b[k] - a[k]) * f;
+    return out;
+}
+
+function lfoShape(shape, ph) {
+    const x = ph - Math.floor(ph);
+    if (shape === 'saw') return 1 - 2 * x;
+    if (shape === 'square') return x < 0.5 ? 1 : -1;
+    if (shape === 'ramp') return 2 * x - 1;
+    return Math.sin(TAU * x);
+}
+
+// The complextro voice: one engine for every patch a bass switches between
+// (Porter Robinson, Wolfgang Gartner, Skrillex), and for hyperpop's plastic
+// blips (SOPHIE). Sources: two saws (`saw`, `detune` in cents), a pulse
+// (`pulse`, width `pw`), a sine (`sine`) and a sine phase-modulated by
+// another (`fm` index, `ratio`, the index decaying over `fmDecay`), plus a sub
+// an octave down. A filter that is a low-pass, a band-pass or a bank of four
+// vowel formants (`vowels`, moved through by `morph` seconds or by the LFO),
+// with its own envelope (`envAmt`, `decay`) and a beat-synced LFO (`lfo` in
+// Hz, `lfoAmt` in octaves, `lfoShape`). A pitch envelope (`pitch` semitones
+// falling over `pitchDecay`: the laser and the latex drip), then drive, a
+// wavefolder (`fold`) and a crusher (`crush` samples, `bits`).
+export class MorphVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.sr = sr;
+        this.hz = hzOf(ev);
+        this.fromHz = ev.fromHz ?? this.hz;
+        this.glide = Math.round((ev.glide ?? 0.03) * sr);
+        this.sawAmt = ev.saw ?? 1;
+        this.spread = Math.pow(2, (ev.detune ?? 0) / 1200);
+        this.a = new Saw(sr, this.hz, rng.next());
+        this.b = new Saw(sr, this.hz, rng.next());
+        this.pulse = ev.pulse ?? 0;
+        this.pw = ev.pw ?? 0.5;
+        this.p1 = new Saw(sr, this.hz, 0);
+        this.p2 = new Saw(sr, this.hz, this.pw);
+        this.sine = ev.sine ?? 0;
+        this.fm = ev.fm ?? 0;
+        this.ratio = ev.ratio ?? 1;
+        this.fmCoef = ev.fmDecay ? Math.exp(-1 / (ev.fmDecay * sr)) : 1;
+        this.fmEnv = 1;
+        this.cPhase = 0;
+        this.mPhase = 0;
+        this.sub = ev.sub ?? 0;
+        this.subPhase = 0;
+        this.mode = ev.filter || 'lp';
+        this.cutoff = ev.cutoff ?? 1200;
+        this.q = ev.q ?? 1;
+        this.svf = new Svf(sr, this.cutoff, this.q);
+        this.envAmt = ev.envAmt ?? 0;
+        this.fCoef = Math.exp(-1 / ((ev.decay ?? 0.2) * sr));
+        this.fEnv = 1;
+        this.lfo = ev.lfo ?? 0;
+        this.lfoAmt = ev.lfoAmt ?? 0;
+        this.lfoShape = ev.lfoShape || 'sine';
+        this.lfoPhase = ev.lfoPhase ?? 0;
+        this.vowels = ev.vowels || null;
+        if (this.mode === 'vowel') {
+            this.bank = SUNG_GAINS.map((g, i) => ({ svf: new Svf(sr, 1000, 6 + i * 3), g }));
+            this.fv = [0, 0, 0, 0];
+        }
+        this.morph = ev.morph ?? 0;
+        this.shift = ev.shift ?? 1;
+        this.pitch = ev.pitch ?? 0;
+        this.pCoef = Math.exp(-1 / ((ev.pitchDecay ?? 0.05) * sr));
+        this.pEnv = 1;
+        this.drive = ev.drive ?? 0;
+        this.fold = ev.fold ?? 0;
+        this.crush = ev.crush ?? 0;
+        this.crushBits = Math.pow(2, ev.bits ?? 8);
+        this.held = 0;
+        this.env = new Envelope(sr, ev.attack ?? 0.003, ev.dur ?? 0.2, ev.release ?? 0.04);
+        this.t = 0;
+        this.counter = 0;
+        this.curHz = this.fromHz;
+        this.norm = 1 / (this.sawAmt + this.pulse + this.sine + (this.fm ? 0.8 : 0) + 1e-9);
+        // side-chain pump on the beat grid, as on the pads
+        this.pump = ev.pump ? ev.pump.depth : 0;
+        if (this.pump) {
+            this.pumpLen = Math.round(ev.pump.beat * sr);
+            this.pumpPos = Math.round(((ev.time % ev.pump.beat) + ev.pump.beat) % ev.pump.beat * sr);
+            this.pumpRec = 0.12 * sr;
+            this.pumpGain = 1;
+        }
+        this.driveNorm = this.drive ? 1 / soft(1 + this.drive * 3) : 1;
+    }
+
+    _control() {
+        const t = this.t;
+        const g = this.glide && t < this.glide ? t / this.glide : 1;
+        let hz = this.fromHz + (this.hz - this.fromHz) * g;
+        if (this.pitch) hz *= Math.pow(2, (this.pitch * this.pEnv) / 12);
+        this.curHz = hz;
+        this.a.setHz(hz);
+        this.b.setHz(hz * this.spread);
+        this.p1.setHz(hz);
+        this.p2.setHz(hz);
+        const lfo = this.lfo ? lfoShape(this.lfoShape, this.lfoPhase + (this.lfo * t) / this.sr) : 0;
+        if (this.bank) {
+            const x = this.vowels.length < 2 ? 0
+                : this.lfo ? 0.5 + 0.5 * lfo
+                    : this.morph ? Math.min(1, t / (this.morph * this.sr)) : 0;
+            vowelAt(this.vowels, x, this.fv);
+            const open = 1 + this.envAmt * this.fEnv;
+            for (let k = 0; k < 4; k++) this.bank[k].svf.set(this.fv[k] * this.shift * Math.min(1.6, open));
+        } else if (this.mode !== 'none') {
+            const fc = this.cutoff * (1 + this.envAmt * this.fEnv) * Math.pow(2, this.lfoAmt * lfo);
+            this.svf.set(Math.max(30, fc), this.q);
+        }
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        this.fEnv *= this.fCoef;
+        this.pEnv *= this.pCoef;
+        this.fmEnv *= this.fmCoef;
+        if ((this.counter++ & 7) === 0) {
+            this._control();
+            if (this.pump) {
+                this.pumpPos = (this.pumpPos + 8) % this.pumpLen;
+                this.pumpGain = 1 - this.pump * Math.exp(-this.pumpPos / this.pumpRec);
+            }
+        }
+        this.t++;
+        const hz = this.curHz;
+        let x = 0;
+        if (this.sawAmt) x += (this.spread !== 1 ? (this.a.next() + this.b.next()) * 0.6 : this.a.next()) * this.sawAmt;
+        if (this.pulse) x += (this.p1.next() - this.p2.next()) * 0.5 * this.pulse;
+        if (this.sine || this.fm) {
+            this.cPhase += hz / this.sr;
+            if (this.cPhase > 1) this.cPhase -= 1;
+            if (this.sine) x += Math.sin(TAU * this.cPhase) * this.sine;
+            if (this.fm) {
+                this.mPhase += (hz * this.ratio) / this.sr;
+                if (this.mPhase > 1) this.mPhase -= 1;
+                x += Math.sin(TAU * this.cPhase + this.fm * this.fmEnv * Math.sin(TAU * this.mPhase)) * 0.8;
+            }
+        }
+        x *= this.norm;
+        let y;
+        if (this.bank) {
+            y = 0;
+            for (const f of this.bank) {
+                f.svf.process(x);
+                y += f.svf.band * f.svf.k * f.g;
+            }
+            y *= 2.2;
+        } else if (this.mode === 'bp') {
+            this.svf.process(x);
+            y = this.svf.band * this.svf.k * 1.5;
+        } else if (this.mode === 'none') {
+            y = x;
+        } else {
+            y = this.svf.process(x);
+        }
+        if (this.sub) {
+            this.subPhase += hz * 0.5 / this.sr;
+            if (this.subPhase > 1) this.subPhase -= 1;
+            y += Math.sin(TAU * this.subPhase) * this.sub;
+        }
+        if (this.fold) y = Math.sin(y * (1 + this.fold * 3) * 1.5);
+        if (this.drive) y = soft(y * (1 + this.drive * 3)) * this.driveNorm;
+        if (this.crush) {
+            if (this.counter % this.crush === 0) this.held = Math.round(y * this.crushBits) / this.crushBits;
+            y = this.held;
+        }
+        if (this.pump) y *= this.pumpGain;
+        return y * e * this.gain;
+    }
+}
+
+// A sung syllable for vocal chops: a buzz (saw, softened) with a little
+// breath through four formants that move through the syllable's vowels
+// (`vowels`, over `morph` seconds or the whole note). `shift` scales the
+// formants (above 1 is the chipmunk voice of pitched-up chops), `cons` puts a
+// consonant on the front ('s', 't', 'k', 'h', 'n'), `scoop` slides up into
+// the note from below, `fall` drops it at the end, `vibrato` in cents sets in
+// after a moment. No pitch drift: the chops are tuned hard, as if by Auto-Tune.
+export class VoxVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.sr = sr;
+        this.hz = hzOf(ev);
+        this.saw = new Saw(sr, this.hz, rng.next());
+        this.saw2 = new Saw(sr, this.hz * 1.004, rng.next());
+        this.tilt = new OnePole(sr, ev.tilt ?? 2600);
+        this.noise = new Noise((rng.next() * 4294967295) >>> 0);
+        this.breath = ev.breath ?? 0.06;
+        this.vowels = ev.vowels || ['a'];
+        this.shift = ev.shift ?? 1;
+        const dur = ev.dur ?? 0.25;
+        this.morph = Math.max(0.01, ev.morph ?? dur);
+        this.bank = SUNG_GAINS.map((g, i) => ({ svf: new Svf(sr, 1000, 9 + i * 4), g }));
+        this.fv = [0, 0, 0, 0];
+        this.cons = ev.cons || null;
+        this.consLen = Math.round((this.cons === 's' ? 0.07 : this.cons === 'h' ? 0.05 : 0.018) * sr);
+        this.consSvf = new Svf(sr, this.cons === 's' ? 7000 : this.cons === 'k' ? 2200 : this.cons === 'n' ? 300 : 4000, 1.4);
+        this.scoop = ev.scoop ?? 0;
+        this.fall = ev.fall ?? 0;
+        this.fallAt = Math.round(dur * 0.7 * sr);
+        this.fallLen = Math.max(1, Math.round(dur * 0.3 * sr + (ev.release ?? 0.08) * sr));
+        this.vib = (ev.vibrato ?? 0) / 1200;
+        this.vibDelay = Math.round((ev.vibDelay ?? 0.15) * sr);
+        this.vibRate = (ev.vibRate ?? 5.6) / sr;
+        this.drive = ev.drive ?? 0;
+        this.crush = ev.crush ?? 0;
+        this.crushBits = Math.pow(2, ev.bits ?? 8);
+        this.held = 0;
+        // the consonant comes first, the vowel speaks after it
+        const pre = this.cons ? this.consLen / sr : 0;
+        this.env = new Envelope(sr, (ev.attack ?? 0.008) + pre * 0.5, Math.max(0, dur - pre * 0.5), ev.release ?? 0.08);
+        this.t = 0;
+        this.counter = 0;
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        const t = this.t++;
+        if ((this.counter++ & 7) === 0) {
+            let ratio = 1;
+            if (this.scoop) ratio *= Math.pow(2, (-this.scoop * Math.exp(-t / (0.06 * this.sr))) / 12);
+            if (this.fall && t > this.fallAt) ratio *= Math.pow(2, (-this.fall * Math.min(1, (t - this.fallAt) / this.fallLen)) / 12);
+            if (this.vib && t > this.vibDelay) ratio *= 1 + this.vib * 0.69 * Math.sin(TAU * this.vibRate * (t - this.vibDelay)) * Math.min(1, (t - this.vibDelay) / (0.2 * this.sr));
+            this.saw.setHz(this.hz * ratio);
+            this.saw2.setHz(this.hz * ratio * 1.004);
+            vowelAt(this.vowels, t / (this.morph * this.sr), this.fv);
+            for (let k = 0; k < 4; k++) this.bank[k].svf.set(this.fv[k] * this.shift);
+        }
+        const n = this.noise.next();
+        let x = this.tilt.lp(this.saw.next() * 0.7 + this.saw2.next() * 0.3) * 1.6 + n * this.breath;
+        let y = 0;
+        for (const f of this.bank) {
+            f.svf.process(x);
+            y += f.svf.band * f.svf.k * f.g;
+        }
+        y *= 1.8;
+        if (this.cons && t < this.consLen * 1.5) {
+            this.consSvf.process(n);
+            const c = this.cons === 'n' ? this.consSvf.process(x) * 0.6 : this.consSvf.band * this.consSvf.k;
+            y += c * Math.max(0, 1 - t / (this.consLen * 1.5)) * 0.9;
+        }
+        if (this.drive) y = soft(y * (1 + this.drive * 3)) / (1 + this.drive * 0.5);
+        if (this.crush) {
+            if (t % this.crush === 0) this.held = Math.round(y * this.crushBits) / this.crushBits;
+            y = this.held;
+        }
+        return y * e * this.gain;
+    }
+}
+
+// Chip voice, after the sound chips of old consoles and the Atari samples
+// of electroclash: a pulse of 12.5, 25 or 50% (`duty`) or a stepped triangle
+// (`tri`), volume in sixteen steps, an arpeggio cycling the chord fast
+// (`arp`: semitones, `arpRate` in Hz), a pitch sweep and a delayed vibrato.
+export class ChipVoice extends Voice {
+    constructor(sr, ev, rng) {
+        super(sr, ev);
+        this.sr = sr;
+        this.hz = hzOf(ev);
+        this.fromHz = ev.fromHz ?? this.hz;
+        this.glide = Math.round((ev.glide ?? 0) * sr);
+        this.tri = !!ev.tri;
+        this.a = new Saw(sr, this.hz, rng.next());
+        this.b = new Saw(sr, this.hz, 0);
+        this.duty = ev.duty ?? 0.5;
+        this.phase = 0;
+        this.arp = ev.arp || null;
+        this.arpLen = Math.round(sr / (ev.arpRate ?? 30));
+        this.pitch = ev.pitch ?? 0;
+        this.pCoef = Math.exp(-1 / ((ev.pitchDecay ?? 0.04) * sr));
+        this.pEnv = 1;
+        this.vib = (ev.vibrato ?? 0) / 1200;
+        this.vibDelay = Math.round((ev.vibDelay ?? 0.2) * sr);
+        this.vibRate = 6 / sr;
+        this.env = new Envelope(sr, ev.attack ?? 0.002, ev.dur ?? 0.15, ev.release ?? 0.05);
+        this.lp = new OnePole(sr, ev.cutoff ?? 9000);
+        this.t = 0;
+        this.counter = 0;
+        this.inc = this.hz / sr;
+    }
+
+    tick() {
+        const e = this.env.next();
+        if (this.env.done) this.done = true;
+        const t = this.t++;
+        this.pEnv *= this.pCoef;
+        if ((this.counter++ & 15) === 0) {
+            const g = this.glide && t < this.glide ? t / this.glide : 1;
+            let hz = this.fromHz + (this.hz - this.fromHz) * g;
+            if (this.arp) hz *= Math.pow(2, this.arp[Math.floor(t / this.arpLen) % this.arp.length] / 12);
+            if (this.pitch) hz *= Math.pow(2, (this.pitch * this.pEnv) / 12);
+            if (this.vib && t > this.vibDelay) hz *= 1 + this.vib * 0.69 * Math.sin(TAU * this.vibRate * t);
+            this.a.setHz(hz);
+            this.b.setHz(hz);
+            this.inc = hz / this.sr;
+            if (t === 0) this.b.phase = (this.a.phase + this.duty) % 1;
+        }
+        let x;
+        if (this.tri) {
+            this.phase += this.inc;
+            if (this.phase > 1) this.phase -= 1;
+            // a 4-bit stepped triangle
+            x = Math.round((Math.abs(this.phase * 4 - 2) - 1) * 7.5) / 7.5;
+        } else {
+            x = (this.a.next() - this.b.next()) * 0.5;
+        }
+        // volume in sixteen steps, like the chips
+        const v = Math.round(e * 15) / 15;
+        return this.lp.lp(x) * v * this.gain;
+    }
+}
+
 export const VOICE_TYPES = {
+    morph: MorphVoice,
+    vox: VoxVoice,
+    chip: ChipVoice,
     modal: ModalVoice,
     pad: PadVoice,
     sub: SubVoice,
